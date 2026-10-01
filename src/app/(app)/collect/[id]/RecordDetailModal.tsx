@@ -7,6 +7,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 import { formatKstDateTime } from "@/lib/datetime";
 import ModalShell from "./ModalShell";
+import { dateTimeIn } from "@/lib/collect-checkin";
 
 const spring = { type: "spring", stiffness: 420, damping: 30 } as const;
 
@@ -35,7 +36,12 @@ interface CollectRecord {
   firstSeenAt: string | null;
   referrer: string | null;
   createdAt: string;
+  /** 현장 체크인 스캔 기록(최근 순) */
+  checkIns?: { scannedAt: string; method: string; staffLabel: string }[];
+  checkinTimezone?: string;
 }
+
+const CHECKIN_METHOD_LABEL: Record<string, string> = { camera: "카메라", scanner: "스캐너", manual: "직접 입력" };
 
 interface Props {
   sourceId: string;
@@ -195,6 +201,21 @@ export default function RecordDetailModal({ sourceId, recordId, fieldMappings, o
                   <div className="grid grid-cols-[120px_1fr] gap-3 items-start">
                     <div className="text-xs text-muted-foreground pt-2">등록번호</div>
                     <div className="text-sm py-2 break-words">{record.registrationNo}</div>
+                  </div>
+                )}
+                {record.checkIns && record.checkIns.length > 0 && (
+                  <div className="grid grid-cols-[120px_1fr] gap-3 items-start">
+                    <div className="text-xs text-muted-foreground pt-2">현장 입장</div>
+                    <ul className="py-2 space-y-0.5 text-sm">
+                      {record.checkIns.map((c, i) => (
+                        <li key={i} className="tabular-nums">
+                          {dateTimeIn(record.checkinTimezone ?? "Asia/Seoul", c.scannedAt)}
+                          <span className="ml-1.5 text-xs text-muted-foreground">
+                            {[CHECKIN_METHOD_LABEL[c.method] ?? c.method, c.staffLabel].filter(Boolean).join(" · ")}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
                 {fieldMappings.length === 0 && <p className="text-xs text-muted-foreground">필드 설정이 없어요</p>}

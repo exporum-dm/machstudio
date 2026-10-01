@@ -77,6 +77,7 @@ const ACTIVITY_LABELS: Record<string, string> = {
   "records.normalized": "데이터 정규화",
   "records.exported": "레코드 내보내기",
   "collect.records.exported": "사전등록 내보내기",
+  "collect.checkin_updated": "현장 체크인 설정",
   "workspace.member.invited": "팀원 초대",
   "workspace.member.role_changed": "팀원 권한 변경",
   "workspace.member.removed": "팀원 제거",

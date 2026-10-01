@@ -20,6 +20,7 @@ import { useWorkspace } from "@/contexts/workspace";
 import ActiveToggle from "@/app/(app)/collect/_components/ActiveToggle";
 import FormBuilderTab from "./FormBuilderTab";
 import InfoTab, { type VenueInfo } from "./InfoTab";
+import CheckinTab from "./CheckinTab";
 import { tabsFor, type Tab } from "./tabs";
 import dynamic from "next/dynamic";
 const ImportModal = dynamic(() => import("./ImportModal"), { ssr: false });
@@ -32,6 +33,7 @@ import GdprModal from "./GdprModal";
 import RetentionPolicyEditor from "./RetentionPolicyEditor";
 import DateRangeField from "@/components/DateRangeField";
 import { formatKst, formatKstDateTime } from "@/lib/datetime";
+import { dateTimeIn } from "@/lib/collect-checkin";
 import ProjectSummaryCard from "@/app/(app)/dashboard/ProjectSummaryCard";
 import { useWorkspaceChannelColors } from "@/components/ui/use-workspace-channel-colors";
 import type { RealtimeReportData } from "@/app/(app)/dashboard/RealtimeReport";
@@ -96,6 +98,9 @@ interface CollectSource {
   fieldGroupSelector: string;
   /** 일자·장소·관람시간·키컬러·하이라이트 영상·포스터 — InfoTab.tsx VenueInfo 와 같은 모양. */
   venueConfig: VenueInfo | null;
+  /** 현장 체크인(빌더형) — 켜져 있으면 표에 입장 열이 생긴다. 시각은 행사 시간대로 보인다. */
+  checkinEnabled?: boolean;
+  checkinTimezone?: string;
   fieldMappings: FieldMapping[];
   discoveredFields: DiscoveredField[] | null;
   _count: { records: number };
@@ -106,6 +111,8 @@ interface CollectRecord {
   data: Record<string, string>;
   /** 빌더형에만 있다 — 현장 입장의 열쇠이므로 목록에서 대조할 수 있어야 한다(§9.1·§12). */
   registrationNo?: string | null;
+  /** 현장 체크인 요약 — 한 번이라도 스캔된 레코드에만 온다. */
+  checkIn?: { firstAt: string; lastAt: string; count: number };
   utmSource: string | null;
   utmMedium: string | null;
   utmCampaign: string | null;
@@ -1163,6 +1170,9 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
     );
   }
 
+  // 입장 열 — 체크인을 켰거나, 끈 뒤에도 이미 스캔 기록이 있으면 보인다(기록이 사라져 보이지 않게).
+  const showCheckinCol = source.mode === "builder" && (Boolean(source.checkinEnabled) || records.some((r) => r.checkIn));
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6">
       {/* 헤더 */}
@@ -1233,6 +1243,9 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
               onSaved={(venueConfig) => setSource((current) => current ? { ...current, venueConfig } : current)}
             />
           )}
+
+          {/* 현장 체크인 탭 (빌더형) — 권한은 서버가 본다(ADMIN 이상만 바꿀 수 있다) */}
+          {tab === "checkin" && <CheckinTab sourceId={source.id} canEdit />}
 
           {/* 수집 데이터 탭 */}
           {tab === "records" && (
@@ -1553,6 +1566,11 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
                             등록번호
                           </th>
                         )}
+                        {showCheckinCol && (
+                          <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground whitespace-nowrap">
+                            입장
+                          </th>
+                        )}
                         {source.fieldMappings.filter((f) => !f.hidden).map((f) => {
                           const colWidth = f.type === "email" ? "max-w-[240px]"
                             : (f.type === "select" || f.type === "checkbox") ? "max-w-[140px]"
@@ -1612,6 +1630,18 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
                           {source.mode === "builder" && (
                             <td className="px-4 py-3 font-mono text-xs tabular-nums text-muted-foreground whitespace-nowrap">
                               {record.registrationNo ?? "-"}
+                            </td>
+                          )}
+                          {showCheckinCol && (
+                            <td className="px-4 py-3 text-xs whitespace-nowrap tabular-nums" title={record.checkIn ? `마지막 스캔 ${dateTimeIn(source.checkinTimezone ?? "Asia/Seoul", record.checkIn.lastAt)}` : undefined}>
+                              {record.checkIn ? (
+                                <span className="text-emerald-700 dark:text-emerald-400">
+                                  {dateTimeIn(source.checkinTimezone ?? "Asia/Seoul", record.checkIn.firstAt)}
+                                  {record.checkIn.count > 1 && <span className="ml-1 text-muted-foreground">· {record.checkIn.count}회</span>}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
                             </td>
                           )}
                           {source.fieldMappings.filter((f) => !f.hidden).map((f) => {
