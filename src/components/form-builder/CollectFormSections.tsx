@@ -90,6 +90,13 @@ export function CollectFormSections({
   const legalLocale = config.legal.country === "kr" ? "ko" : "en";
   const confirmationEmail = config.confirmationEmail;
   const hasEmailField = config.fields.some((field) => field.enabled && field.type === "email");
+  // 이름은 이메일인데 유형이 '텍스트'인 항목 — 메일 수신자로 못 잡고 중복 등록도 못 막는다(2026-10 원데이클래스 사례)
+  const emailLikeTextField = hasEmailField
+    ? null
+    : config.fields.find(
+        (field) => field.enabled && field.type !== "email"
+          && [field.key, ...Object.values(field.label ?? {})].some((v) => /e-?mail|이메일/i.test(String(v))),
+      ) ?? null;
   const replyToBad = confirmationEmail.replyTo !== ""
     && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(confirmationEmail.replyTo);
   const hasEmailEventInfo = ev.eventDates.length > 0
@@ -611,7 +618,9 @@ export function CollectFormSections({
             {!hasEmailField && (
               <p className="flex items-start gap-1.5 text-[11px] text-amber-600">
                 <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-                표시 중인 이메일 항목이 없어 메일을 보낼 수 없어요. 등록 항목에 이메일을 추가하세요.
+                {emailLikeTextField
+                  ? `‘${localize(emailLikeTextField.label, DEFAULT_LOCALE) || emailLikeTextField.key}’ 항목의 유형이 이메일이 아니라서 메일을 보낼 수 없어요. 그 항목의 유형을 ‘이메일’로 바꾸면 메일이 나가고 중복 등록도 막혀요.`
+                  : "표시 중인 이메일 항목이 없어 메일을 보낼 수 없어요. 등록 항목에 이메일을 추가하세요."}
               </p>
             )}
             <Row label="메일 제목" hint="비워 두면 ‘등록이 완료되었습니다 — 행사명’으로 보내요.">

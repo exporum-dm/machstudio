@@ -34,6 +34,7 @@ import RetentionPolicyEditor from "./RetentionPolicyEditor";
 import DateRangeField from "@/components/DateRangeField";
 import { formatKst, formatKstDateTime } from "@/lib/datetime";
 import { dateTimeIn } from "@/lib/collect-checkin";
+import { formatCollectValue } from "@/lib/collect-columns";
 import ProjectSummaryCard from "@/app/(app)/dashboard/ProjectSummaryCard";
 import { useWorkspaceChannelColors } from "@/components/ui/use-workspace-channel-colors";
 import type { RealtimeReportData } from "@/app/(app)/dashboard/RealtimeReport";
@@ -1649,7 +1650,7 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
                               : (f.type === "select" || f.type === "checkbox") ? "max-w-[80px]"
                               : "max-w-[200px]";
                             return (
-                            <td key={f.id} className={`px-4 py-3 text-xs ${colWidth} truncate`}>{record.data[f.key] ?? "-"}</td>
+                            <td key={f.id} className={`px-4 py-3 text-xs ${colWidth} truncate`}>{formatCollectValue(record.data[f.key]) || "-"}</td>
                             );
                           })}
                           {showUtmSource && <td className="px-4 py-3 text-xs text-muted-foreground">{record.utmSource ?? "-"}</td>}

@@ -110,3 +110,16 @@ export function collectColumnsFor(source: {
 export function isBuilderSource(source: { mode: string }): boolean {
   return source.mode === "builder";
 }
+
+/**
+ * 셀·상세·CSV 에 찍을 글자. 빌더형 폼은 체크박스·동의를 **불리언**으로 저장하는데(true/false),
+ * React 는 불리언을 화면에 아무것도 그리지 않아 "체크했는데 빈칸" 으로 보였다(2026-10-01 현장 피드백).
+ * 값 자체는 그대로 두고 **보여 줄 때만** 글자로 바꾼다 — 대시보드·필터는 원래 값을 본다.
+ */
+export function formatCollectValue(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
+  if (Array.isArray(value)) return value.map(formatCollectValue).filter(Boolean).join(", ");
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}

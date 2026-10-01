@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { formatKstDateTime } from "@/lib/datetime";
 import ModalShell from "./ModalShell";
 import { dateTimeIn } from "@/lib/collect-checkin";
+import { formatCollectValue } from "@/lib/collect-columns";
 
 const spring = { type: "spring", stiffness: 420, damping: 30 } as const;
 
@@ -230,7 +231,7 @@ export default function RecordDetailModal({ sourceId, recordId, fieldMappings, o
                         className="w-full px-3 py-1.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:border-violet-400 transition-colors"
                       />
                     ) : (
-                      <div className="text-sm py-2 break-words">{record.data[f.key] || <span className="text-muted-foreground italic">(비어있음)</span>}</div>
+                      <div className="text-sm py-2 break-words">{formatCollectValue(record.data[f.key]) || <span className="text-muted-foreground italic">(비어있음)</span>}</div>
                     )}
                   </div>
                 ))}
