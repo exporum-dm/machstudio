@@ -168,6 +168,18 @@ export function judgeScan(person: ScanPerson, todayScansAsc: Date[], scannedAt: 
  */
 export const SAME_CODE_COOLDOWN_MS = 4000;
 
+/**
+ * 판정 카드가 떠 있는 시간. 입구에서는 다음 사람이 바로 서 있다 — 카드가 영상을 계속 가리면
+ * 다음 QR 을 비출 자리가 없다(현장 피드백 2026-10-01: "1~2초 뜨고 사라져야").
+ *  · 카메라 스캔: 초록 1.5초, 노랑·빨강 2초(한 번 더 읽을 여유)
+ *  · 카메라를 끈 상태(번호 직접 입력): 카드가 영상을 가리지 않으니 4초
+ * 카드를 누르면 기다리지 않고 바로 닫힌다.
+ */
+export function resultDisplayMs(status: ScanStatus, cameraOn: boolean): number {
+  if (!cameraOn) return 4000;
+  return status === "first" ? 1500 : 2000;
+}
+
 export function shouldSubmitScan(code: string, last: { code: string; at: number } | null, now: number): boolean {
   if (!code) return false;
   if (!last) return true;
