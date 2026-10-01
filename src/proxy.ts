@@ -50,6 +50,10 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/r/") ||
     // 브리프 공개 화면 — 카톡으로 받은 참가사가 로그인 없이 연다. 채택된 링크만, 조회 외 부작용 없음.
     pathname.startsWith("/b/") ||
+    // 현장 체크인 — 운영요원은 machstudio 계정이 없다. 링크(토큰) + 4자리 PIN 이 열쇠이고,
+    // 라우트가 스스로 세션 쿠키를 확인한다(PIN 전에는 행사 이름 말고는 아무것도 주지 않는다).
+    pathname.startsWith("/checkin/") ||
+    pathname.startsWith("/api/checkin/") ||
     // 빌더형 등록 폼 미리보기(/p/{previewToken}) — 검토자는 워크스페이스 멤버가 아니다.
     // 권한은 추측 불가능한 토큰이 대신하고, 페이지 자체가 조회 외의 부작용을 갖지 않는다.
     pathname.startsWith("/p/") ||

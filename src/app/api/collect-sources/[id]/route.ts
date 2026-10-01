@@ -14,7 +14,9 @@ import { normalizeCollectForm } from "@/lib/collect-form-config";
  * 어려운 종류의 어긋남이 생긴다.
  */
 function sourcePayload<T extends Parameters<typeof collectColumnsFor>[0]>(source: T) {
-  return { ...source, fieldMappings: collectColumnsFor(source) };
+  // 체크인 PIN 해시는 화면으로 내보내지 않는다 — 설정됐는지만 알면 된다(체크인 탭은 자기 API 로 읽는다).
+  const { checkinPinHash, ...rest } = source as T & { checkinPinHash?: string | null };
+  return { ...rest, checkinPinSet: Boolean(checkinPinHash), fieldMappings: collectColumnsFor(source) };
 }
 
 function normalizeOriginInput(s: unknown): string | null {

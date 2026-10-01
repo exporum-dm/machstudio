@@ -427,6 +427,13 @@ model CollectSource {
   /// 개최일·게이트·배지 등 현장 운영 설정.
   venueConfig        Json?
   deletedAt          DateTime?
+  /// 현장 체크인 — 켜면 운영요원 링크(/checkin/{checkinToken})에서 QR 을 스캔해 입장을 기록한다
+  checkinEnabled     Boolean   @default(false)
+  checkinToken       String?   @unique
+  /// 4자리 PIN 해시(hashSharePassword). 바꾸면 기존 운영요원 세션이 모두 끊긴다
+  checkinPinHash     String?
+  /// 일자 판정·시각 표시 기준 — 해외 전시는 현지 시간대로
+  checkinTimezone    String    @default("Asia/Seoul")
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
@@ -434,6 +441,7 @@ model CollectSource {
   workspace     Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   fieldMappings FieldMapping[]
   records       CollectRecord[]
+  checkIns      CollectCheckIn[]
   activityLogs  ActivityLog[]
   expoSites     ExpoSite[]
 }
@@ -521,6 +529,7 @@ model CollectRecord {
   workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   /// 등록 확인이 전화번호로도 조회한다 — 없으면 5만 건 풀스캔.
+  checkIns         CollectCheckIn[]
   @@index([sourceId, phoneE164])
   // (sourceId, emailNormalized) 유니크는 **부분 인덱스**(WHERE emailNormalized IS NOT NULL)라
   // 여기 선언할 수 없다 — supabase/migrations/20260815_collect_builder.sql 에 raw SQL 로 있다.
@@ -1730,4 +1739,25 @@ model ExpoTemplate {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, createdAt(sort: Desc)])
+}
+
+/// 현장 체크인 스캔 한 번 = 한 행. 재스캔도 전부 남긴다 — 순방문은 집계에서 (recordId, eventDate) 로 거른다.
+model CollectCheckIn {
+  id         String   @id @default(cuid())
+  sourceId   String
+  recordId   String
+  /// 행사 시간대(checkinTimezone) 기준 날짜 "2026-10-22"
+  eventDate  String
+  scannedAt  DateTime @default(now())
+  /// camera · scanner · manual
+  method     String   @default("camera")
+  /// 운영요원이 적은 이름·입구 — 선택
+  staffLabel String   @default("")
+
+  source CollectSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  record CollectRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@index([sourceId, scannedAt])
+  @@index([sourceId, eventDate])
+  @@index([recordId])
 }

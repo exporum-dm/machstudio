@@ -36,7 +36,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   });
   if (!record) return NextResponse.json({ error: "레코드를 찾을 수 없어요" }, { status: 404 });
 
-  return NextResponse.json({ record });
+  // 현장 체크인 기록 — 상세에서는 스캔 시각을 전부 보여 준다(최근 순, 최대 50).
+  const [checkIns, src] = await Promise.all([
+    prisma.collectCheckIn.findMany({
+      where: { recordId },
+      orderBy: { scannedAt: "desc" },
+      take: 50,
+      select: { scannedAt: true, method: true, staffLabel: true },
+    }),
+    prisma.collectSource.findUnique({ where: { id }, select: { checkinTimezone: true } }),
+  ]);
+
+  return NextResponse.json({ record: { ...record, checkIns, checkinTimezone: src?.checkinTimezone ?? "Asia/Seoul" } });
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string; recordId: string }> }) {
