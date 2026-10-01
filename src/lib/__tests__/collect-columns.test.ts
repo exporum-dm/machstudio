@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectColumnsFor, isBuilderSource } from "@/lib/collect-columns";
+import { collectColumnsFor, formatCollectValue, isBuilderSource } from "@/lib/collect-columns";
 
 /**
  * 표·CSV 의 열 목록.
@@ -144,5 +144,21 @@ describe("isBuilderSource", () => {
     expect(isBuilderSource({ mode: "builder" })).toBe(true);
     expect(isBuilderSource({ mode: "capture" })).toBe(false);
     expect(isBuilderSource({ mode: "" })).toBe(false);
+  });
+});
+
+describe("formatCollectValue — 화면·CSV 에 찍을 글자", () => {
+  /** 체크박스·동의는 불리언으로 저장된다. React 는 불리언을 그리지 않아 "체크했는데 빈칸" 이 됐다. */
+  it("불리언은 TRUE / FALSE", () => {
+    expect(formatCollectValue(true)).toBe("TRUE");
+    expect(formatCollectValue(false)).toBe("FALSE");
+  });
+
+  it("빈 값은 빈 문자열, 배열은 쉼표로, 숫자는 그대로", () => {
+    expect(formatCollectValue(null)).toBe("");
+    expect(formatCollectValue(undefined)).toBe("");
+    expect(formatCollectValue(["A", "B"])).toBe("A, B");
+    expect(formatCollectValue(3)).toBe("3");
+    expect(formatCollectValue("Male")).toBe("Male");
   });
 });

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { collectColumnsFor, isBuilderSource } from "@/lib/collect-columns";
+import { collectColumnsFor, formatCollectValue, isBuilderSource } from "@/lib/collect-columns";
 import { formatKstDateTime, kstDateString } from "@/lib/datetime";
 import { logActivity } from "@/lib/activity";
 
@@ -71,7 +71,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
             ciById.get(r.id)?.count ?? "",
           ]
         : []),
-      ...columns.map((f) => data[f.key] ?? ""),
+      ...columns.map((f) => formatCollectValue(data[f.key])),
       r.utmSource ?? "",
       r.utmMedium ?? "",
       r.utmCampaign ?? "",
