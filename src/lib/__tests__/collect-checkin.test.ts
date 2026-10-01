@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   SAME_CODE_COOLDOWN_MS,
+  checkinSlugError,
+  normalizeCheckinSlug,
   eventDateIn,
   judgeScan,
   normalizeCheckinTimezone,
@@ -29,6 +31,21 @@ describe("행사 시간대 기준 날짜", () => {
 
   it("시각 표시도 그 시간대로", () => {
     expect(timeIn("America/Los_Angeles", "2026-10-22T17:12:00Z")).toMatch(/10:12/);
+  });
+});
+
+describe("운영요원 링크 주소(직접 정하기)", () => {
+  it("입력 시점에 정규화 — 소문자, 공백·밑줄은 하이픈, 나머지 글자는 버린다", () => {
+    expect(normalizeCheckinSlug(" LA 2026_Gate A ")).toBe("la-2026-gate-a");
+    expect(normalizeCheckinSlug("코리아엑스포la2026!")).toBe("la2026");
+    expect(normalizeCheckinSlug("a--b")).toBe("a-b");
+  });
+
+  it("4자 미만·하이픈으로 시작/끝은 막는다", () => {
+    expect(checkinSlugError("la")).not.toBe("");
+    expect(checkinSlugError("-la2026")).not.toBe("");
+    expect(checkinSlugError("la2026-")).not.toBe("");
+    expect(checkinSlugError("la2026")).toBe("");
   });
 });
 

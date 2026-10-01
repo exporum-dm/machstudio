@@ -10,11 +10,11 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import QRCode from "qrcode";
-import { Copy, ExternalLink, KeyRound, Loader2, RefreshCw, ScanLine } from "lucide-react";
+import { Copy, ExternalLink, KeyRound, Link2, Loader2, RefreshCw, ScanLine } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Btn, Chip, FINISH, R } from "@/components/ui/primitives";
-import { CHECKIN_TIMEZONES, dateTimeIn, normalizePin } from "@/lib/collect-checkin";
+import { CHECKIN_TIMEZONES, checkinSlugError, dateTimeIn, normalizeCheckinSlug, normalizePin } from "@/lib/collect-checkin";
 
 interface CheckinState {
   builder: boolean;
@@ -22,6 +22,10 @@ interface CheckinState {
   timezone: string;
   pinSet: boolean;
   url: string;
+  /** 링크 끝부분 — 운영자가 직접 정한다 */
+  slug: string;
+  /** "https://machstudio.vercel.app/checkin/" */
+  linkBase: string;
   today: string;
   eventDates: string[];
   byDay: { eventDate: string; scans: number; unique: number }[];
@@ -51,6 +55,14 @@ export default function CheckinTab({ sourceId, canEdit }: { sourceId: string; ca
   const [state, setState] = useState<CheckinState | null>(null);
   const [error, setError] = useState("");
   const [pin, setPin] = useState("");
+  const [slug, setSlug] = useState("");
+  const [slugError, setSlugError] = useState("");
+  // 서버 값이 바뀌면(첫 로드·저장) 칸도 따라간다 — 렌더 중 조정
+  const [seenSlug, setSeenSlug] = useState<string | null>(null);
+  if (state && seenSlug !== state.slug) {
+    setSeenSlug(state.slug);
+    setSlug(state.slug);
+  }
   const [saving, setSaving] = useState(false);
   const [qr, setQr] = useState("");
 
@@ -92,7 +104,14 @@ export default function CheckinTab({ sourceId, canEdit }: { sourceId: string; ca
         body: JSON.stringify(body),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "저장하지 못했어요");
+      if (!res.ok) {
+        // 주소 칸 오류는 칸 바로 아래에(AGENTS.md 공통) — 토스트로 흘려보내지 않는다
+        if (data.field === "slug") {
+          setSlugError(data.error);
+          return false;
+        }
+        throw new Error(data.error || "저장하지 못했어요");
+      }
       setState((s) => (s ? { ...s, ...data } : s));
       toast.success(okMsg);
       return true;
@@ -124,6 +143,25 @@ export default function CheckinTab({ sourceId, canEdit }: { sourceId: string; ca
     if (ok) await patch({ regenerateToken: true }, "새 링크를 만들었어요");
   };
 
+  const saveSlug = async () => {
+    const err = checkinSlugError(slug);
+    if (err) {
+      setSlugError(err);
+      return;
+    }
+    await patch({ slug }, `링크 주소를 저장했어요 — …/checkin/${slug}`);
+  };
+
+  const savePin = async () => {
+    const msg = state?.pinSet
+      ? `PIN을 ${pin}(으)로 바꿨어요 — 운영요원은 새 PIN으로 다시 들어와야 해요`
+      : `PIN을 ${pin}(으)로 저장했어요 — 운영요원에게 알려 주세요`;
+    if (await patch({ pin }, msg)) {
+      setPin("");
+      setState((s) => (s ? { ...s, pinSet: true } : s));
+    }
+  };
+
   if (error) return <p className="text-sm text-destructive">{error}</p>;
   if (!state) return <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> 불러오는 중</div>;
   if (!state.builder) {
@@ -147,6 +185,45 @@ export default function CheckinTab({ sourceId, canEdit }: { sourceId: string; ca
           <Switch label="현장 체크인" on={state.enabled} disabled={!canEdit || saving} onChange={(enabled) => patch({ enabled }, enabled ? "현장 체크인을 켰어요" : "현장 체크인을 껐어요")} />
         </div>
 
+        {/* ① 링크 주소 — 직접 정한다 */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium" htmlFor="checkin-slug">운영요원 링크 주소</label>
+          <div className="flex items-center gap-2">
+            <div className={`flex min-w-0 flex-1 items-center ${R.control} ${slugError ? FINISH.s2Danger : FINISH.s2} bg-background focus-within:ring-2 focus-within:ring-ring`}>
+              <Link2 className="ml-3 h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="hidden shrink-0 pl-2 font-mono text-xs text-muted-foreground sm:inline">{(state.linkBase || "/checkin/").replace(/^https?:\/\//, "")}</span>
+              <span className="shrink-0 pl-2 font-mono text-xs text-muted-foreground sm:hidden">/checkin/</span>
+              <input
+                id="checkin-slug"
+                value={slug}
+                onChange={(e) => {
+                  setSlug(normalizeCheckinSlug(e.target.value));
+                  setSlugError("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && slug !== state.slug) void saveSlug();
+                }}
+                disabled={!canEdit}
+                placeholder="예: la2026"
+                autoComplete="off"
+                spellCheck={false}
+                className="min-w-0 flex-1 bg-transparent py-2 pr-3 font-mono text-sm outline-none placeholder:font-sans placeholder:text-muted-foreground/60"
+              />
+            </div>
+            <Btn tone="key" disabled={!canEdit || saving || !slug || slug === state.slug} onClick={saveSlug}>
+              저장
+            </Btn>
+          </div>
+          {slugError ? (
+            <p className="text-[11px] text-destructive">{slugError}</p>
+          ) : (
+            <p className="text-[11px] text-muted-foreground">
+              영문 소문자·숫자·하이픈(-) 4~40자. 기억하기 쉬운 주소여도 PIN이 없으면 열리지 않아요. 바꾸면 예전 주소는 바로 막혀요.
+            </p>
+          )}
+        </div>
+
+        {/* ② PIN — 직접 정한다 */}
         <div className="space-y-1.5">
           <label className="text-xs font-medium" htmlFor="checkin-pin">운영요원 PIN (숫자 4자리)</label>
           <div className="flex items-center gap-2">
@@ -156,33 +233,30 @@ export default function CheckinTab({ sourceId, canEdit }: { sourceId: string; ca
                 id="checkin-pin"
                 value={pin}
                 onChange={(e) => setPin(normalizePin(e.target.value))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && pin.length === 4) void savePin();
+                }}
                 inputMode="numeric"
                 autoComplete="off"
                 disabled={!canEdit}
-                placeholder={state.pinSet ? "설정됨 · 바꾸려면 새 4자리 입력" : "4자리 입력"}
+                placeholder={state.pinSet ? "설정됨 · 바꾸려면 새 4자리 입력" : "정할 숫자 4자리 입력"}
                 className={`w-full ${R.control} ${FINISH.s2} bg-background py-2 pl-9 pr-3 font-mono text-sm tracking-[0.3em] outline-none placeholder:font-sans placeholder:tracking-normal placeholder:text-muted-foreground/60 focus:ring-2 focus:ring-ring`}
               />
             </div>
-            <Btn
-              tone="key"
-              disabled={!canEdit || pin.length !== 4 || saving}
-              onClick={async () => {
-                if (await patch({ pin }, state.pinSet ? "PIN을 바꿨어요 — 운영요원은 새 PIN으로 다시 들어와야 해요" : "PIN을 저장했어요")) {
-                  setPin("");
-                  setState((s) => (s ? { ...s, pinSet: true } : s));
-                }
-              }}
-            >
+            <Btn tone="key" disabled={!canEdit || pin.length !== 4 || saving} onClick={savePin}>
               저장
             </Btn>
           </div>
           <p className="text-[11px] text-muted-foreground">
-            {state.pinSet ? "PIN이 설정돼 있어요. 바꾸면 이미 들어와 있던 운영요원도 새 PIN을 다시 입력해야 해요." : "PIN이 없으면 운영요원이 들어올 수 없어요."}
+            {state.pinSet
+              ? "PIN이 저장돼 있어요. 보안상 저장한 PIN은 다시 보여 주지 않으니 따로 적어 두세요. 바꾸면 이미 들어와 있던 운영요원도 새 PIN을 다시 입력해야 해요."
+              : "PIN이 없으면 운영요원이 들어올 수 없어요."}
           </p>
         </div>
 
+        {/* ③ 시간대 — 체크인에만 쓰인다 */}
         <div className="space-y-1.5">
-          <label className="text-xs font-medium" htmlFor="checkin-tz">행사 시간대</label>
+          <label className="text-xs font-medium" htmlFor="checkin-tz">입장 시각 기준 시간대</label>
           <select
             id="checkin-tz"
             value={state.timezone}
@@ -192,12 +266,16 @@ export default function CheckinTab({ sourceId, canEdit }: { sourceId: string; ca
           >
             {CHECKIN_TIMEZONES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
-          <p className="text-[11px] text-muted-foreground">입장 날짜와 시각이 이 시간대로 기록돼요. 해외 전시는 현지 시간대로 맞춰 주세요.</p>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            <b className="text-foreground">현장 체크인에만 쓰여요</b> — 등록 시간·CSV 등 다른 시간은 그대로 한국 시간이에요.
+            해외 전시는 현지 시간대로 맞춰야 날짜가 밀리지 않아요(서울 기준이면 LA 오후 입장이 다음 날로 잡혀요).
+          </p>
         </div>
 
+        {/* 링크·QR */}
         {state.enabled && state.url ? (
           <div className="space-y-2 border-t border-border pt-4">
-            <p className="text-xs font-medium">운영요원 링크</p>
+            <p className="text-xs font-medium">운영요원에게 보낼 링크</p>
             <div className={`flex items-center gap-1 ${R.control} bg-secondary/60 p-1.5`}>
               <span className="min-w-0 flex-1 truncate px-1.5 font-mono text-xs">{state.url}</span>
               <Btn tone="ghost" className="px-2" onClick={copy} aria-label="링크 복사"><Copy className="h-4 w-4" /></Btn>
@@ -216,12 +294,16 @@ export default function CheckinTab({ sourceId, canEdit }: { sourceId: string; ca
             </div>
             {canEdit && (
               <button type="button" onClick={regenerate} className="text-[11px] text-muted-foreground underline-offset-2 hover:text-destructive hover:underline">
-                링크 새로 만들기 (예전 링크 막기)
+                짐작하기 어려운 무작위 주소로 바꾸기 (예전 링크 막기)
               </button>
             )}
           </div>
         ) : (
-          <p className="border-t border-border pt-4 text-xs text-muted-foreground">켜면 운영요원 링크와 QR이 여기 나타나요.</p>
+          <p className="border-t border-border pt-4 text-xs text-muted-foreground">
+            {state.enabled
+              ? "링크 주소를 저장하면 여기에 링크와 QR이 나와요."
+              : "켜면 운영요원 링크와 QR이 여기 나타나요. 꺼 둔 상태에서도 주소·PIN·시간대는 미리 정해 둘 수 있어요."}
+          </p>
         )}
       </section>
 

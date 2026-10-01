@@ -17,6 +17,8 @@ let state = {
   timezone: "America/Los_Angeles",
   pinSet: false,
   url: "",
+  slug: "",
+  linkBase: "http://localhost:3000/checkin/",
   today: "2026-10-22",
   eventDates: ["2026-10-22", "2026-10-23", "2026-10-24"],
   byDay: [{ eventDate: "2026-10-22", scans: 1342, unique: 1187 }],
@@ -40,7 +42,14 @@ if (typeof window !== "undefined" && !(window as unknown as { __ciStub?: boolean
     await new Promise((r) => setTimeout(r, 120));
     if ((init?.method ?? "GET") === "PATCH") {
       const body = JSON.parse(String(init?.body ?? "{}"));
-      if (body.enabled === true) state = { ...state, enabled: true, url: "http://localhost:3000/checkin/W0rG3-YdUSTQAkIhdDe8xREC" };
+      if (body.slug === "taken") {
+        return new Response(JSON.stringify({ error: "이미 다른 사전등록이 쓰는 주소예요", field: "slug" }), { status: 409 });
+      }
+      if (body.slug) state = { ...state, slug: body.slug, url: `http://localhost:3000/checkin/${body.slug}` };
+      if (body.enabled === true) {
+        const slug = state.slug || "W0rG3-YdUSTQAkIhdDe8xREC";
+        state = { ...state, enabled: true, slug, url: `http://localhost:3000/checkin/${slug}` };
+      }
       if (body.enabled === false) state = { ...state, enabled: false };
       if (body.pin) state = { ...state, pinSet: true };
       if (body.timezone) state = { ...state, timezone: body.timezone };

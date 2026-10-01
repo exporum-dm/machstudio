@@ -7,13 +7,14 @@
  *  · 서명 비밀은 PIN 해시 — 운영자가 PIN 을 바꾸면 기존 세션이 전부 끊긴다(분실 대응)
  *  · 토큰별 쿠키 — 링크를 새로 만들면 예전 링크 쿠키는 쓸모가 없다
  */
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import "server-only";
 
 const MAX_AGE_SECONDS = 14 * 60 * 60;
 
 export function checkinCookieName(token: string): string {
-  return `mc_checkin_${token.slice(0, 12)}`;
+  // 운영자가 정한 짧은 주소는 앞부분이 겹칠 수 있다(la2026-a / la2026-b) — 해시로 이름을 나눈다.
+  return `mc_checkin_${createHash("sha256").update(token).digest("hex").slice(0, 16)}`;
 }
 
 function sign(token: string, secret: string, expiresAt: number): string {

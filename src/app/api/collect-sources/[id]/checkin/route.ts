@@ -16,7 +16,7 @@ import { getPublicAppOrigin } from "@/lib/app-url";
 import { hashSharePassword } from "@/lib/share-password";
 import { normalizeCollectForm } from "@/lib/collect-form-config";
 import { buildTicketView } from "@/lib/collect-lookup";
-import { eventDateIn, isCheckinTimezone, isValidPin, normalizePin } from "@/lib/collect-checkin";
+import { checkinSlugError, eventDateIn, isCheckinTimezone, isValidPin, normalizeCheckinSlug, normalizePin } from "@/lib/collect-checkin";
 
 async function authorize(id: string, requireAdmin: boolean) {
   const supabase = await createClient();
@@ -69,6 +69,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     timezone: source.checkinTimezone,
     pinSet: Boolean(source.checkinPinHash),
     url: checkinUrl(request, source.checkinToken),
+    slug: source.checkinToken ?? "",
+    linkBase: checkinUrl(request, "x").replace(/x$/, ""),
     today: eventDateIn(source.checkinTimezone),
     eventDates: config.eventInfo.eventDates,
     byDay,
@@ -121,9 +123,38 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     data.checkinToken = newToken();
     changed.push("링크 새로 만듦");
   }
-  if (changed.length === 0) return NextResponse.json({ error: "바꿀 내용이 없어요" }, { status: 400 });
+  if (body.slug !== undefined) {
+    // 운영자가 직접 정한 주소. 바꾸면 예전 주소는 바로 안 열린다.
+    const slug = normalizeCheckinSlug(body.slug);
+    const err = checkinSlugError(slug);
+    if (err) return NextResponse.json({ error: err, field: "slug" }, { status: 400 });
+    if (slug !== source.checkinToken) {
+      const taken = await prisma.collectSource.findFirst({ where: { checkinToken: slug, NOT: { id } }, select: { id: true } });
+      if (taken) return NextResponse.json({ error: "이미 다른 사전등록이 쓰는 주소예요", field: "slug" }, { status: 409 });
+      data.checkinToken = slug;
+      changed.push(`링크 주소 ${slug}`);
+    }
+  }
+  if (changed.length === 0) {
+    return NextResponse.json({
+      enabled: source.checkinEnabled,
+      timezone: source.checkinTimezone,
+      pinSet: Boolean(source.checkinPinHash),
+      url: checkinUrl(request, source.checkinToken),
+      slug: source.checkinToken ?? "",
+    });
+  }
 
-  const updated = await prisma.collectSource.update({ where: { id }, data });
+  let updated;
+  try {
+    updated = await prisma.collectSource.update({ where: { id }, data });
+  } catch (e) {
+    // 같은 주소를 동시에 저장한 경우 — 위 확인을 지나쳐도 DB 유일 제약이 막는다
+    if (typeof e === "object" && e && "code" in e && e.code === "P2002") {
+      return NextResponse.json({ error: "이미 다른 사전등록이 쓰는 주소예요", field: "slug" }, { status: 409 });
+    }
+    throw e;
+  }
   await logActivity({ workspaceId: source.workspaceId, sourceId: id, userId, action: "collect.checkin_updated", meta: { changed } }).catch(() => null);
 
   return NextResponse.json({
@@ -131,5 +162,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     timezone: updated.checkinTimezone,
     pinSet: Boolean(updated.checkinPinHash),
     url: checkinUrl(request, updated.checkinToken),
+    slug: updated.checkinToken ?? "",
   });
 }

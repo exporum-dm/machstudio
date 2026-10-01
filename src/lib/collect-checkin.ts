@@ -69,6 +69,30 @@ export function dateTimeIn(timezone: string, at: Date | string): string {
   return `${md} ${timeIn(timezone, d)}`;
 }
 
+/**
+ * 운영요원 링크 끝부분(/checkin/{slug}) — 운영자가 직접 정한다(예: "la2026").
+ *
+ * 기억하기 쉬운 주소는 남이 짐작하기도 쉽다. 그래서 링크만으로는 아무것도 안 열리고 **PIN 이 진짜 문**이다
+ * (PIN 시도는 기기·링크 단위로 묶여 있다). 영문 소문자·숫자·하이픈만, 4~40자.
+ * 입력은 소스에서 정규화한다 — 대문자는 소문자로, 공백·밑줄은 하이픈으로, 그 밖의 글자는 버린다.
+ */
+export function normalizeCheckinSlug(input: unknown): string {
+  if (typeof input !== "string") return "";
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-{2,}/g, "-")
+    .slice(0, 40);
+}
+
+export function checkinSlugError(slug: string): string {
+  if (slug.length < 4) return "4자 이상으로 정해 주세요";
+  if (slug.startsWith("-") || slug.endsWith("-")) return "하이픈(-)으로 시작하거나 끝날 수 없어요";
+  return "";
+}
+
 /** PIN 은 숫자 4자리. 입력은 소스에서 정규화한다 — 숫자 아닌 건 버린다. */
 export function normalizePin(input: unknown): string {
   return typeof input === "string" ? input.replace(/\D/g, "").slice(0, 4) : "";

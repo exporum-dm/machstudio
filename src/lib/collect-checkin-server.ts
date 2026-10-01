@@ -24,7 +24,8 @@ export const checkinSourceSelect = {
 } as const;
 
 export async function loadCheckinSource(token: string) {
-  if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) return null;
+  // 운영자가 정한 짧은 주소(4~40자, 소문자·숫자·하이픈)와 자동 생성 주소(24자) 둘 다 받는다
+  if (!/^[A-Za-z0-9_-]{4,64}$/.test(token)) return null;
   const source = await prisma.collectSource.findUnique({ where: { checkinToken: token }, select: checkinSourceSelect });
   if (!source || source.deletedAt || source.mode !== "builder" || !source.checkinEnabled) return null;
   return source;
