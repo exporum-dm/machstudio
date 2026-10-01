@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import jsQR from "jsqr";
 import { Camera, CameraOff, CheckCircle2, AlertTriangle, XCircle, Keyboard, Loader2, ScanLine, UserRound } from "lucide-react";
-import { shouldSubmitScan, timeIn, type CheckinMethod, type ScanResult } from "@/lib/collect-checkin";
+import { resultDisplayMs, shouldSubmitScan, timeIn, type CheckinMethod, type ScanResult } from "@/lib/collect-checkin";
 
 interface Status {
   sourceName: string;
@@ -262,6 +262,13 @@ function ScanPanel({
     submitRef.current = submit;
   }, [submit]);
 
+  // 판정 카드는 잠깐 보여 주고 스스로 사라진다 — 다음 사람 QR 을 비출 자리를 비운다
+  useEffect(() => {
+    if (!shown) return;
+    const t = setTimeout(() => setShown(null), resultDisplayMs(shown.status, cameraOn));
+    return () => clearTimeout(t);
+  }, [shown, cameraOn]);
+
   // 카메라 프레임 읽기
   useEffect(() => {
     if (!cameraOn) return;
@@ -371,12 +378,22 @@ function ScanPanel({
           <>
             <div className="pointer-events-none absolute inset-x-[16%] top-[10%] aspect-square rounded-2xl border-2 border-white/70 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
             {shown && (
-              <div className="absolute inset-x-2 bottom-2">
+              // 눌러서 바로 닫을 수도 있다 — 기다리지 않고 다음 사람을 찍을 때
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setShown(null)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape" || e.key === " ") setShown(null);
+                }}
+                className="absolute inset-x-2 bottom-2 cursor-pointer text-left"
+                aria-label="판정 닫기"
+              >
                 <ResultCard result={shown} timezone={timezone} overlay />
               </div>
             )}
-            {sending && <Loader2 className="absolute right-3 top-3 h-5 w-5 animate-spin text-white/80" />}
-            <button type="button" onClick={stopCamera} className="absolute bottom-3 right-3 rounded-full bg-black/60 p-2.5 text-white/80" aria-label="카메라 끄기">
+            {sending && <Loader2 className="absolute left-3 top-3 h-5 w-5 animate-spin text-white/80" />}
+            <button type="button" onClick={stopCamera} className="absolute right-3 top-3 rounded-full bg-black/60 p-2.5 text-white/80" aria-label="카메라 끄기">
               <CameraOff className="h-5 w-5" />
             </button>
           </>

@@ -10,6 +10,7 @@ import {
   normalizePin,
   isValidPin,
   pickCompany,
+  resultDisplayMs,
   shouldSubmitScan,
   timeIn,
   type ScanPerson,
@@ -76,6 +77,19 @@ describe("재스캔 판정 — 막지 않고 알린다", () => {
     const first = t("2026-10-22T17:00:00Z");
     const now = t("2026-10-22T19:30:00Z");
     expect(judgeScan(person, [first, now], now)).toMatchObject({ status: "repeat", todayCount: 2, firstAtToday: first.toISOString() });
+  });
+});
+
+describe("판정 카드 표시 시간", () => {
+  /** 현장 피드백: 카드가 계속 떠 있으면 다음 사람 QR 을 비출 수 없다 — 1~2초 뒤 사라져야 한다. */
+  it("카메라 스캔은 1.5~2초", () => {
+    expect(resultDisplayMs("first", true)).toBe(1500);
+    expect(resultDisplayMs("repeat", true)).toBe(2000);
+    expect(resultDisplayMs("not_found", true)).toBe(2000);
+  });
+
+  it("카메라를 끈 직접 입력은 조금 더 길게", () => {
+    expect(resultDisplayMs("first", false)).toBe(4000);
   });
 });
 
