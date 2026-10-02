@@ -1,5 +1,5 @@
 import { visitorBadgePalette } from "@/lib/collect-badge";
-import { localize, type CollectFormConfig } from "@/lib/collect-form-config";
+import { DEFAULT_EMAIL_CALLOUT, localize, type CollectFormConfig } from "@/lib/collect-form-config";
 import { buildTicketView } from "@/lib/collect-lookup";
 
 const escapeHtml = (value: string) => value
@@ -43,6 +43,12 @@ function eventRows(config: CollectFormConfig, locale: string) {
     if (label && value) rows.push([label, value]);
   }
   return rows;
+}
+
+/** 숫자 사이에 &zwnj;(보이지 않는 글자)를 끼워 메일 앱이 날짜·시각·전화로 인식해 링크로 바꾸지 못하게 한다. */
+export function noAutoLink(html: string): string {
+  // &#39; 같은 HTML 엔티티 안의 숫자는 건드리지 않는다(깨진다) — 엔티티는 통째로 지나간다
+  return html.replace(/&#?\w+;|\d{2,}/g, (m) => (m.startsWith("&") ? m : m.split("").join("&zwnj;")));
 }
 
 export function buildCollectConfirmationEmail({
@@ -111,10 +117,13 @@ export function buildCollectConfirmationEmail({
 
   // 등록 데스크에서 QR 을 보여 달라는 요청이 문의로 자주 들어와, 본문 안내 문구와 별개로
   // 눈에 띄는 강조 박스를 하나 더 둔다(완료 화면·티켓 페이지와 같은 문구·같은 강조 방식).
+  // 문구는 행사마다 다르다(입구 접수대 / 메인 스테이지 접수대 …) — 비우면 기본 문구.
+  const calloutTitle = localize(email.calloutTitle, locale) || DEFAULT_EMAIL_CALLOUT.title;
+  const calloutBody = localize(email.calloutBody, locale) || DEFAULT_EMAIL_CALLOUT.body;
   const checkinCalloutHtml = email.showQr
     ? `<div style="margin:20px 0 0;padding:16px 18px;border-radius:14px;border-left:4px solid ${accent};background:${tint(accent, 0.16)};">
-        <div style="font-size:14px;font-weight:800;color:${accent};line-height:1.5;">Show this QR code at the registration desk</div>
-        <div style="margin-top:2px;font-size:13px;color:#555;line-height:1.5;">to check in and enter the event.</div>
+        <div style="font-size:14px;font-weight:800;color:${accent};line-height:1.5;">${escapeHtml(calloutTitle)}</div>
+        ${calloutBody ? `<div style="margin-top:2px;font-size:13px;color:#555;line-height:1.5;">${lines(calloutBody)}</div>` : ""}
       </div>`
     : "";
 
@@ -141,12 +150,20 @@ export function buildCollectConfirmationEmail({
     </div>`;
   }).join("");
 
-  const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f4f5f7;">
+  /*
+   * 메일 앱의 자동 링크 막기 — 아이폰 메일·아웃룩 모바일은 "2026" 같은 숫자를 날짜·시각으로, 주소처럼 보이는
+   * 글자를 지도 링크로 **멋대로 파란 밑줄 링크**로 바꾼다(2026-10 확인 메일의 "2026 Korea" 가 파랗게 보인 원인).
+   *  · format-detection 메타: iOS 가 전화·날짜·주소·이메일을 링크로 만들지 않게
+   *  · a[x-apple-data-detectors] 스타일: 그래도 만들어진 링크는 원래 글자 모양 그대로
+   *  · 행사명 숫자 사이에 보이지 않는 글자(&zwnj;)를 끼워 날짜 인식 자체를 끊는다(아웃룩은 메타를 안 본다)
+   */
+  const headHtml = `<head><meta charset="utf-8"><meta name="format-detection" content="telephone=no, date=no, address=no, email=no, url=no"><meta name="x-apple-disable-message-reformatting"><style>a[x-apple-data-detectors]{color:inherit!important;text-decoration:none!important;font-size:inherit!important;font-family:inherit!important;font-weight:inherit!important;line-height:inherit!important;}u+#body a{color:inherit;text-decoration:none;}</style></head>`;
+  const html = `<!doctype html><html>${headHtml}<body id="body" style="margin:0;padding:0;background:#f4f5f7;">
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f5f7;"><tr><td align="center" style="padding:32px 12px;">
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;background:#ffffff;border-radius:18px;overflow:hidden;">
         <tr><td style="height:8px;background:${accent};font-size:0;line-height:0;">&nbsp;</td></tr>
         <tr><td style="padding:34px 34px 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#171717;">
-          <div style="font-size:13px;font-weight:700;color:${accent};letter-spacing:.04em;">${escapeHtml(eventName)}</div>
+          <div style="font-size:13px;font-weight:700;color:${accent};letter-spacing:.04em;">${noAutoLink(escapeHtml(eventName))}</div>
           <h1 style="margin:10px 0 12px;font-size:26px;line-height:1.25;">${escapeHtml(heading)}</h1>
           <p style="margin:0;color:#555;font-size:14px;line-height:1.75;">${lines(body)}</p>
           ${checkinCalloutHtml}

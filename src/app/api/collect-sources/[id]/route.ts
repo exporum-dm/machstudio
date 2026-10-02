@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { collectColumnsFor } from "@/lib/collect-columns";
 import { logActivity } from "@/lib/activity";
 import { normalizeCollectForm } from "@/lib/collect-form-config";
+import { backfillEmailNormalized } from "@/lib/collect-email-backfill";
 
 /**
  * 화면에 돌려주는 소스 한 벌.
@@ -231,13 +232,20 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     meta: { fields: Object.keys(body) },
   });
 
+  // 폼 정의가 바뀌면 이메일 칸이 '텍스트 → 이메일' 로 고쳐졌을 수 있다 — 그 전에 들어온 등록에도
+  // 중복 판정용 이메일을 채워야 같은 이메일 재등록이 막힌다(collect-email-backfill.ts 머리말).
+  let emailBackfill: { filled: number; duplicates: number } | null = null;
+  if (body.formConfig !== undefined && source.mode === "builder") {
+    emailBackfill = await backfillEmailNormalized(source.id, normalizeCollectForm(source.formConfig)).catch(() => null);
+  }
+
   /**
    * **GET 과 같은 계약으로 돌려준다.** 화면은 저장 성공 시 상태를 통째로 교체하는데
    * (collect/[id]/page.tsx 의 setSource), 원본 매핑을 그대로 주면 빌더형은 그 값이
    * 항상 [] 라 방금까지 보이던 문항 열이 화면에서 사라진다 — 새로고침해야 돌아온다.
    * 운영자에게는 "저장했더니 데이터가 날아갔다" 로 보인다.
    */
-  return NextResponse.json({ source: sourcePayload(source) });
+  return NextResponse.json({ source: sourcePayload(source), ...(emailBackfill && (emailBackfill.filled || emailBackfill.duplicates) ? { emailBackfill } : {}) });
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {

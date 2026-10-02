@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCollectConfirmationEmail } from "../collect-confirmation-email";
+import { buildCollectConfirmationEmail, noAutoLink } from "../collect-confirmation-email";
 import { normalizeCollectForm } from "../collect-form-config";
 
 describe("buildCollectConfirmationEmail", () => {
@@ -100,5 +100,49 @@ describe("buildCollectConfirmationEmail", () => {
     expect(result.html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
     expect(result.html).not.toContain("<script>");
     expect(result.html).not.toContain("href=");
+  });
+});
+
+describe("QR 안내 박스 문구 · 자동 링크 막기", () => {
+  const base = {
+    fields: [{ key: "email", label: "Email", type: "email", enabled: true }],
+    legal: { eventName: "2026 Korea Expo LA Oneday Class" },
+  };
+  const build = (confirmationEmail: Record<string, unknown>) =>
+    buildCollectConfirmationEmail({
+      config: normalizeCollectForm({ ...base, confirmationEmail: { enabled: true, ...confirmationEmail } }),
+      sourceName: "x",
+      locale: "en",
+      registrationNo: "1234567890128",
+      data: { email: "a@b.co" },
+    }).html;
+
+  it("비우면 기본 문구", () => {
+    const html = build({});
+    expect(html).toContain("Show this QR code at the registration desk");
+    expect(html).toContain("to check in and enter the event.");
+  });
+
+  /** 메인 스테이지 프로그램은 입구가 아니라 무대 앞 접수대에서 한 번 더 확인한다 — 행사마다 문구가 다르다. */
+  it("운영자가 정한 문구로 바꾼다", () => {
+    const html = build({ calloutTitle: "Show this QR code at the Main Stage desk", calloutBody: "Check in again at the stage\nbefore the class." });
+    expect(html).toContain("Show this QR code at the Main Stage desk");
+    expect(html).toContain("Check in again at the stage<br>before the class.");
+    expect(html).not.toContain("registration desk");
+  });
+
+  /** 아이폰 메일·아웃룩 모바일이 "2026 Korea" 를 날짜로 보고 파란 밑줄 링크로 바꾼 사례. */
+  it("메일 앱의 자동 링크를 막는다 — 메타·스타일·행사명 숫자 끊기", () => {
+    const html = build({});
+    expect(html).toContain('name="format-detection"');
+    expect(html).toContain("a[x-apple-data-detectors]");
+    expect(html).toContain("2&zwnj;0&zwnj;2&zwnj;6 Korea Expo LA Oneday Class");
+  });
+});
+
+describe("noAutoLink", () => {
+  it("HTML 엔티티 속 숫자는 건드리지 않는다", () => {
+    expect(noAutoLink("Rock &#39;n&#39; Roll 2026")).toBe("Rock &#39;n&#39; Roll 2&zwnj;0&zwnj;2&zwnj;6");
+    expect(noAutoLink("Day 1")).toBe("Day 1");
   });
 });

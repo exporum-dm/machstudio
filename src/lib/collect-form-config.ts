@@ -205,6 +205,12 @@ export interface CollectCompletion {
   showQr: boolean;
 }
 
+/** 확인 메일 QR 강조 박스의 기본 문구 — 운영자가 비워 두면 이걸 쓴다(빌더 칸의 placeholder 도 같은 값). */
+export const DEFAULT_EMAIL_CALLOUT = {
+  title: "Show this QR code at the registration desk",
+  body: "to check in and enter the event.",
+} as const;
+
 /** 등록 저장 직후 보내는 거래성 확인 메일. API 키·발신 주소는 서버 환경변수에만 둔다. */
 export interface CollectConfirmationEmail {
   enabled: boolean;
@@ -216,6 +222,13 @@ export interface CollectConfirmationEmail {
   /** 비우면 답장 주소를 지정하지 않는다. 발신 주소와 별개다. */
   replyTo: string;
   showQr: boolean;
+  /**
+   * QR 위 강조 박스 문구. 비우면 기본("Show this QR code at the registration desk" / "to check in and enter
+   * the event."). 행사마다 QR 을 보여 줄 곳이 다르다 — 예: 메인 스테이지 프로그램은 입구가 아니라 무대 앞
+   * 접수대에서 한 번 더 확인한다(2026-10 원데이클래스).
+   */
+  calloutTitle: Localized;
+  calloutBody: Localized;
   includeEventInfo: boolean;
   /** 메일 하단 팔로우 링크 — 비우면 그 항목을 아예 그리지 않는다. */
   instagramUrl: string;
@@ -323,6 +336,8 @@ export const EMPTY_FORM_CONFIG: CollectFormConfig = {
     buttonLabel: {},
     replyTo: "",
     showQr: true,
+    calloutTitle: {},
+    calloutBody: {},
     includeEventInfo: true,
     instagramUrl: "",
     tiktokUrl: "",
@@ -615,6 +630,8 @@ export function normalizeCollectForm(raw: unknown): CollectFormConfig {
       buttonLabel: toLocalized(confirmationEmailRaw.buttonLabel, locale),
       replyTo: str(confirmationEmailRaw.replyTo),
       showQr: confirmationEmailRaw.showQr !== false,
+      calloutTitle: toLocalized(confirmationEmailRaw.calloutTitle, locale),
+      calloutBody: toLocalized(confirmationEmailRaw.calloutBody, locale),
       includeEventInfo: confirmationEmailRaw.includeEventInfo !== false,
       instagramUrl: safeHttpUrl(confirmationEmailRaw.instagramUrl),
       tiktokUrl: safeHttpUrl(confirmationEmailRaw.tiktokUrl),
