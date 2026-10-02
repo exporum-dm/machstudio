@@ -16,6 +16,7 @@ import { kstDateTimeLocalInput, kstDateTimeLocalToIso } from "@/lib/datetime";
 import { isSupportedCountry } from "@/lib/collect-phone";
 import { COUNTRY_DIALS, flagEmoji } from "@/lib/collect-country";
 import {
+  DEFAULT_EMAIL_CALLOUT,
   DEFAULT_LOCALE,
   localize,
   toLocalized,
@@ -648,6 +649,27 @@ export function CollectFormSections({
                 className={`${FIELD_CLS} resize-y leading-relaxed`}
               />
             </Row>
+            {confirmationEmail.showQr && (
+              <>
+                <Row label="QR 안내 박스 제목" hint="메일의 주황 강조 박스 굵은 줄이에요. 비우면 기본 문구로 보내요. 예: 메인 스테이지 접수대에서 보여 달라고 안내할 때.">
+                  <input
+                    value={localize(confirmationEmail.calloutTitle, DEFAULT_LOCALE)}
+                    onChange={(e) => patch({ confirmationEmail: { ...confirmationEmail, calloutTitle: toLocalized(e.target.value) } })}
+                    placeholder={DEFAULT_EMAIL_CALLOUT.title}
+                    className={FIELD_CLS}
+                  />
+                </Row>
+                <Row label="QR 안내 박스 설명" hint="박스 아래 작은 줄이에요. 비우면 기본 문구로 보내요. 줄바꿈도 그대로 보여요.">
+                  <textarea
+                    value={localize(confirmationEmail.calloutBody, DEFAULT_LOCALE)}
+                    onChange={(e) => patch({ confirmationEmail: { ...confirmationEmail, calloutBody: toLocalized(e.target.value) } })}
+                    placeholder={DEFAULT_EMAIL_CALLOUT.body}
+                    rows={2}
+                    className={`${FIELD_CLS} resize-y leading-relaxed`}
+                  />
+                </Row>
+              </>
+            )}
             <Row label="답장 받을 이메일" hint="선택 사항이에요. 비우면 Reply-To를 따로 지정하지 않아요.">
               <input
                 type="email"
