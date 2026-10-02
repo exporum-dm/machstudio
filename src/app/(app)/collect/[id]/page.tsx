@@ -1727,6 +1727,7 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
               initialConfig={source.formConfig}
               previewToken={source.previewToken}
               workspaceId={workspace?.id}
+              onSaved={(formConfig) => setSource((current) => (current ? { ...current, formConfig } : current))}
             />
           )}
 

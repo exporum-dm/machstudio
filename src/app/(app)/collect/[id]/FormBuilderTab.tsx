@@ -6,12 +6,12 @@
  * 편집 영역이므로 **값은 항상 보이고 그 자리에서 고쳐진다**(AGENTS.md §2). 접기·모달 뒤로
  * 넣지 않는다. 자동저장 + 인접 실시간 미리보기가 같은 절의 요구다.
  */
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, Copy, ExternalLink, Plus, RefreshCw, Search } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { EditableList, withRowKeys, ROW_KEY } from "@/components/ui/editable-list";
-import { useAutosave } from "@/components/ui/use-autosave";
+import { useAutosave, useExternalSync } from "@/components/ui/use-autosave";
 import { useReportAutosave } from "@/components/ui/autosave-scope";
 import { btnCls, R, FINISH } from "@/components/ui/primitives";
 import { CollectFieldCard, keyFromLabel } from "@/components/form-builder/CollectFieldCard";
@@ -44,6 +44,7 @@ export default function FormBuilderTab({
   initialConfig,
   previewToken,
   workspaceId,
+  onSaved,
 }: {
   sourceId: string;
   initialConfig: unknown;
@@ -51,10 +52,23 @@ export default function FormBuilderTab({
   previewToken: string | null;
   /** 법률 문구 생성기가 워크스페이스 조직 정보를 읽어올 때만 쓴다 — 없으면 그 패널만 비활성. */
   workspaceId?: string;
+  /**
+   * 저장 성공한 설정을 상위(페이지의 source 상태)에 알린다.
+   *
+   * 이게 없으면 탭을 오갈 때마다 이 컴포넌트가 **페이지를 처음 열 때 받은 낡은 formConfig** 로 다시
+   * 그려진다 — 운영자에게는 "자동저장이 안 됐다" 로 보이고, 그 화면에서 하나라도 고치면 낡은 설정 +
+   * 그 수정이 저장돼 **앞서 저장한 변경이 지워진다**(2026-10-02 현장). InfoTab 이 같은 이유로 이미 한다.
+   */
+  onSaved?: (config: CollectFormConfig) => void;
 }) {
   // 저장된 값은 어떤 모양이든 올 수 있다 — 화면은 정규화된 것만 본다.
   const [config, setConfig] = useState<CollectFormConfig>(() => normalizeCollectForm(initialConfig));
   const [previewState, setPreviewState] = useState<RegistrationStatus | "auto">("auto");
+
+  const onSavedRef = useRef(onSaved);
+  useEffect(() => {
+    onSavedRef.current = onSaved;
+  }, [onSaved]);
 
   const save = useCallback(async (next: CollectFormConfig) => {
     try {
@@ -63,11 +77,17 @@ export default function FormBuilderTab({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ formConfig: next }),
       });
+      if (res.ok) onSavedRef.current?.(next);
       return res.ok;
     } catch { return false; }
   }, [sourceId]);
 
-  const { state: saveState, retry } = useAutosave(config, save);
+  const { state: saveState, retry, dirty } = useAutosave(config, save);
+
+  // 탭을 떠나며 보낸 저장이 돌아오기 전에 다시 이 탭을 열면, 처음엔 그 직전 값으로 그려진다.
+  // 저장이 끝나 상위 값이 바뀌면 따라간다 — 단, 편집 중이면 덮지 않는다(useExternalSync 규칙).
+  const incoming = useMemo(() => normalizeCollectForm(initialConfig), [initialConfig]);
+  useExternalSync(incoming, setConfig, dirty);
   // 표시는 껍데기 한 곳에서 그린다(화면당 1개) — 저장 경로는 각자.
   useReportAutosave(saveState, retry);
 
