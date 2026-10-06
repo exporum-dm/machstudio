@@ -185,6 +185,7 @@ model Project {
   expoSites            ExpoSite[]
   mediaAssets          MediaAsset[]
   briefs               Brief[]
+  detailPages          DetailPage[]
 }
 
 model AdPerformanceImportBatch {
@@ -787,6 +788,27 @@ model ShortLinkClick {
 
 /// 브리프 — 프로젝트별로 운영하는 큐레이션 시리즈(예: Korea Expo 의 "The Action").
 /// 링크를 모아 **채택**한 것만 카톡 텍스트·공개 페이지로 내보낸다.
+/// 상세페이지 — 대회 공고와 같은 섹션 빌더로 만드는 독립 페이지. 아임웹에 /d/{id} 한 줄로 붙는다.
+model DetailPage {
+  id          String    @id @default(cuid())
+  workspaceId String
+  projectId   String
+  name        String
+  /// { noticePage: NoticePageConfig } — 대회 Competition.config 와 같은 모양
+  config      Json      @default("{}")
+  /// { accentColor } — 키컬러
+  theme       Json      @default("{}")
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([workspaceId])
+}
+
 model Brief {
   id               String    @id @default(cuid())
   workspaceId      String

@@ -8,9 +8,10 @@ import { EXPO_STANDALONE_RUNTIME_JS, EXPO_STANDALONE_RUNTIME_SRC_HASH } from "@/
 import { COMPETITION_RUNTIME_SRC_HASH } from "@/generated/competition-runtime";
 import { COMPETITION_VOTE_RUNTIME_SRC_HASH } from "@/generated/competition-vote-runtime";
 import { COMPETITION_RESULT_RUNTIME_SRC_HASH } from "@/generated/competition-result-runtime";
+import { DETAIL_PAGE_RUNTIME_SRC_HASH } from "@/generated/detail-page-runtime";
 import { COLLECT_FORM_CSS } from "@/lib/collect-form/css";
 import {
-  competitionResultSourceHash, competitionSourceHash, competitionVoteSourceHash,
+  competitionResultSourceHash, competitionSourceHash, competitionVoteSourceHash, detailPageSourceHash,
   expoSourceHash, formSourceHash, landingSourceHash, standaloneExpoSourceHash,
 } from "../../../scripts/runtime-hash.mjs";
 
@@ -66,6 +67,10 @@ describe("임베드 번들이 소스와 동기화돼 있다", () => {
 
   it("대회 결과 런타임", () => {
     expect(COMPETITION_RESULT_RUNTIME_SRC_HASH).toBe(competitionResultSourceHash(ROOT));
+  });
+
+  it("상세페이지 런타임", () => {
+    expect(DETAIL_PAGE_RUNTIME_SRC_HASH).toBe(detailPageSourceHash(ROOT));
   });
 });
 

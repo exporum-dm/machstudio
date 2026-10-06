@@ -3,7 +3,7 @@ import { build } from "esbuild";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  competitionResultSourceFiles, competitionSourceFiles, competitionVoteSourceFiles,
+  competitionResultSourceFiles, competitionSourceFiles, competitionVoteSourceFiles, detailPageSourceFiles,
   expoSourceFiles, formSourceFiles, landingSourceFiles, standaloneExpoSourceFiles,
 } from "../../../scripts/runtime-hash.mjs";
 
@@ -73,6 +73,11 @@ describe("소스 목록 ↔ 실제 번들 입력", () => {
   it("대회 신청 런타임", async () => {
     const actual = await bundleInputs("src/embed/competition-entry.ts");
     expect(competitionSourceFiles(ROOT)).toEqual(actual);
+  }, 30_000);
+
+  it("상세페이지 런타임", async () => {
+    const actual = await bundleInputs("src/embed/detail-page-entry.ts");
+    expect(detailPageSourceFiles(ROOT)).toEqual(actual);
   }, 30_000);
 
   it("대회 투표 런타임", async () => {

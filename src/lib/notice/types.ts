@@ -32,6 +32,12 @@ export interface NoticeCompetition {
    * 공고에 손으로 옮겨 적지 않아도 된다(배점을 바꾸면 공고도 따라 바뀐다).
    */
   rounds: NoticeRound[];
+  /**
+   * 주 버튼이 할 일. **없으면(undefined) 대회 공고** — 버튼이 신청 팝업(onApply)을 연다.
+   * 상세페이지(src/lib/detail-page)는 신청 폼이 없어 링크로 보낸다: 객체면 그 주소로 가는
+   * 링크, null 이면 링크를 아직 안 정한 것이라 버튼을 그리지 않는다.
+   */
+  cta?: { href: string; newTab: boolean } | null;
 }
 
 export interface NoticeRound {
@@ -78,6 +84,11 @@ export interface NoticeModel {
   selectionRounds: NoticeSelectionRound[];
   criteriaItems: NoticeCriterionItem[];
   criteriaTotal: number;
+
+  /** 주 버튼을 그릴지 — 상세페이지에서 링크를 안 정했으면 false. */
+  ctaVisible: boolean;
+  /** 주 버튼이 링크면 그 주소. null 이면 버튼(onApply). */
+  ctaLink: { href: string; newTab: boolean } | null;
 
   /** 카운트다운 목표 시각(ISO). 없으면 섹션이 꺼진다. */
   deadline: string | null;

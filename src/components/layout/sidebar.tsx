@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, LayoutGrid, BarChart3, LogOut,
-  ChevronDown, Plus, FolderOpen, Check, Loader2, Settings2, Settings, Database, Video, Link2, Pencil, Trash2, ShieldCheck, Menu, Trophy, Globe, ImageIcon, Newspaper,
+  ChevronDown, Plus, FolderOpen, Check, Loader2, Settings2, Settings, Database, Video, Link2, Pencil, Trash2, ShieldCheck, Menu, Trophy, Globe, ImageIcon, Newspaper, FileText,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/contexts/workspace";
@@ -42,6 +42,7 @@ export const navItems: NavItem[] = [
   { href: "/utm-builder", icon: Link2, label: "UTM 빌더" },
   { href: "/webinar", icon: Video, label: "웨비나" },
   { href: "/competition", icon: Trophy, label: "대회" },
+  { href: "/detail-page", icon: FileText, label: "상세페이지" },
   { href: "/homepage", icon: Globe, label: "홈페이지", capability: "expoHomepage" },
   { href: "/brief", icon: Newspaper, label: "브리프" },
   { href: "/media", icon: ImageIcon, label: "미디어" },

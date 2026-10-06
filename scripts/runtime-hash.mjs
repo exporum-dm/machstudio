@@ -266,6 +266,41 @@ export function competitionSourceHash(root) {
   return hashFiles(competitionSourceFiles(root));
 }
 
+/**
+ * 상세페이지 런타임 — 대회 공고와 같은 렌더러(notice)를 쓴다.
+ * competition-render·strings 는 공고 CSS 가 색 계산(onAccentColor)을 거기서 가져와 딸려 들어온다.
+ */
+export function detailPageSourceFiles(root) {
+  return ([
+    join(root, "src/embed/detail-page-entry.ts"),
+    join(root, "src/lib/detail-page/config.ts"),
+    join(root, "src/lib/collect-country.ts"),
+    join(root, "src/lib/color.ts"),
+    join(root, "src/lib/competition-render.ts"),
+    join(root, "src/lib/competition-status.ts"),
+    join(root, "src/lib/competition-strings.ts"),
+    join(root, "src/lib/dom/h.ts"),
+    join(root, "src/lib/dom/scroll-lock.ts"),
+    join(root, "src/lib/landing/effects.ts"),
+    join(root, "src/lib/landing/overlay.ts"),
+    join(root, "src/lib/notice/build-model.ts"),
+    join(root, "src/lib/notice/config.ts"),
+    join(root, "src/lib/notice/css.ts"),
+    join(root, "src/lib/notice/media-focus.ts"),
+    join(root, "src/lib/notice/mount.ts"),
+    join(root, "src/lib/notice/shell-css.ts"),
+    join(root, "src/lib/notice/strings.ts"),
+    join(root, "src/lib/notice/view-hero.ts"),
+    join(root, "src/lib/notice/view-sections.ts"),
+    join(root, "src/lib/webinar-config.ts"),
+    join(root, "src/lib/webinar-image.ts"),
+  ]).sort();
+}
+
+export function detailPageSourceHash(root) {
+  return hashFiles(detailPageSourceFiles(root));
+}
+
 /** 대회 투표 런타임. */
 export function competitionVoteSourceFiles(root) {
   return ([

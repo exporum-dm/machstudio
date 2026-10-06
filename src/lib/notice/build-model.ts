@@ -141,6 +141,8 @@ export function buildNoticeModel(
     ctaLabel,
     ctaEnabled,
     ctaNote,
+    ctaVisible: competition.cta !== null,
+    ctaLink: competition.cta ?? null,
     tocItems,
     show,
     selectionRounds,

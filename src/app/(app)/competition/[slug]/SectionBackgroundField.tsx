@@ -30,13 +30,14 @@ export interface BackgroundValue {
  */
 export function SectionBackgroundField({
   label,
-  competitionId,
+  uploadUrl,
   value,
   onChange,
   showTone = true,
 }: {
   label: string;
-  competitionId: string;
+  /** 업로드 주소 — 대회 공고와 상세페이지가 각자의 라우트를 넘긴다. */
+  uploadUrl: string;
   value: BackgroundValue | null;
   onChange: (next: BackgroundValue | null) => void;
   /**
@@ -54,7 +55,7 @@ export function SectionBackgroundField({
     try {
       const body = new FormData();
       body.append("file", file);
-      const res = await fetch(`/api/competitions/${competitionId}/notice-media`, { method: "POST", body });
+      const res = await fetch(uploadUrl, { method: "POST", body });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { toast.error(data.error ?? "업로드에 실패했어요"); return; }
       if (data.type !== "image") { toast.error("배경은 이미지만 넣을 수 있어요"); return; }
