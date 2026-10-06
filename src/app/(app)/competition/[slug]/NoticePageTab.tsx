@@ -18,13 +18,52 @@ import {
 } from "@/lib/notice/config";
 import { noticeStrings } from "@/lib/notice/strings";
 import { DEFAULT_COMPETITION_THEME } from "@/lib/competition-config";
-import { DEFAULT_ROUND_NAME, resolveCompetitionStatus } from "@/lib/competition-status";
+import { DEFAULT_ROUND_NAME, resolveCompetitionStatus, type CompetitionPhase } from "@/lib/competition-status";
+import { isSafeLinkUrl, type DetailPageSettings } from "@/lib/detail-page/config";
 import type { NoticeCompetition } from "@/lib/notice/types";
 import NoticePreviewPane from "./NoticePreviewPane";
 import { SectionBackgroundField, type BackgroundValue } from "./SectionBackgroundField";
 import { AddRow, HeadFields, Row, SectionCard, moveItem } from "./NoticeSectionEditors";
 import type { CompetitionDetail } from "./page";
 import type { RoundDto } from "./VoteSettingsTab";
+
+/**
+ * 공고 편집기가 붙는 자리 — 대회 공고 탭과 상세페이지 메뉴가 **같은 편집기**를 쓴다.
+ *
+ * 둘의 차이는 여기 모아 둔다: 대회는 접수 상태·라운드(선발·심사 auto 소스)·대회 언어가 있고,
+ * 상세페이지는 그게 없는 대신 주 버튼 링크·카운트다운 마감 시각·언어 선택을 이 화면에서 정한다.
+ */
+export interface NoticeEditorHost {
+  kind: "competition" | "page";
+  /** 이 config 의 noticePage 를 편집한다. 저장할 때 나머지 키는 그대로 실어 보낸다. */
+  config: Record<string, unknown>;
+  theme: Record<string, string>;
+  /** 히어로·섹션 배경 업로드 주소 */
+  uploadUrl: string;
+  /** 대회 라운드 — 상세페이지는 null(선발 방식·심사 기준은 직접 입력만). */
+  rounds: RoundDto[] | null;
+  /** 대회의 현재 접수 상태 — 접수 전·마감 후 문구 칸에 표시. 상세페이지는 null. */
+  status: { phase: CompetitionPhase; canApply: boolean } | null;
+  /** 대회 언어(읽기 전용 표시). 상세페이지는 null — 이 화면에서 고른다. */
+  fixedLanguageLabel: string | null;
+  /** 상세페이지 전용 값. 대회는 null. */
+  pageSettings: DetailPageSettings | null;
+  /** 편집 중인 값으로 미리보기용 대회 정보를 만든다. */
+  buildPreview: (theme: Record<string, string>, settings: DetailPageSettings | null) => NoticeCompetition;
+  save: (next: { config: Record<string, unknown>; theme: Record<string, string> }) => Promise<boolean>;
+}
+
+/** 상세페이지에서는 대회 말투("접수부터 결선까지")가 안 맞는 섹션 안내만 바꿔 단다. */
+const PAGE_SECTION_NOTES: Partial<Record<NoticeSectionKey, string>> = {
+  concept: "이 페이지가 무엇인지 한 문장으로",
+  snapshot: "일시·장소·대상 같은 사실을 카드로",
+  timeline: "주요 일정과 날짜",
+  apply: "참여 방법을 번호 카드로",
+  selection: "단계별 비율 막대",
+  criteria: "항목과 점수",
+  prizes: "혜택·시상 — 맨 위 카드가 자동으로 강조돼요",
+  countdown: "마감 시각까지 남은 시간",
+};
 
 interface Props {
   competition: CompetitionDetail;
@@ -49,20 +88,60 @@ function criteriaOf(round: RoundDto | undefined) {
 }
 
 export default function NoticePageTab({ competition, rounds, patch }: Props) {
-  // 편집 중에는 빈 행도 남긴다 — 아직 안 쓴 행이 리마운트로 사라지면 안 된다.
-  const [np, setNp] = useState<NoticePageConfig>(() =>
-    normalizeNoticePageConfig(competition.config, { keepEmptyRows: true }),
-  );
-  /**
-   * 키컬러는 config 가 아니라 **Competition.theme** 에 있다(신청 폼·투표·결과가 함께 쓴다).
-   * 저장 전에도 미리보기가 따라와야 하므로 여기서 편집 중인 값을 들고 있다가 함께 PATCH 한다.
-   */
-  const [theme, setTheme] = useState<Record<string, string>>(() => ({
+  const status = resolveCompetitionStatus(competition);
+  const host: NoticeEditorHost = {
+    kind: "competition",
+    config: competition.config as unknown as Record<string, unknown>,
     // 키컬러가 비어 있는 예전 대회가 있다. 렌더러 기본값(보라)을 채워 넣어야 색 칸이
     // "지금 실제로 나가는 색"을 보여 준다 — 빈 칸이면 무슨 색인지 알 수 없다.
-    accentColor: DEFAULT_COMPETITION_THEME.accentColor,
-    ...competition.theme,
-  }));
+    theme: { accentColor: DEFAULT_COMPETITION_THEME.accentColor, ...competition.theme },
+    uploadUrl: `/api/competitions/${competition.id}/notice-media`,
+    rounds,
+    status: { phase: status.phase, canApply: status.canApply },
+    fixedLanguageLabel:
+      NOTICE_LANGUAGES.find((l) => l.value === competition.config.language)?.label ?? competition.config.language,
+    pageSettings: null,
+    /** 미리보기에 넘길 대회 정보. auto 소스(선발·심사)가 여기 라운드를 읽는다. */
+    buildPreview: (theme) => ({
+      id: competition.id,
+      name: competition.name,
+      description: competition.description,
+      theme,
+      recruitOpenAt: competition.recruitOpenAt,
+      recruitCloseAt: competition.recruitCloseAt,
+      phase: status.phase,
+      canApply: status.canApply,
+      statusMessages: {
+        upcoming: competition.config.statusMessages?.upcoming ?? "접수 시작 전이에요.",
+        closed: competition.config.statusMessages?.closed ?? "접수가 마감되었어요.",
+      },
+      rounds: rounds.map((round) => ({
+        kind: round.kind,
+        name: round.name,
+        publicWeight: round.publicWeight,
+        judgeWeight: round.judgeWeight,
+        criteria: criteriaOf(round),
+      })),
+    }),
+    save: ({ config, theme }) => patch({ config, theme }, "공고 페이지를 저장했어요"),
+  };
+  return <NoticeEditor host={host} />;
+}
+
+export function NoticeEditor({ host }: { host: NoticeEditorHost }) {
+  const isPage = host.kind === "page";
+  const rounds = host.rounds;
+  const status = host.status;
+  // 편집 중에는 빈 행도 남긴다 — 아직 안 쓴 행이 리마운트로 사라지면 안 된다.
+  const [np, setNp] = useState<NoticePageConfig>(() =>
+    normalizeNoticePageConfig(host.config, { keepEmptyRows: true }),
+  );
+  /**
+   * 키컬러는 config 가 아니라 **theme** 에 있다(대회는 신청 폼·투표·결과가 함께 쓴다).
+   * 저장 전에도 미리보기가 따라와야 하므로 여기서 편집 중인 값을 들고 있다가 함께 저장한다.
+   */
+  const [theme, setTheme] = useState<Record<string, string>>(() => host.theme);
+  const [pageSettings, setPageSettings] = useState<DetailPageSettings | null>(() => host.pageSettings);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -74,6 +153,10 @@ export default function NoticePageTab({ competition, rounds, patch }: Props) {
   };
   const updateTheme = (patchTheme: Record<string, string>) => {
     setTheme((prev) => ({ ...prev, ...patchTheme }));
+    setDirty(true);
+  };
+  const updatePage = (patchSettings: Partial<DetailPageSettings>) => {
+    setPageSettings((prev) => (prev ? { ...prev, ...patchSettings } : prev));
     setDirty(true);
   };
   const section = <K extends NoticeSectionKey>(key: K, patchSection: Partial<NoticePageConfig[K]>) =>
@@ -96,43 +179,19 @@ export default function NoticePageTab({ competition, rounds, patch }: Props) {
     update({ sectionBg: next });
   };
 
-  const status = resolveCompetitionStatus(competition);
-
-  /** 미리보기에 넘길 대회 정보. auto 소스(선발·심사)가 여기 라운드를 읽는다. */
+  const { buildPreview } = host;
   const previewCompetition: NoticeCompetition = useMemo(
-    () => ({
-      id: competition.id,
-      name: competition.name,
-      description: competition.description,
-      theme,
-      recruitOpenAt: competition.recruitOpenAt,
-      recruitCloseAt: competition.recruitCloseAt,
-      phase: status.phase,
-      canApply: status.canApply,
-      statusMessages: {
-        upcoming: competition.config.statusMessages?.upcoming ?? "접수 시작 전이에요.",
-        closed: competition.config.statusMessages?.closed ?? "접수가 마감되었어요.",
-      },
-      rounds: rounds.map((round) => ({
-        kind: round.kind,
-        name: round.name,
-        publicWeight: round.publicWeight,
-        judgeWeight: round.judgeWeight,
-        criteria: criteriaOf(round),
-      })),
-    }),
-    [competition, rounds, status.phase, status.canApply, theme],
+    () => buildPreview(theme, pageSettings),
+    [buildPreview, theme, pageSettings],
   );
 
-  const previewConfig = useMemo(() => ({ ...competition.config, noticePage: np }), [competition.config, np]);
+  const nextConfig = () => ({ ...host.config, noticePage: np, ...(pageSettings ? { page: pageSettings } : {}) });
+  const previewConfig = useMemo(() => ({ ...host.config, noticePage: np }), [host.config, np]);
 
   const save = async () => {
     setSaving(true);
     try {
-      const ok = await patch(
-        { config: { ...competition.config, noticePage: np }, theme },
-        "공고 페이지를 저장했어요",
-      );
+      const ok = await host.save({ config: nextConfig(), theme });
       if (ok) setDirty(false);
     } finally {
       setSaving(false);
@@ -144,7 +203,7 @@ export default function NoticePageTab({ competition, rounds, patch }: Props) {
     try {
       const body = new FormData();
       body.append("file", file);
-      const res = await fetch(`/api/competitions/${competition.id}/notice-media`, { method: "POST", body });
+      const res = await fetch(host.uploadUrl, { method: "POST", body });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { toast.error(data.error ?? "업로드에 실패했어요"); return; }
       update({
@@ -175,7 +234,7 @@ export default function NoticePageTab({ competition, rounds, patch }: Props) {
         <section className={`bg-background p-5 ${R.panel} ${FINISH.s1}`}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="text-sm font-semibold">이 페이지로 내보내기</h2>
+              <h2 className="text-sm font-semibold">{isPage ? "공개" : "이 페이지로 내보내기"}</h2>
               {/*
                 이 스위치는 **공개 여부가 아니라 렌더러 선택**이다. 예전 설명은 "끄면
                 '아직 공개되지 않았어요'만 보여요" 라고 적혀 있었는데 사실이 아니었다 —
@@ -184,7 +243,16 @@ export default function NoticePageTab({ competition, rounds, patch }: Props) {
                 지금 무엇이 나가는지를 문장으로 못박는다.
               */}
               <p className="mt-1 text-xs text-muted-foreground">
-                {np.enabled ? (
+                {isPage ? (
+                  np.enabled ? (
+                    <>설치 코드를 붙여 둔 곳에 <b className="text-foreground">이 페이지</b>가 나가요.</>
+                  ) : (
+                    <>
+                      지금은 붙여 둔 곳에 <b className="text-amber-600 dark:text-amber-400">“아직 공개되지 않은 페이지예요”</b>만
+                      보여요. 내보내려면 켜고 저장하세요.
+                    </>
+                  )
+                ) : np.enabled ? (
                   <>지금 붙여 둔 곳에는 <b className="text-foreground">이 탭에서 만든 페이지</b>가 나가요.</>
                 ) : (
                   <>
@@ -194,7 +262,7 @@ export default function NoticePageTab({ competition, rounds, patch }: Props) {
                 )}
               </p>
             </div>
-            <Switch checked={np.enabled} onChange={(v) => update({ enabled: v })} label="이 페이지로 내보내기" />
+            <Switch checked={np.enabled} onChange={(v) => update({ enabled: v })} label={isPage ? "공개" : "이 페이지로 내보내기"} />
           </div>
 
           {/*
@@ -209,7 +277,7 @@ export default function NoticePageTab({ competition, rounds, patch }: Props) {
           <div className="mt-4 space-y-3 border-t border-border pt-4">
             <ColorField
               label="키컬러"
-              note="히어로 링·비율 막대·강조 — 신청 폼과 투표 화면에도 같이 적용돼요"
+              note={isPage ? "히어로 링·비율 막대·강조" : "히어로 링·비율 막대·강조 — 신청 폼과 투표 화면에도 같이 적용돼요"}
               value={theme.accentColor}
               onChange={(v) => updateTheme({ accentColor: v })}
               presets={BRAND_PRESETS}
@@ -226,7 +294,7 @@ export default function NoticePageTab({ competition, rounds, patch }: Props) {
               />
               <ColorField
                 label="버튼 컬러"
-                note="신청 버튼"
+                note={isPage ? "주 버튼" : "신청 버튼"}
                 value={np.colors.button}
                 onChange={(v) => update({ colors: { ...np.colors, button: v } })}
                 allowInherit
@@ -270,12 +338,32 @@ export default function NoticePageTab({ competition, rounds, patch }: Props) {
           */}
           <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
             <span className="text-xs font-medium">문구 언어</span>
-            <span className={`px-2.5 py-1.5 text-[11px] font-medium ${R.control} bg-secondary text-foreground`}>
-              {NOTICE_LANGUAGES.find((l) => l.value === competition.config.language)?.label ?? competition.config.language}
-            </span>
-            <span className="text-[11px] text-muted-foreground">
-              대회 전체 설정이에요 — <b>기본정보 탭</b>에서 바꿀 수 있어요.
-            </span>
+            {host.fixedLanguageLabel !== null ? (
+              <>
+                <span className={`px-2.5 py-1.5 text-[11px] font-medium ${R.control} bg-secondary text-foreground`}>
+                  {host.fixedLanguageLabel}
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                  대회 전체 설정이에요 — <b>기본정보 탭</b>에서 바꿀 수 있어요.
+                </span>
+              </>
+            ) : (
+              <>
+                {/* 상세페이지는 대회 설정이 없으니 여기서 고른다 — 목차·카운트다운 같은 자동 문구에만 적용. */}
+                {NOTICE_LANGUAGES.map((l) => (
+                  <button
+                    key={l.value}
+                    onClick={() => update({ language: l.value })}
+                    className={`px-2.5 py-1.5 text-[11px] font-medium transition-colors ${R.control} ${
+                      np.language === l.value ? "bg-foreground text-background" : "bg-secondary text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {l.label}
+                  </button>
+                ))}
+                <span className="text-[11px] text-muted-foreground">직접 쓴 글은 그대로, 자동 문구(카운트다운 등)만 바뀌어요</span>
+              </>
+            )}
           </div>
         </section>
 
@@ -342,7 +430,7 @@ export default function NoticePageTab({ competition, rounds, patch }: Props) {
             {np.hero.media?.type === "image" && (
               <SectionBackgroundField
                 label="배경 초점"
-                competitionId={competition.id}
+                uploadUrl={host.uploadUrl}
                 showTone={false}
                 value={{
                   url: np.hero.media.url,
@@ -366,7 +454,7 @@ export default function NoticePageTab({ competition, rounds, patch }: Props) {
             )}
 
             <input value={np.hero.brand} onChange={(e) => update({ hero: { ...np.hero, brand: e.target.value } })}
-              placeholder="상단 작은 라벨 (비우면 대회 이름)" className={`${FIELD_CLS} h-8`} />
+              placeholder={isPage ? "상단 작은 라벨 (비우면 페이지 이름)" : "상단 작은 라벨 (비우면 대회 이름)"} className={`${FIELD_CLS} h-8`} />
 
             <div className="space-y-1.5">
               <span className="text-xs font-medium text-muted-foreground">대형 제목 — 둘째 줄부터 키컬러</span>
@@ -395,7 +483,7 @@ export default function NoticePageTab({ competition, rounds, patch }: Props) {
             </div>
 
             <textarea value={np.hero.subtitle} onChange={(e) => update({ hero: { ...np.hero, subtitle: e.target.value } })}
-              rows={2} placeholder="부제 (비우면 대회 설명 첫 줄)" className={`${FIELD_CLS} h-auto py-2`} />
+              rows={2} placeholder={isPage ? "부제" : "부제 (비우면 대회 설명 첫 줄)"} className={`${FIELD_CLS} h-auto py-2`} />
 
             {/*
               열 이름을 띄운다. placeholder 는 **채우고 나면 사라져서** 어느 칸이 어느 버튼인지
@@ -403,7 +491,7 @@ export default function NoticePageTab({ competition, rounds, patch }: Props) {
             */}
             <div className="space-y-1.5">
               <div className="grid gap-1.5 text-[10px] font-medium text-muted-foreground sm:grid-cols-2">
-                <span>주 버튼 — 신청 폼을 엽니다</span>
+                <span>{isPage ? "주 버튼 — 아래 링크로 이동해요" : "주 버튼 — 신청 폼을 엽니다"}</span>
                 <span>보조 버튼 — 첫 섹션으로 이동 (비우면 안 보임)</span>
               </div>
               <div className="grid gap-1.5 sm:grid-cols-2">
@@ -415,12 +503,43 @@ export default function NoticePageTab({ competition, rounds, patch }: Props) {
             </div>
 
             {/*
+              상세페이지에는 신청 폼이 없다 — 주 버튼은 링크로 보낸다(사전등록 폼·다른 페이지).
+              링크가 비었거나 형식이 틀리면 버튼을 아예 안 그린다. 눌러도 아무 일 없는 버튼을
+              방문자에게 보이지 않게, 그리고 그 사실을 칸 바로 아래에서 알려 준다.
+            */}
+            {pageSettings && (
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-medium text-muted-foreground">주 버튼 링크</span>
+                <input
+                  value={pageSettings.ctaUrl}
+                  onChange={(e) => updatePage({ ctaUrl: e.target.value })}
+                  placeholder="https://… (사전등록 폼, 아임웹 다른 페이지 등)"
+                  inputMode="url"
+                  className={`${FIELD_CLS} h-8 font-mono text-xs`}
+                />
+                {pageSettings.ctaUrl.trim() && !isSafeLinkUrl(pageSettings.ctaUrl) ? (
+                  <p className="text-[11px] text-red-500">https:// 로 시작하는 주소를 넣어 주세요 — 지금은 버튼이 안 보여요.</p>
+                ) : !pageSettings.ctaUrl.trim() ? (
+                  <p className="text-[11px] text-muted-foreground">비워 두면 주 버튼(히어로·카운트다운)이 안 보여요.</p>
+                ) : null}
+                <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={pageSettings.ctaNewTab}
+                    onChange={(e) => updatePage({ ctaNewTab: e.target.checked })}
+                  />
+                  새 탭에서 열기
+                </label>
+              </div>
+            )}
+
+            {/*
               접수 전·마감 후에는 버튼이 잠기고 문구가 상태 안내로 바뀐다. 그 자리를 손댈 수
               없어서 영문 공고에도 "접수 시작 전 / 접수 시작 전이에요." 가 그대로 떴다.
               현재 상태에 해당하는 칸에는 표시를 달아 둔다 — 지금 화면에 뭐가 나가는지
               모른 채 네 칸을 다 채우게 하면 안 된다.
             */}
-            <div className="space-y-1.5">
+            {status && <div className="space-y-1.5">
               <span className="text-xs font-medium text-muted-foreground">
                 접수 전 · 마감 후 문구 <span className="font-normal">— 비우면 언어에 맞는 기본 문구</span>
               </span>
@@ -448,7 +567,7 @@ export default function NoticePageTab({ competition, rounds, patch }: Props) {
                     onChange={(e) => update({ hero: { ...np.hero, [noteKey]: e.target.value } })} />
                 </div>
               ))}
-            </div>
+            </div>}
 
             <div className="space-y-1.5">
               <span className="text-xs font-medium text-muted-foreground">하단 팩트 — 결선일·장소·정원 같은 것</span>
@@ -474,7 +593,7 @@ export default function NoticePageTab({ competition, rounds, patch }: Props) {
           <SectionCard
             key={key}
             label={label}
-            note={note}
+            note={(isPage && PAGE_SECTION_NOTES[key]) || note}
             enabled={np[key].enabled}
             bg={np.sectionBg[key]}
             onToggle={(v) => section(key, { enabled: v } as never)}
@@ -486,11 +605,17 @@ export default function NoticePageTab({ competition, rounds, patch }: Props) {
             */}
             <SectionBackgroundField
               label="배경 이미지 (선택)"
-              competitionId={competition.id}
+              uploadUrl={host.uploadUrl}
               value={np.sectionMedia[key] ?? null}
               onChange={(next) => setSectionMedia(key, next)}
             />
-            <SectionBody sectionKey={key} np={np} section={section} rounds={rounds} />
+            <SectionBody
+              sectionKey={key}
+              np={np}
+              section={section}
+              rounds={rounds}
+              deadline={pageSettings ? { value: pageSettings.deadline, onChange: (deadline) => updatePage({ deadline }) } : null}
+            />
           </SectionCard>
         ))}
 
@@ -510,18 +635,31 @@ export default function NoticePageTab({ competition, rounds, patch }: Props) {
   );
 }
 
+/** ISO → datetime-local 입력값(브라우저 현지 시각). */
+function toLocalInputValue(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
 /** 섹션별 본문 편집. 스위치 하나에 몰아 두면 카드 쪽이 읽기 어려워져 분리했다. */
 function SectionBody({
   sectionKey,
   np,
   section,
-  rounds,
+  rounds: hostRounds,
+  deadline,
 }: {
   sectionKey: NoticeSectionKey;
   np: NoticePageConfig;
   section: <K extends NoticeSectionKey>(key: K, patch: Partial<NoticePageConfig[K]>) => void;
-  rounds: RoundDto[];
+  /** null = 상세페이지 — 라운드가 없으니 선발 방식·심사 기준은 직접 입력만 연다. */
+  rounds: RoundDto[] | null;
+  /** 상세페이지의 카운트다운 마감 시각. 대회는 null(기본정보 탭의 접수 마감을 쓴다). */
+  deadline: { value: string | null; onChange: (next: string | null) => void } | null;
 }) {
+  const rounds = hostRounds ?? [];
+  const hasRounds = hostRounds !== null;
   /** 배열의 한 칸만 갈아 끼운다. 중첩(라운드 안의 비율 막대)까지 같은 모양으로 쓴다. */
   const patchAt = <T,>(list: T[], index: number, patch: Partial<T>): T[] =>
     list.map((item, i) => (i === index ? { ...item, ...patch } : item));
@@ -680,25 +818,25 @@ function SectionBody({
     return (
       <>
         {head("selection", false)}
-        <SourceToggle
+        {hasRounds && <SourceToggle
           source={s.source}
           onChange={(source) => section("selection", { source })}
           autoNote={`투표 설정의 대중:심사 비율을 그대로 그려요 (${rounds.map((r) => `${r.name} ${r.publicWeight}:${r.judgeWeight}`).join(" · ") || "라운드 없음"})`}
-        />
-        {s.source === "manual" && (
+        />}
+        {(!hasRounds || s.source === "manual") && (
           <>
-            <p className="text-[11px] text-amber-700 dark:text-amber-400">
+            {hasRounds && <p className="text-[11px] text-amber-700 dark:text-amber-400">
               직접 입력은 투표 설정과 따로 놀아요 — 비율을 바꾸면 여기도 같이 고쳐야 합니다.
-            </p>
+            </p>}
             {/*
               **빈 칸에서 시작하지 않게 한다.** 직접 입력으로 바꾸는 가장 흔한 이유는
               "가져온 값이 마음에 안 든다"(영문 대회인데 라운드 이름이 한글이라든지)이지
               처음부터 다시 쓰고 싶어서가 아니다. 설정값을 그대로 부어 주고 고치게 한다.
             */}
-            <AddRow
+            {hasRounds && <AddRow
               label={s.rounds.length > 0 ? "설정값 다시 불러오기 (덮어써요)" : "설정값 불러오기"}
               onClick={() => section("selection", { rounds: selectionFromSettings() })}
-            />
+            />}
             {s.rounds.map((round, index) => (
               <Row key={index} index={index} count={s.rounds.length}
                 onMove={(from, to) => section("selection", { rounds: moveItem(s.rounds, from, to) })}
@@ -756,20 +894,20 @@ function SectionBody({
     return (
       <>
         {head("criteria")}
-        <SourceToggle
+        {hasRounds && <SourceToggle
           source={c.source}
           onChange={(source) => section("criteria", { source })}
           autoNote={`심사단 탭의 항목·배점을 그대로 그려요 (본선 우선${finalRound ? "" : " · 본선 항목 없으면 예선"})`}
-        />
-        {c.source === "manual" && (
+        />}
+        {(!hasRounds || c.source === "manual") && (
           <>
-            <p className="text-[11px] text-amber-700 dark:text-amber-400">
+            {hasRounds && <p className="text-[11px] text-amber-700 dark:text-amber-400">
               직접 입력은 심사단 탭과 따로 놀아요 — 배점을 바꾸면 여기도 같이 고쳐야 합니다.
-            </p>
-            <AddRow
+            </p>}
+            {hasRounds && <AddRow
               label={c.items.length > 0 ? "설정값 다시 불러오기 (덮어써요)" : "설정값 불러오기"}
               onClick={() => section("criteria", { items: criteriaFromSettings() })}
-            />
+            />}
             {c.items.map((item, index) => (
               <Row key={index} index={index} count={c.items.length}
                 onMove={(from, to) => section("criteria", { items: moveItem(c.items, from, to) })}
@@ -831,9 +969,22 @@ function SectionBody({
         {head("countdown")}
         <input value={c.ctaLabel} onChange={(e) => section("countdown", { ctaLabel: e.target.value })}
           placeholder="버튼 문구 (비우면 히어로와 같게)" className={`${FIELD_CLS} h-8`} />
-        <p className="text-[11px] text-muted-foreground">
-          남은 시간은 <b>기본정보 탭의 접수 마감</b>에서 자동으로 계산돼요. 마감이 없거나 지났으면 섹션이 안 나옵니다.
-        </p>
+        {deadline ? (
+          <div className="space-y-1">
+            <span className="text-[10px] font-medium text-muted-foreground">마감 시각 (이 컴퓨터 시간 기준)</span>
+            <input
+              type="datetime-local"
+              value={deadline.value ? toLocalInputValue(deadline.value) : ""}
+              onChange={(e) => deadline.onChange(e.target.value ? new Date(e.target.value).toISOString() : null)}
+              className={`${FIELD_CLS} h-8`}
+            />
+            <p className="text-[11px] text-muted-foreground">마감이 없거나 지났으면 섹션이 안 나와요.</p>
+          </div>
+        ) : (
+          <p className="text-[11px] text-muted-foreground">
+            남은 시간은 <b>기본정보 탭의 접수 마감</b>에서 자동으로 계산돼요. 마감이 없거나 지났으면 섹션이 안 나옵니다.
+          </p>
+        )}
       </>
     );
   }

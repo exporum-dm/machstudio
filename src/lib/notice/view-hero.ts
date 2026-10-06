@@ -45,6 +45,38 @@ export function renderToc(m: NoticeModel, onNavigate?: (sectionId: string) => vo
   );
 }
 
+/**
+ * 주 버튼 — 히어로와 마감 카운트다운이 같이 쓴다.
+ *
+ * 대회 공고는 신청 팝업을 여는 버튼, 상세페이지는 링크(a)다. 링크는 미리보기에서 누르면
+ * 미리보기 프레임이 그 사이트로 넘어가 버리므로 막는다.
+ */
+export function renderPrimaryCta(m: NoticeModel, onApply: () => void, className: string, label: string): HTMLElement | null {
+  if (!m.ctaVisible) return null;
+  if (m.ctaLink) {
+    return h(
+      "a",
+      {
+        class: className,
+        href: m.ctaLink.href,
+        ...(m.ctaLink.newTab ? { target: "_blank", rel: "noopener noreferrer" } : {}),
+        onclick: m.isPreview ? (event: Event) => event.preventDefault() : undefined,
+      },
+      label,
+    );
+  }
+  return h(
+    "button",
+    {
+      type: "button",
+      class: className,
+      disabled: !m.ctaEnabled,
+      onclick: m.ctaEnabled ? onApply : undefined,
+    },
+    label,
+  );
+}
+
 export function renderHero(m: NoticeModel, onApply: () => void): HTMLElement {
   const media = m.np.hero.media;
   const bg = m.np.sectionBg.hero;
@@ -84,16 +116,7 @@ export function renderHero(m: NoticeModel, onApply: () => void): HTMLElement {
         : null,
   );
 
-  const cta = h(
-    "button",
-    {
-      type: "button",
-      class: "hero-cta",
-      disabled: !m.ctaEnabled,
-      onclick: m.ctaEnabled ? onApply : undefined,
-    },
-    m.ctaLabel,
-  );
+  const cta = renderPrimaryCta(m, onApply, "hero-cta", m.ctaLabel);
 
   // 보조 버튼은 **켠 첫 섹션**으로 보낸다. 목차가 없으면(섹션 전부 끔) 그릴 이유가 없다.
   const firstSection = m.tocItems[0];

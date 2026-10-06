@@ -13,6 +13,7 @@
     "test:expo-browser:chromium": "playwright test tests/expo-browser --project=chromium-desktop --project=chromium-mobile",
     "build:landing-runtime": "node scripts/build-landing-runtime.mjs",
     "build:competition-runtime": "node scripts/build-competition-runtime.mjs",
+    "build:detail-page-runtime": "node scripts/build-detail-page-runtime.mjs",
     "build:competition-vote-runtime": "node scripts/build-competition-vote-runtime.mjs",
     "build:competition-result-runtime": "node scripts/build-competition-result-runtime.mjs",
     "build:form-runtime": "node scripts/build-form-runtime.mjs",
@@ -20,7 +21,7 @@
     "build:expo-runtime": "node scripts/build-expo-runtime.mjs",
     "build:expo-standalone-runtime": "node scripts/build-expo-standalone-runtime.mjs",
     "check:expo-font": "node scripts/check-expo-font.mjs",
-    "build:embed-runtimes": "node scripts/build-landing-runtime.mjs && node scripts/build-competition-runtime.mjs && node scripts/build-competition-vote-runtime.mjs && node scripts/build-competition-result-runtime.mjs && node scripts/build-form-runtime.mjs && node scripts/build-expo-runtime.mjs && node scripts/build-expo-standalone-runtime.mjs",
+    "build:embed-runtimes": "node scripts/build-landing-runtime.mjs && node scripts/build-competition-runtime.mjs && node scripts/build-detail-page-runtime.mjs && node scripts/build-competition-vote-runtime.mjs && node scripts/build-competition-result-runtime.mjs && node scripts/build-form-runtime.mjs && node scripts/build-expo-runtime.mjs && node scripts/build-expo-standalone-runtime.mjs",
     "prebuild": "npm run build:embed-runtimes",
     "predev": "npm run build:embed-runtimes",
     "check:expo-launch": "node --env-file=.env.local scripts/expo-launch-preflight.mjs"

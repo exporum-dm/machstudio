@@ -13,6 +13,7 @@ import { IMAGE_PRESETS, transformedImageUrl } from "@/lib/webinar-image";
 import { bgVars, focusVars } from "./media-focus";
 import type { NoticeBgKey } from "./config";
 import type { NoticeModel } from "./types";
+import { renderPrimaryCta } from "./view-hero";
 
 /**
  * 섹션 배경 이미지 — **켠 섹션에만** 그린다.
@@ -353,12 +354,7 @@ export function renderCountdown(m: NoticeModel, onApply: () => void): HTMLElemen
         box("mins", m.t.cdMins),
         box("secs", m.t.cdSecs),
       ),
-      m.ctaEnabled &&
-        h(
-          "button",
-          { type: "button", class: "hero-cta nt-final-cta", onclick: onApply },
-          c.ctaLabel.trim() || m.ctaLabel,
-        ),
+      m.ctaEnabled && renderPrimaryCta(m, onApply, "hero-cta nt-final-cta", c.ctaLabel.trim() || m.ctaLabel),
     ),
   );
 }
