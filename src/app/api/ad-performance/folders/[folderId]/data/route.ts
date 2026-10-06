@@ -1,9 +1,53 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAdFolderAccess } from "@/lib/ad-folder-access";
+import { decryptMetaToken } from "@/lib/meta-ads";
+import { findMetaConnection } from "@/lib/meta-connection";
+import { fetchAdCreatives, isMetaThumbnailStale } from "@/lib/meta-ad-creatives";
 
 type Context = { params: Promise<{ folderId: string }> };
 type Level = "campaign" | "adGroup" | "ad";
+
+/** 한 번에 다시 받을 최대 광고 수 — Graph 배치 50개 단위로 4번이면 화면이 크게 늦어지지 않는다. */
+const MAX_THUMBNAIL_REFRESH = 200;
+
+/**
+ * 만료된 Meta 썸네일을 새로 받아 응답 행과 DB 둘 다 고친다(meta-ad-creatives.ts 머리말 참고).
+ * 실패해도 표는 그대로 내려간다 — 썸네일은 부가 정보다.
+ */
+async function refreshStaleMetaThumbnails(
+  folderId: string,
+  projectId: string,
+  userId: string,
+  rows: Array<{ sourceType: string; adId: string | null; thumbnailUrl: string | null }>,
+) {
+  const stale = [...new Set(rows
+    .filter(row => row.sourceType === "META" && row.adId && isMetaThumbnailStale(row.thumbnailUrl))
+    .map(row => row.adId as string))].slice(0, MAX_THUMBNAIL_REFRESH);
+  if (!stale.length) return;
+  try {
+    const connection = await findMetaConnection(projectId, userId);
+    if (!connection) return;
+    const token = decryptMetaToken(connection.encryptedAccessToken);
+    const creatives = await fetchAdCreatives(token, process.env.META_GRAPH_VERSION || "v25.0", stale);
+    const fresh = stale.flatMap(adId => {
+      const url = creatives.get(adId)?.thumbnailUrl;
+      return url ? [{ adId, url }] : [];
+    });
+    if (!fresh.length) return;
+    const byAd = new Map(fresh.map(item => [item.adId, item.url]));
+    for (const row of rows) {
+      const url = row.sourceType === "META" && row.adId ? byAd.get(row.adId) : undefined;
+      if (url) row.thumbnailUrl = url;
+    }
+    await prisma.$executeRaw`
+      UPDATE "AdPerformanceRecord" AS r SET "thumbnailUrl" = v.url
+      FROM unnest(${fresh.map(item => item.adId)}::text[], ${fresh.map(item => item.url)}::text[]) AS v(ad_id, url)
+      WHERE r."folderId" = ${folderId} AND r."sourceType" = 'META' AND r."adId" = v.ad_id`;
+  } catch (error) {
+    console.warn("[ad-performance] 썸네일 갱신 실패", error instanceof Error ? error.message : error);
+  }
+}
 
 export async function GET(request: Request, context: Context) {
   const { folderId } = await context.params;
@@ -48,6 +92,7 @@ export async function GET(request: Request, context: Context) {
     current.clicks += row.clicks ?? 0; current.conversions += row.conversions ?? 0;
     grouped.set(key, current);
   }
+  if (level === "ad") await refreshStaleMetaThumbnails(folderId, access.folder.projectId, access.user.id, [...grouped.values()]);
   const rows = [...grouped.values()].map(row => ({
     ...row,
     ctr: row.impressions ? row.clicks / row.impressions * 100 : 0,

@@ -112,6 +112,10 @@ export default function FolderDetailClient({ folderId }: { folderId: string }) {
     html: string | null;
     loading: boolean;
   } | null>(null);
+  // 그래도 못 불러온 썸네일 주소(삭제된 소재 등) — 깨진 이미지 대신 아이콘을 보여 준다. 주소가 바뀌면 다시 시도.
+  const [brokenThumbs, setBrokenThumbs] = useState<Set<string>>(() => new Set());
+  const markThumbBroken = (url: string) =>
+    setBrokenThumbs((prev) => (prev.has(url) ? prev : new Set(prev).add(url)));
 
   useEffect(() => {
     (async () => {
@@ -609,11 +613,18 @@ export default function FolderDetailClient({ folderId }: { folderId: string }) {
                                     className="group relative grid h-9 w-12 shrink-0 place-items-center overflow-hidden rounded-lg bg-secondary"
                                     aria-label={`${row.name} 소재 보기`}
                                   >
-                                    <img
-                                      src={row.thumbnailUrl}
-                                      alt=""
-                                      className="h-full w-full object-cover transition group-hover:brightness-90"
-                                    />
+                                    {brokenThumbs.has(row.thumbnailUrl) ? (
+                                      <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                                    ) : (
+                                      <img
+                                        src={row.thumbnailUrl}
+                                        alt=""
+                                        loading="lazy"
+                                        referrerPolicy="no-referrer"
+                                        onError={() => markThumbBroken(row.thumbnailUrl!)}
+                                        className="h-full w-full object-cover transition group-hover:brightness-90"
+                                      />
+                                    )}
                                     {row.creativeType === "VIDEO" && (
                                       <span className="absolute inset-0 grid place-items-center bg-black/20">
                                         <PlayCircle className="h-4 w-4 text-white drop-shadow" />
@@ -701,13 +712,21 @@ export default function FolderDetailClient({ folderId }: { folderId: string }) {
                 className="overflow-hidden rounded-xl [&_iframe]:w-full"
                 dangerouslySetInnerHTML={{ __html: preview.html }}
               />
-            ) : preview.row.thumbnailUrl ? (
+            ) : preview.row.thumbnailUrl &&
+              !brokenThumbs.has(preview.row.thumbnailUrl) ? (
               <img
                 src={preview.row.thumbnailUrl}
                 alt=""
+                referrerPolicy="no-referrer"
+                onError={() => markThumbBroken(preview.row.thumbnailUrl!)}
                 className="w-full rounded-xl object-cover"
               />
-            ) : null}
+            ) : (
+              <div className="flex h-40 flex-col items-center justify-center gap-2 rounded-xl bg-secondary text-xs text-muted-foreground">
+                <ImageIcon className="h-5 w-5" />
+                소재 이미지를 불러오지 못했어요
+              </div>
+            )}
           </div>
         </div>
       )}
