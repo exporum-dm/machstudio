@@ -6,6 +6,7 @@ import { getAdFolderAccess } from "@/lib/ad-folder-access";
 import { decryptMetaToken } from "@/lib/meta-ads";
 import { metaReportedCostPerResult, metaReportedResult } from "@/lib/meta-result-metrics";
 import { findMetaConnection } from "@/lib/meta-connection";
+import { fetchAdCreatives, type CreativeInfo } from "@/lib/meta-ad-creatives";
 
 type Context = { params: Promise<{ folderId: string }> };
 type MetaAccount = { platform: string; accountId: string; accountName?: string };
@@ -24,46 +25,6 @@ type MetaInsight = {
 function kstDateOnly(date: Date) {
   const kst = new Date(date.getTime() + 9 * 60 * 60_000);
   return `${kst.getUTCFullYear()}-${String(kst.getUTCMonth() + 1).padStart(2, "0")}-${String(kst.getUTCDate()).padStart(2, "0")}`;
-}
-
-type CreativeInfo = { creativeId: string | null; creativeName: string | null; thumbnailUrl: string | null; creativeType: string | null };
-
-// Insights API는 소재 이미지/영상 정보를 안 주므로, 광고별로 배치 요청해 썸네일·영상 여부를 따로 가져온다.
-async function fetchAdCreatives(token: string, version: string, adIds: string[]) {
-  const map = new Map<string, CreativeInfo>();
-  for (let offset = 0; offset < adIds.length; offset += 50) {
-    const chunk = adIds.slice(offset, offset + 50);
-    const batchPayload = chunk.map(id => ({ method: "GET", relative_url: `${id}?fields=creative{id,name,thumbnail_url,video_id}` }));
-    try {
-      const response = await fetch(`https://graph.facebook.com/${version}/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ access_token: token, batch: JSON.stringify(batchPayload) }),
-        cache: "no-store",
-      });
-      const results = await response.json().catch(() => null) as Array<{ code: number; body: string }> | null;
-      if (!Array.isArray(results)) continue;
-      results.forEach((result, i) => {
-        const adId = chunk[i];
-        if (!result || result.code !== 200) return;
-        try {
-          const parsed = JSON.parse(result.body) as { creative?: { id?: string; name?: string; thumbnail_url?: string; video_id?: string } };
-          if (!parsed.creative) return;
-          map.set(adId, {
-            creativeId: parsed.creative.id ?? null,
-            creativeName: parsed.creative.name ?? null,
-            thumbnailUrl: parsed.creative.thumbnail_url ?? null,
-            creativeType: parsed.creative.video_id ? "VIDEO" : "IMAGE",
-          });
-        } catch {
-          // 개별 소재 파싱 실패는 건너뛰고 나머지는 계속 진행
-        }
-      });
-    } catch {
-      // 소재 조회 실패해도 성과 동기화 자체는 계속 진행 — 썸네일 없이 저장됨
-    }
-  }
-  return map;
 }
 
 export async function POST(_request: Request, context: Context) {
