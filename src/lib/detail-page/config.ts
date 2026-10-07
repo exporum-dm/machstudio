@@ -14,7 +14,7 @@
 import type { NoticeCompetition } from "@/lib/notice/types";
 
 export interface DetailPageSettings {
-  /** 주 버튼 링크. http(s) 또는 같은 사이트 경로(/…). 비우면 버튼을 안 그린다. */
+  /** 주 버튼 링크. http(s)·같은 사이트 경로(/…)·이 페이지 섹션(#form). 비우면 버튼을 안 그린다. */
   ctaUrl: string;
   ctaNewTab: boolean;
   /** 카운트다운 섹션의 마감 시각(ISO). 비우면 카운트다운이 안 나온다. */
@@ -28,6 +28,8 @@ export function isSafeLinkUrl(url: string): boolean {
   const value = url.trim();
   if (!value) return false;
   if (value.startsWith("/") && !value.startsWith("//")) return true;
+  // 같은 페이지의 섹션(#form 등) — 신청 폼으로 내려보내는 버튼.
+  if (/^#[a-z]+$/.test(value)) return true;
   try {
     const parsed = new URL(value);
     return parsed.protocol === "https:" || parsed.protocol === "http:";
@@ -56,6 +58,8 @@ export function detailPageNoticeCompetition(input: {
   name: string;
   theme: Record<string, string>;
   settings: DetailPageSettings;
+  /** 신청 폼 섹션이 부를 machstudio 주소 — 임베드 로더가 넘긴다. 미리보기는 비워도 된다. */
+  formOrigin?: string | null;
 }): NoticeCompetition {
   const { settings } = input;
   return {
@@ -70,6 +74,7 @@ export function detailPageNoticeCompetition(input: {
     statusMessages: { upcoming: "", closed: "" },
     rounds: [],
     cta: isSafeLinkUrl(settings.ctaUrl) ? { href: settings.ctaUrl, newTab: settings.ctaNewTab } : null,
+    formOrigin: input.formOrigin ?? null,
   };
 }
 

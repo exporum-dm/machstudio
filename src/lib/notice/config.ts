@@ -9,9 +9,18 @@
  * — 이미 만든 대회의 내용이 사라지면 안 된다.
  */
 
-/** 렌더 순서 그대로. 편집 UI 도 이 순서를 쓴다. */
+/**
+ * **기본** 렌더 순서. 편집 UI 도 이 순서를 쓴다. 운영자가 순서를 바꾸면 np.order 가 이걸 덮는다.
+ *
+ * banner·split·video·form 은 상세페이지(2026-10)에서 들어왔다 — 아임웹으로 손수 만들던 행사 상세
+ * (사진 위 큰 문구, 사진+색 패널, 연습 영상, 신청 폼)를 이 빌더로 옮기려고. 대회 공고에서도
+ * banner·split·video 는 쓸 수 있다. form 은 상세페이지 전용(pageOnly) — 대회는 자체 신청 팝업이 있다.
+ */
 export const NOTICE_SECTIONS = [
   { key: "concept", label: "개념", note: "이 대회가 무엇인지 한 문장으로" },
+  { key: "banner", label: "사진 배너", note: "화면 가득 사진 위에 큰 문구 — 아래 '배경 이미지'에 사진을 넣어요" },
+  { key: "split", label: "사진 + 글", note: "한쪽은 사진, 한쪽은 키컬러 패널에 글" },
+  { key: "video", label: "영상", note: "유튜브 영상(쇼츠 포함)을 페이지 안에서 재생" },
   { key: "snapshot", label: "한눈에 보기", note: "형식·일시·인원 같은 사실을 카드로" },
   { key: "timeline", label: "타임라인", note: "접수부터 결선까지 날짜" },
   { key: "apply", label: "신청 방법", note: "준비물을 번호 카드로" },
@@ -20,9 +29,15 @@ export const NOTICE_SECTIONS = [
   { key: "criteria", label: "심사 기준", note: "항목과 배점" },
   { key: "prizes", label: "상금 · 시상", note: "1등은 자동으로 강조돼요" },
   { key: "countdown", label: "마감 카운트다운", note: "접수 마감까지 남은 시간" },
+  { key: "form", label: "신청 폼", note: "사전등록 폼을 이 페이지 안에 바로 넣어요", pageOnly: true },
   { key: "faq", label: "자주 묻는 질문", note: "" },
   { key: "sponsors", label: "주최 · 후원", note: "로고는 어느 모드에서든 흰 판 위에 올라갑니다" },
-] as const;
+] as const satisfies readonly { key: string; label: string; note: string; pageOnly?: true }[];
+
+/** 대회 공고에서는 숨기는 섹션인가. */
+export function isPageOnlySection(key: NoticeSectionKey): boolean {
+  return NOTICE_SECTIONS.some((s) => s.key === key && "pageOnly" in s && s.pageOnly);
+}
 
 export type NoticeSectionKey = (typeof NOTICE_SECTIONS)[number]["key"];
 export type NoticeSectionBg = "light" | "dark";
@@ -40,6 +55,8 @@ export interface NoticeCriterionItem { name: string; description: string; points
 export interface NoticePrizeItem { rank: string; title: string; description: string; amount: string }
 export interface NoticeFaqItem { question: string; answer: string }
 export interface NoticeSponsorItem { tier: string; name: string; logoUrl: string; url: string }
+/** 사진 + 글 섹션의 사진. 초점은 배경과 같은 규칙(데스크톱·모바일 따로). */
+export interface NoticeSplitImage { url: string; focus: NoticeMediaFocus; mobileFocus: NoticeMediaFocus }
 
 /**
  * 배경 미디어 + **초점**.
@@ -161,7 +178,15 @@ export interface NoticePageConfig {
    * 전부에 까는 기본값을 두지 않는다. 켠 섹션은 글자 뒤에 스크림이 함께 깔린다(css.ts).
    */
   sectionMedia: NoticeSectionMediaMap;
+  /** 섹션 렌더 순서 — 모든 키가 한 번씩 들어 있다(normalize 가 빠진 키를 기본 순서대로 채운다). */
+  order: NoticeSectionKey[];
   concept: { enabled: boolean; kicker: string; headline: string; highlight: string; body: string };
+  banner: { enabled: boolean; kicker: string; title: string; body: string };
+  split: { enabled: boolean; kicker: string; title: string; body: string; image: NoticeSplitImage | null; imageSide: "left" | "right" };
+  /** url 은 유튜브 주소. 캡션은 영상 옆(모바일은 아래)에 붙는 짧은 설명. */
+  video: { enabled: boolean; kicker: string; title: string; description: string; url: string; captionLabel: string; captionTitle: string; captionBody: string };
+  /** 사전등록(빌더형) 폼을 그 자리에 심는다. sourceId 는 CollectSource.id. */
+  form: { enabled: boolean; kicker: string; title: string; description: string; sourceId: string };
   snapshot: { enabled: boolean; kicker: string; title: string; items: NoticeStatItem[] };
   timeline: { enabled: boolean; kicker: string; title: string; description: string; items: NoticeTimelineItem[] };
   apply: { enabled: boolean; kicker: string; title: string; description: string; items: NoticeStepItem[] };
@@ -182,6 +207,7 @@ export const DEFAULT_NOTICE_SECTION_BG: NoticeSectionBgMap = {
   hero: "dark", concept: "dark", snapshot: "dark", timeline: "dark", apply: "dark",
   eligibility: "dark", selection: "dark", criteria: "dark", prizes: "dark",
   countdown: "dark", faq: "dark", sponsors: "dark",
+  banner: "dark", split: "light", video: "dark", form: "light",
 };
 
 const str = (v: unknown) => (typeof v === "string" ? v : "");
@@ -256,6 +282,19 @@ export function normalizeNoticePageConfig(config: unknown, opts?: NormalizeNotic
   const raw = (key: NoticeSectionKey) => obj(np[key]);
   const on = (key: NoticeSectionKey) => bool(raw(key).enabled, false);
 
+  const imageOf = (v: unknown): NoticeSplitImage | null => {
+    const o = obj(v);
+    const url = str(o.url).trim();
+    return url ? { url, focus: focusOf(o.focus), mobileFocus: focusOf(o.mobileFocus) } : null;
+  };
+
+  /** 알려진 키만, 한 번씩. 빠진 키(새로 생긴 섹션 등)는 기본 순서의 자기 자리 근처가 아니라 끝에 붙는다. */
+  const order: NoticeSectionKey[] = [];
+  for (const key of arr(np.order)) {
+    if (NOTICE_SECTIONS.some((x) => x.key === key) && !order.includes(key as NoticeSectionKey)) order.push(key as NoticeSectionKey);
+  }
+  for (const item of NOTICE_SECTIONS) if (!order.includes(item.key)) order.push(item.key);
+
   return {
     enabled: bool(np.enabled, false),
     language: isNoticeLanguage(np.language) ? np.language : "ko",
@@ -286,6 +325,44 @@ export function normalizeNoticePageConfig(config: unknown, opts?: NormalizeNotic
       }
       return out;
     })(),
+
+    order,
+
+    banner: {
+      enabled: on("banner"),
+      kicker: str(raw("banner").kicker),
+      title: str(raw("banner").title),
+      body: str(raw("banner").body),
+    },
+
+    split: {
+      enabled: on("split"),
+      kicker: str(raw("split").kicker),
+      title: str(raw("split").title),
+      body: str(raw("split").body),
+      image: imageOf(raw("split").image),
+      imageSide: raw("split").imageSide === "right" ? "right" : "left",
+    },
+
+    video: {
+      enabled: on("video"),
+      kicker: str(raw("video").kicker),
+      title: str(raw("video").title),
+      description: str(raw("video").description),
+      url: str(raw("video").url).trim(),
+      captionLabel: str(raw("video").captionLabel),
+      captionTitle: str(raw("video").captionTitle),
+      captionBody: str(raw("video").captionBody),
+    },
+
+    form: {
+      enabled: on("form"),
+      kicker: str(raw("form").kicker),
+      title: str(raw("form").title),
+      description: str(raw("form").description),
+      // id 형식만 받는다 — 이 값은 외부 페이지의 속성·스크립트 주소에 들어간다.
+      sourceId: /^[a-z0-9]{10,40}$/.test(str(raw("form").sourceId)) ? str(raw("form").sourceId) : "",
+    },
 
     concept: {
       enabled: on("concept"),
@@ -412,4 +489,30 @@ export function normalizeNoticePageConfig(config: unknown, opts?: NormalizeNotic
         .filter((i) => keep || i.name.trim()),
     },
   };
+}
+
+/**
+ * 유튜브 주소 → 임베드 정보. watch·youtu.be·shorts·embed 를 받는다. 쇼츠는 세로(9:16)로 그린다.
+ * 유튜브만 받는 이유: 영상 파일을 우리 저장소에서 내보내면 방문자마다 수십 MB 가 나간다
+ * (2026-10 Cached Egress 초과의 원인이 그런 영상이었다).
+ */
+export function parseNoticeVideo(url: string): { embedUrl: string; vertical: boolean } | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url.trim());
+  } catch {
+    return null;
+  }
+  const host = parsed.hostname.replace(/^www\.|^m\./, "");
+  let id = "";
+  let vertical = false;
+  if (host === "youtu.be") id = parsed.pathname.slice(1);
+  else if (host === "youtube.com" || host === "youtube-nocookie.com") {
+    const [, kind, rest] = parsed.pathname.split("/");
+    if (kind === "watch") id = parsed.searchParams.get("v") ?? "";
+    else if (kind === "shorts") { id = rest ?? ""; vertical = true; }
+    else if (kind === "embed" || kind === "live") id = rest ?? "";
+  }
+  if (!/^[A-Za-z0-9_-]{6,20}$/.test(id)) return null;
+  return { embedUrl: `https://www.youtube-nocookie.com/embed/${id}?rel=0&playsinline=1`, vertical };
 }

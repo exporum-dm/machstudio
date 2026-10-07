@@ -40,6 +40,7 @@ export async function OPTIONS() {
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const origin = process.env.NEXT_PUBLIC_APP_URL ?? new URL(req.url).origin;
   // 형식이 틀린 id 는 DB 까지 가지 않는다.
   const page = /^[a-z0-9]{10,40}$/.test(id)
     ? await prisma.detailPage.findFirst({
@@ -66,7 +67,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const body =
     `/* mach page */\n` +
     DETAIL_PAGE_RUNTIME_JS +
-    `\n__msDetailPage.boot(${jsonForScript({ pageId: page.id, name: page.name, theme, config })});\n`;
+    `\n__msDetailPage.boot(${jsonForScript({ pageId: page.id, name: page.name, origin, theme, config })});\n`;
 
   // ETag 필수 — 검증자가 없으면 브라우저가 재검증을 못 해 낡은 스크립트를 계속 실행한다.
   const etag = `W/"${createHash("sha256").update(body).digest("base64url").slice(0, 27)}"`;

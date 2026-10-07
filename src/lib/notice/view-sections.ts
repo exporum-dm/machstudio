@@ -11,7 +11,7 @@
 import { h, svg } from "@/lib/dom/h";
 import { IMAGE_PRESETS, transformedImageUrl } from "@/lib/webinar-image";
 import { bgVars, focusVars } from "./media-focus";
-import type { NoticeBgKey } from "./config";
+import { parseNoticeVideo, type NoticeBgKey } from "./config";
 import type { NoticeModel } from "./types";
 import { renderPrimaryCta } from "./view-hero";
 
@@ -99,6 +99,137 @@ export function renderConcept(m: NoticeModel): HTMLElement | null {
       ),
       c.body && h("div", { class: "nt-concept-body" }, c.body.split("\n\n").map((p) => h("p", null, p))),
     ),
+  );
+}
+
+/** 운영자 글의 문단(빈 줄) 구분을 살린다. 줄바꿈은 CSS(pre-line)가 보존한다. */
+const paragraphs = (text: string) => text.split("\n\n").filter((p) => p.trim()).map((p) => h("p", null, p));
+
+/**
+ * 사진 배너 — 화면 가득 사진 위에 큰 문구. 아임웹으로 만들던 "SEE WHAT IT FEELS LIKE." 자리.
+ *
+ * 사진은 섹션 배경(sectionMedia.banner)을 그대로 쓴다 — 초점·어둡기 손잡이를 새로 만들지 않는다.
+ * 다른 섹션과 달리 글을 **아래쪽**에 둔다. 사진이 주인공이라 글이 가운데를 가리면 안 된다.
+ */
+export function renderBanner(m: NoticeModel): HTMLElement | null {
+  if (!m.show.banner) return null;
+  const b = m.np.banner;
+  const titleId = m.sectionId("nt-banner-title");
+  return h(
+    "section",
+    {
+      class: `section nt-banner${m.np.sectionMedia.banner ? " has-bg" : ""}`,
+      id: m.sectionId("nt-banner"),
+      style: bgVars(m.np.sectionMedia.banner),
+      "data-bg": m.np.sectionBg.banner,
+      "aria-labelledby": b.title.trim() ? titleId : undefined,
+    },
+    sectionBackground(m, "banner"),
+    h(
+      "div",
+      { class: "nt-banner-copy rv" },
+      b.kicker && h("span", { class: "section-kicker" }, b.kicker),
+      b.title && h("h2", { class: "nt-banner-title", id: titleId }, b.title),
+      b.body && h("div", { class: "nt-banner-body" }, paragraphs(b.body)),
+    ),
+  );
+}
+
+/** 사진 + 글 — 한쪽은 사진, 한쪽은 키컬러(버튼색) 패널. "FEEL THE K-POP ENERGY!" 자리. */
+export function renderSplit(m: NoticeModel): HTMLElement | null {
+  if (!m.show.split) return null;
+  const sp = m.np.split;
+  const image = sp.image;
+  if (!image) return null;
+  const titleId = m.sectionId("nt-split-title");
+  return h(
+    "section",
+    {
+      class: `section nt-split${sp.imageSide === "right" ? " is-reverse" : ""}`,
+      id: m.sectionId("nt-split"),
+      "data-bg": m.np.sectionBg.split,
+      "aria-labelledby": titleId,
+    },
+    h(
+      "div",
+      { class: "nt-split-grid rv" },
+      h(
+        "div",
+        { class: "nt-split-media" },
+        h("img", {
+          src: transformedImageUrl(image.url, IMAGE_PRESETS.heroBackground),
+          alt: "",
+          loading: "lazy",
+          style: focusVars(image.focus, image.mobileFocus),
+        }),
+      ),
+      h(
+        "div",
+        { class: "nt-split-panel" },
+        sp.kicker && h("span", { class: "nt-split-kicker" }, sp.kicker),
+        h("h2", { class: "nt-split-title", id: titleId }, sp.title),
+        sp.body && h("div", { class: "nt-split-body" }, paragraphs(sp.body)),
+      ),
+    ),
+  );
+}
+
+/**
+ * 영상 — 유튜브를 페이지 안에서 재생. 쇼츠는 세로 틀(9:16), 나머지는 가로(16:9).
+ * 캡션(라벨·제목·설명)은 영상 옆에 붙는다 — "LNGSHOT · Saucin" 같은 곡 정보 자리.
+ */
+export function renderVideo(m: NoticeModel): HTMLElement | null {
+  if (!m.show.video) return null;
+  const v = m.np.video;
+  const video = parseNoticeVideo(v.url);
+  if (!video) return null;
+  const hasCaption = !!(v.captionLabel.trim() || v.captionTitle.trim() || v.captionBody.trim());
+  return sectionShell(
+    m,
+    "video",
+    { kicker: v.kicker, title: v.title, description: v.description },
+    h(
+      "div",
+      { class: `nt-video rv${video.vertical ? " is-vertical" : ""}${hasCaption ? " has-caption" : ""}` },
+      h(
+        "div",
+        { class: "nt-video-frame" },
+        h("iframe", {
+          src: video.embedUrl,
+          title: v.captionTitle || v.title || "video",
+          loading: "lazy",
+          allow: "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share",
+          allowfullscreen: "",
+          referrerpolicy: "strict-origin-when-cross-origin",
+        }),
+      ),
+      hasCaption &&
+        h(
+          "div",
+          { class: "nt-video-caption" },
+          v.captionLabel && h("span", { class: "nt-video-label" }, v.captionLabel),
+          v.captionTitle && h("p", { class: "nt-video-title" }, v.captionTitle),
+          v.captionBody && h("p", { class: "nt-video-body" }, v.captionBody),
+        ),
+    ),
+  );
+}
+
+/**
+ * 신청 폼 — 사전등록(빌더형) 폼이 들어갈 자리. 실제 폼은 mount.ts 가 등록 폼 로더(/f/{id})를 불러 채운다.
+ *
+ * **미리보기에서는 진짜 폼을 띄우지 않는다.** 거기서 제출하면 실제 등록이 생긴다 — 자리표시만 그린다.
+ */
+export function renderForm(m: NoticeModel): HTMLElement | null {
+  if (!m.show.form) return null;
+  const f = m.np.form;
+  return sectionShell(
+    m,
+    "form",
+    { kicker: f.kicker, title: f.title || m.t.sectionLabel.form, description: f.description },
+    m.isPreview
+      ? h("div", { class: "nt-form-placeholder rv" }, "여기에 사전등록 폼이 들어가요 — 실제 페이지에서 보여요")
+      : h("div", { class: "nt-form-slot rv", "data-mach-form": f.sourceId }),
   );
 }
 

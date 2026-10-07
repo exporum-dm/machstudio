@@ -18,6 +18,8 @@ import { NoticeEditor, type NoticeEditorHost } from "@/app/(app)/competition/[sl
 
 interface DetailPageDto {
   id: string;
+  workspaceId: string;
+  projectId: string;
   name: string;
   config: Record<string, unknown>;
   theme: Record<string, string>;
@@ -179,7 +181,25 @@ function DetailPageEditor({
     theme: { accentColor: DEFAULT_COMPETITION_THEME.accentColor, ...page.theme },
     settings: normalizeDetailPageSettings(page.config),
   }));
-  const { id, name } = page;
+  const { id, name, workspaceId, projectId } = page;
+
+  // 신청 폼 섹션에 고를 사전등록 폼 — 이 페이지와 **같은 프로젝트**의 빌더형만(AGENTS: URL 자원의 소속).
+  const [formSources, setFormSources] = useState<Array<{ id: string; name: string }> | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/collect-sources?workspaceId=${workspaceId}&projectId=${projectId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const list = (data.sources ?? []) as Array<{ id: string; name: string; mode?: string }>;
+        if (alive) setFormSources(list.filter((s) => s.mode === "builder").map((s) => ({ id: s.id, name: s.name })));
+      } catch {
+        /* 목록을 못 가져와도 편집은 된다 — 고르기 칸만 비어 있다 */
+      }
+    })();
+    return () => { alive = false; };
+  }, [workspaceId, projectId]);
 
   const buildPreview = useCallback(
     (theme: Record<string, string>, settings: DetailPageSettings | null) =>
@@ -197,10 +217,11 @@ function DetailPageEditor({
       status: null,
       fixedLanguageLabel: null,
       pageSettings: initial.settings,
+      formSources,
       buildPreview,
       save: ({ config, theme }) => patch({ config, theme }, "상세페이지를 저장했어요"),
     }),
-    [initial, id, buildPreview, patch],
+    [initial, id, formSources, buildPreview, patch],
   );
 
   return <NoticeEditor host={host} />;

@@ -10,13 +10,16 @@ import { Switch } from "@/components/ui/switch";
 import {
   NOTICE_LANGUAGES,
   NOTICE_SECTIONS,
+  isPageOnlySection,
   normalizeNoticePageConfig,
+  parseNoticeVideo,
   type NoticePageConfig,
   type NoticeBgKey,
   type NoticeSectionBg,
   type NoticeSectionKey,
 } from "@/lib/notice/config";
 import { noticeStrings } from "@/lib/notice/strings";
+import { buildNoticeModel } from "@/lib/notice/build-model";
 import { DEFAULT_COMPETITION_THEME } from "@/lib/competition-config";
 import { DEFAULT_ROUND_NAME, resolveCompetitionStatus, type CompetitionPhase } from "@/lib/competition-status";
 import { isSafeLinkUrl, type DetailPageSettings } from "@/lib/detail-page/config";
@@ -48,6 +51,8 @@ export interface NoticeEditorHost {
   fixedLanguageLabel: string | null;
   /** 상세페이지 전용 값. 대회는 null. */
   pageSettings: DetailPageSettings | null;
+  /** 신청 폼 섹션에 고를 수 있는 사전등록(빌더형) 폼. 대회는 null — 그 섹션 자체가 안 보인다. */
+  formSources: Array<{ id: string; name: string }> | null;
   /** 편집 중인 값으로 미리보기용 대회 정보를 만든다. */
   buildPreview: (theme: Record<string, string>, settings: DetailPageSettings | null) => NoticeCompetition;
   save: (next: { config: Record<string, unknown>; theme: Record<string, string> }) => Promise<boolean>;
@@ -64,6 +69,21 @@ const PAGE_SECTION_NOTES: Partial<Record<NoticeSectionKey, string>> = {
   prizes: "혜택·시상 — 맨 위 카드가 자동으로 강조돼요",
   countdown: "마감 시각까지 남은 시간",
 };
+
+/** 켜 뒀는데 공개 페이지에 안 나오는 이유 — 공개 렌더의 "내용 있음" 조건(build-model)과 짝을 맞춘다. */
+function hiddenReasonOf(key: NoticeSectionKey, isPage: boolean): string {
+  switch (key) {
+    case "concept": return "큰 카피나 본문을 써 주세요.";
+    case "banner": return "배경 이미지를 넣거나 큰 문구를 써 주세요.";
+    case "split": return "사진과 제목(또는 본문)을 넣어 주세요.";
+    case "video": return "유튜브 주소를 넣어 주세요.";
+    case "snapshot": return "카드를 하나 이상 추가해 주세요. 사진 위에 큰 문구만 원하면 '사진 배너' 섹션을 쓰세요.";
+    case "selection": return "라운드를 하나 이상 추가해 주세요.";
+    case "countdown": return isPage ? "마감 시각을 넣어 주세요 (지난 시각이면 안 보여요)." : "기본정보 탭의 접수 마감이 없거나 이미 지났어요.";
+    case "form": return "연결할 사전등록 폼을 골라 주세요.";
+    default: return "항목을 하나 이상 추가해 주세요.";
+  }
+}
 
 interface Props {
   competition: CompetitionDetail;
@@ -101,6 +121,7 @@ export default function NoticePageTab({ competition, rounds, patch }: Props) {
     fixedLanguageLabel:
       NOTICE_LANGUAGES.find((l) => l.value === competition.config.language)?.label ?? competition.config.language,
     pageSettings: null,
+    formSources: null,
     /** 미리보기에 넘길 대회 정보. auto 소스(선발·심사)가 여기 라운드를 읽는다. */
     buildPreview: (theme) => ({
       id: competition.id,
@@ -187,6 +208,24 @@ export function NoticeEditor({ host }: { host: NoticeEditorHost }) {
 
   const nextConfig = () => ({ ...host.config, noticePage: np, ...(pageSettings ? { page: pageSettings } : {}) });
   const previewConfig = useMemo(() => ({ ...host.config, noticePage: np }), [host.config, np]);
+
+  /** 공개 렌더와 **같은 판단**으로 섹션 노출을 계산한다 — 편집 화면만 따로 추측하면 또 어긋난다. */
+  const visible = useMemo(
+    () => buildNoticeModel(previewCompetition, normalizeNoticePageConfig({ noticePage: np }), { uid: "edit", embedded: false, isPreview: true }).show,
+    [previewCompetition, np],
+  );
+  /** 편집 화면에 보이는 섹션(대회는 상세페이지 전용 섹션 제외)을 np.order 순서로. */
+  const editorSections = np.order.filter((key) => isPage || !isPageOnlySection(key));
+  const moveSection = (key: NoticeSectionKey, dir: -1 | 1) => {
+    const idx = editorSections.indexOf(key);
+    const neighbor = editorSections[idx + dir];
+    if (!neighbor) return;
+    const order = [...np.order];
+    const a = order.indexOf(key);
+    const b = order.indexOf(neighbor);
+    [order[a], order[b]] = [order[b], order[a]];
+    update({ order });
+  };
 
   const save = async () => {
     setSaving(true);
@@ -517,8 +556,14 @@ export function NoticeEditor({ host }: { host: NoticeEditorHost }) {
                   inputMode="url"
                   className={`${FIELD_CLS} h-8 font-mono text-xs`}
                 />
+                <button
+                  onClick={() => updatePage({ ctaUrl: "#form", ctaNewTab: false })}
+                  className={`bg-secondary px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground ${R.control}`}
+                >
+                  이 페이지의 신청 폼으로 내려가기 (#form)
+                </button>
                 {pageSettings.ctaUrl.trim() && !isSafeLinkUrl(pageSettings.ctaUrl) ? (
-                  <p className="text-[11px] text-red-500">https:// 로 시작하는 주소를 넣어 주세요 — 지금은 버튼이 안 보여요.</p>
+                  <p className="text-[11px] text-red-500">https:// 로 시작하는 주소나 #form 을 넣어 주세요 — 지금은 버튼이 안 보여요.</p>
                 ) : !pageSettings.ctaUrl.trim() ? (
                   <p className="text-[11px] text-muted-foreground">비워 두면 주 버튼(히어로·카운트다운)이 안 보여요.</p>
                 ) : null}
@@ -589,15 +634,22 @@ export function NoticeEditor({ host }: { host: NoticeEditorHost }) {
         </section>
 
         {/* ── 섹션들 ──────────────────────────────────────────── */}
-        {NOTICE_SECTIONS.map(({ key, label, note }) => (
+        {editorSections.map((key, index) => {
+          const meta = NOTICE_SECTIONS.find((item) => item.key === key)!;
+          return (
           <SectionCard
             key={key}
-            label={label}
-            note={(isPage && PAGE_SECTION_NOTES[key]) || note}
+            label={meta.label}
+            note={(isPage && PAGE_SECTION_NOTES[key]) || meta.note}
             enabled={np[key].enabled}
             bg={np.sectionBg[key]}
             onToggle={(v) => section(key, { enabled: v } as never)}
             onBg={(v) => setBg(key, v)}
+            onMove={{
+              up: index > 0 ? () => moveSection(key, -1) : null,
+              down: index < editorSections.length - 1 ? () => moveSection(key, 1) : null,
+            }}
+            hiddenReason={np[key].enabled && !visible[key] ? hiddenReasonOf(key, isPage) : null}
           >
             {/*
               배경은 **선택**이다 — 어울리는 섹션이 있고 아닌 섹션이 있다. 그래서 섹션마다
@@ -615,9 +667,12 @@ export function NoticeEditor({ host }: { host: NoticeEditorHost }) {
               section={section}
               rounds={rounds}
               deadline={pageSettings ? { value: pageSettings.deadline, onChange: (deadline) => updatePage({ deadline }) } : null}
+              uploadUrl={host.uploadUrl}
+              formSources={host.formSources}
             />
           </SectionCard>
-        ))}
+          );
+        })}
 
         <div className="flex items-center justify-end gap-3">
           {dirty && <span className="text-[11px] text-muted-foreground">저장하지 않은 변경이 있어요</span>}
@@ -649,6 +704,8 @@ function SectionBody({
   section,
   rounds: hostRounds,
   deadline,
+  uploadUrl,
+  formSources,
 }: {
   sectionKey: NoticeSectionKey;
   np: NoticePageConfig;
@@ -657,6 +714,8 @@ function SectionBody({
   rounds: RoundDto[] | null;
   /** 상세페이지의 카운트다운 마감 시각. 대회는 null(기본정보 탭의 접수 마감을 쓴다). */
   deadline: { value: string | null; onChange: (next: string | null) => void } | null;
+  uploadUrl: string;
+  formSources: Array<{ id: string; name: string }> | null;
 }) {
   const rounds = hostRounds ?? [];
   const hasRounds = hostRounds !== null;
@@ -709,6 +768,112 @@ function SectionBody({
       />
     );
   };
+
+  if (sectionKey === "banner") {
+    const b = np.banner;
+    return (
+      <>
+        <div className="grid gap-1.5 sm:grid-cols-2">
+          <input value={b.kicker} onChange={(e) => section("banner", { kicker: e.target.value })}
+            placeholder="작은 라벨 (예: This is the Energy)" className={`${FIELD_CLS} h-8`} />
+          <input value={b.title} onChange={(e) => section("banner", { title: e.target.value })}
+            placeholder="큰 문구 (예: SEE WHAT IT FEELS LIKE.)" className={`${FIELD_CLS} h-8`} />
+        </div>
+        <textarea value={b.body} onChange={(e) => section("banner", { body: e.target.value })}
+          rows={2} placeholder="짧은 설명 (선택)" className={`${FIELD_CLS} h-auto py-2`} />
+        <p className="text-[11px] text-muted-foreground">사진은 위 <b>배경 이미지</b>에 넣어요. 글은 사진 아래쪽에 얹혀요 — 배경 어둡기로 글이 잘 읽히게 맞추세요.</p>
+      </>
+    );
+  }
+
+  if (sectionKey === "split") {
+    const sp = np.split;
+    return (
+      <>
+        <SectionBackgroundField
+          label="사진"
+          uploadUrl={uploadUrl}
+          showTone={false}
+          value={sp.image ? { ...sp.image, scrim: 0, panel: 0 } : null}
+          onChange={(next) => section("split", { image: next ? { url: next.url, focus: next.focus, mobileFocus: next.mobileFocus } : null })}
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] text-muted-foreground">사진 위치</span>
+          {(["left", "right"] as const).map((side) => (
+            <button
+              key={side}
+              onClick={() => section("split", { imageSide: side })}
+              className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${R.control} ${
+                sp.imageSide === side ? "bg-foreground text-background" : "bg-secondary text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {side === "left" ? "왼쪽" : "오른쪽"}
+            </button>
+          ))}
+          <span className="text-[11px] text-muted-foreground">· 반대쪽 패널은 버튼 컬러로 칠해져요</span>
+        </div>
+        <div className="grid gap-1.5 sm:grid-cols-2">
+          <input value={sp.kicker} onChange={(e) => section("split", { kicker: e.target.value })}
+            placeholder="작은 라벨 (선택)" className={`${FIELD_CLS} h-8`} />
+          <input value={sp.title} onChange={(e) => section("split", { title: e.target.value })}
+            placeholder="제목 (예: FEEL THE K-POP ENERGY!)" className={`${FIELD_CLS} h-8`} />
+        </div>
+        <textarea value={sp.body} onChange={(e) => section("split", { body: e.target.value })}
+          rows={3} placeholder="본문 — 빈 줄로 문단을 나눠요" className={`${FIELD_CLS} h-auto py-2`} />
+      </>
+    );
+  }
+
+  if (sectionKey === "video") {
+    const v = np.video;
+    const parsed = v.url.trim() ? parseNoticeVideo(v.url) : null;
+    return (
+      <>
+        {head("video")}
+        <input value={v.url} onChange={(e) => section("video", { url: e.target.value })} inputMode="url"
+          placeholder="유튜브 주소 (https://youtu.be/… · https://youtube.com/shorts/…)" className={`${FIELD_CLS} h-8 font-mono text-xs`} />
+        {v.url.trim() && !parsed ? (
+          <p className="text-[11px] text-red-500">유튜브 주소만 넣을 수 있어요 — 영상 파일을 직접 올리면 방문자마다 수십 MB가 나가요.</p>
+        ) : parsed ? (
+          <p className="text-[11px] text-muted-foreground">{parsed.vertical ? "세로 영상(쇼츠)으로" : "가로 영상으로"} 보여요.</p>
+        ) : null}
+        <span className="block pt-1 text-[10px] font-medium text-muted-foreground">영상 옆 설명 (선택)</span>
+        <div className="grid gap-1.5 sm:grid-cols-2">
+          <input value={v.captionLabel} onChange={(e) => section("video", { captionLabel: e.target.value })}
+            placeholder="작은 딱지 (예: Class Song)" className={`${FIELD_CLS} h-8`} />
+          <input value={v.captionTitle} onChange={(e) => section("video", { captionTitle: e.target.value })}
+            placeholder="제목 (예: LNGSHOT Saucin)" className={`${FIELD_CLS} h-8`} />
+        </div>
+        <textarea value={v.captionBody} onChange={(e) => section("video", { captionBody: e.target.value })}
+          rows={2} placeholder="설명 (예: 다 외우지 않아도 괜찮아요)" className={`${FIELD_CLS} h-auto py-2`} />
+      </>
+    );
+  }
+
+  if (sectionKey === "form") {
+    const fm = np.form;
+    return (
+      <>
+        {head("form")}
+        <select
+          value={fm.sourceId}
+          onChange={(e) => section("form", { sourceId: e.target.value })}
+          className={`${FIELD_CLS} h-8`}
+        >
+          <option value="">사전등록 폼 고르기</option>
+          {(formSources ?? []).map((source) => (
+            <option key={source.id} value={source.id}>{source.name}</option>
+          ))}
+        </select>
+        {formSources && formSources.length === 0 && (
+          <p className="text-[11px] text-muted-foreground">이 프로젝트에 빌더형 사전등록 폼이 없어요 — 사전등록 메뉴에서 먼저 만들어 주세요.</p>
+        )}
+        <p className="text-[11px] text-muted-foreground">
+          미리보기에는 자리만 보이고, 실제 페이지에서 폼이 떠요. 히어로 주 버튼 링크를 <b>#form</b> 으로 두면 이 폼으로 내려가요.
+        </p>
+      </>
+    );
+  }
 
   if (sectionKey === "concept") {
     const c = np.concept;

@@ -53,12 +53,36 @@ export function renderToc(m: NoticeModel, onNavigate?: (sectionId: string) => vo
  */
 export function renderPrimaryCta(m: NoticeModel, onApply: () => void, className: string, label: string): HTMLElement | null {
   if (!m.ctaVisible) return null;
+  if (m.ctaLink && m.ctaLink.href.startsWith("#")) {
+    // 같은 페이지의 섹션으로 — "#form" 이면 신청 폼 섹션. 섹션 id 에는 인스턴스 접두가 붙어 있어
+    // 운영자가 적은 값을 그대로 href 로 쓰면 못 찾는다. 여기서 실제 id 로 바꾼다.
+    // 버튼으로 그린다 — h() 는 http(s) 가 아닌 href 를 지워서(#… 포함) 링크로 두면 키보드로 못 누른다.
+    const targetId = m.sectionId(`nt-${m.ctaLink.href.slice(1)}`);
+    return h(
+      "button",
+      {
+        type: "button",
+        class: className,
+        onclick: (event: Event) => {
+          event.preventDefault();
+          const doc = (event.currentTarget as HTMLElement | null)?.ownerDocument ?? document;
+          doc.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+        },
+      },
+      label,
+    );
+  }
   if (m.ctaLink) {
+    // "/경로" 는 **붙여 둔 사이트** 기준 주소로 푼다. h() 가 http(s) 만 남기므로 그대로 두면 href 가 사라진다.
+    let href = m.ctaLink.href;
+    if (href.startsWith("/") && typeof location !== "undefined") {
+      try { href = new URL(href, location.href).href; } catch { /* 못 풀면 h() 가 속성을 뺀다 */ }
+    }
     return h(
       "a",
       {
         class: className,
-        href: m.ctaLink.href,
+        href,
         ...(m.ctaLink.newTab ? { target: "_blank", rel: "noopener noreferrer" } : {}),
         onclick: m.isPreview ? (event: Event) => event.preventDefault() : undefined,
       },

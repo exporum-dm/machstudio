@@ -6,7 +6,7 @@
  */
 import { onAccentColor } from "@/lib/competition-render";
 import { DEFAULT_ROUND_NAME } from "@/lib/competition-status";
-import { NOTICE_SECTIONS, type NoticeCriterionItem, type NoticePageConfig, type NoticeSectionKey, type NoticeSelectionRound } from "./config";
+import { parseNoticeVideo, type NoticeCriterionItem, type NoticePageConfig, type NoticeSectionKey, type NoticeSelectionRound } from "./config";
 import { noticeStrings, type NoticeStrings } from "./strings";
 import type { NoticeCompetition, NoticeModel, NoticeRound, NoticeTocItem } from "./types";
 
@@ -84,6 +84,13 @@ export function buildNoticeModel(
   /** 토글 ON + 실제 데이터 있음. 빈 껍데기를 방문자에게 보여주지 않는다. */
   const hasContent: Record<NoticeSectionKey, boolean> = {
     concept: !!(np.concept.headline.trim() || np.concept.body.trim()),
+    // 배너는 문구 없이 사진만 깔아도 의미가 있다(사진 자체가 내용).
+    banner: !!(np.banner.title.trim() || np.sectionMedia.banner),
+    split: !!np.split.image && !!(np.split.title.trim() || np.split.body.trim()),
+    video: parseNoticeVideo(np.video.url) !== null,
+    // 폼은 machstudio 주소를 알아야 스크립트를 부른다 — 상세페이지 로더만 넘겨준다(대회 공고엔 없음).
+    // 미리보기는 실제 폼 대신 자리표시를 그리므로 주소 없이도 보인다.
+    form: !!np.form.sourceId && (isPreview || !!competition.formOrigin),
     snapshot: np.snapshot.items.length > 0,
     timeline: np.timeline.items.length > 0,
     apply: np.apply.items.length > 0,
@@ -97,13 +104,14 @@ export function buildNoticeModel(
   };
 
   const show = {} as Record<NoticeSectionKey, boolean>;
-  for (const section of NOTICE_SECTIONS) {
-    show[section.key] = np[section.key].enabled && hasContent[section.key];
+  for (const key of np.order) {
+    show[key] = np[key].enabled && hasContent[key];
   }
 
-  const tocItems: NoticeTocItem[] = NOTICE_SECTIONS.filter((section) => show[section.key]).map((section) => {
-    const cfg = np[section.key] as { title?: string };
-    return { id: `nt-${section.key}`, label: (cfg.title || "").trim() || t.sectionLabel[section.key] };
+  // 목차도 운영자가 정한 순서를 따른다 — 화면 순서와 다르면 목차가 엉뚱한 데로 데려간다.
+  const tocItems: NoticeTocItem[] = np.order.filter((key) => show[key]).map((key) => {
+    const cfg = np[key] as { title?: string };
+    return { id: `nt-${key}`, label: (cfg.title || "").trim() || t.sectionLabel[key] };
   });
 
   /*
@@ -141,6 +149,7 @@ export function buildNoticeModel(
     ctaLabel,
     ctaEnabled,
     ctaNote,
+    formOrigin: competition.formOrigin ?? null,
     ctaVisible: competition.cta !== null,
     ctaLink: competition.cta ?? null,
     tocItems,
