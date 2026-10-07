@@ -78,6 +78,8 @@ export function SectionCard({
   bg,
   onToggle,
   onBg,
+  onMove,
+  hiddenReason,
   children,
 }: {
   label: string;
@@ -86,6 +88,14 @@ export function SectionCard({
   bg: "light" | "dark";
   onToggle: (value: boolean) => void;
   onBg: (value: "light" | "dark") => void;
+  /** 순서 바꾸기 — 위(-1)/아래(+1). 맨 위·맨 아래면 그 방향 버튼이 잠긴다. */
+  onMove?: { up: (() => void) | null; down: (() => void) | null };
+  /**
+   * 켜 뒀는데 방문자에게 안 보이는 이유. 공개 페이지는 "켬 + 내용 있음" 일 때만 섹션을 그리는데
+   * (빈 껍데기 금지), 그걸 편집 화면이 말해 주지 않아 "켰는데 안 나온다 = 오류" 로 보였다
+   * (2026-10-07 실제 사례 — 한눈에 보기에 제목·배경만 넣고 카드는 비워 둠).
+   */
+  hiddenReason?: string | null;
   children: React.ReactNode;
 }) {
   return (
@@ -96,6 +106,26 @@ export function SectionCard({
           {note && <p className="mt-0.5 text-[11px] text-muted-foreground">{note}</p>}
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {onMove && (
+            <div className="flex gap-0.5">
+              <button
+                onClick={onMove.up ?? undefined}
+                disabled={!onMove.up}
+                aria-label={`${label} 위로`}
+                className={`grid h-6 w-6 place-items-center bg-secondary text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30 ${R.control}`}
+              >
+                <ChevronUp className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={onMove.down ?? undefined}
+                disabled={!onMove.down}
+                aria-label={`${label} 아래로`}
+                className={`grid h-6 w-6 place-items-center bg-secondary text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30 ${R.control}`}
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
           <div className="flex gap-0.5">
             {(["light", "dark"] as const).map((value) => (
               <button
@@ -112,6 +142,11 @@ export function SectionCard({
           <Switch checked={enabled} onChange={onToggle} label={`${label} 사용`} />
         </div>
       </div>
+      {enabled && hiddenReason && (
+        <p role="status" className={`mt-2 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400 ${R.control}`}>
+          지금은 방문자에게 안 보여요 — {hiddenReason}
+        </p>
+      )}
       {enabled && <div className="mt-3 space-y-2">{children}</div>}
     </section>
   );

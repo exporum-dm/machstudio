@@ -272,6 +272,93 @@ const SECTION_CSS = `
 .lnd .nt-final-cta { position: static; transform: none; margin-inline: auto; }
 .lnd .nt-final-cta:hover { transform: translateY(-2px); }
 
+/* ── 사진 배너 ──
+   사진이 주인공이다. 섹션 높이를 화면 비율로 잡고 글은 아래쪽에 — 가운데를 가리지 않게.
+   배경 막(.nt-bg)은 다른 섹션과 같은 걸 쓰되, 글이 놓이는 아래쪽만 진하게 깐다.
+   사진을 안 넣었으면 섹션색 위에 큰 문구만 남는다(그래도 읽힌다). */
+.lnd .nt-banner {
+  min-height: clamp(380px, 62vh, 640px);
+  display: flex; flex-direction: column; justify-content: flex-end;
+  padding-block: clamp(56px, 8vw, 96px);
+}
+.lnd .nt-banner.has-bg .nt-bg::after {
+  background: linear-gradient(to top,
+    color-mix(in srgb, var(--sec-bg) var(--scrim-a, 72%), transparent) 0%,
+    color-mix(in srgb, var(--sec-bg) calc(var(--scrim-a, 72%) * .35), transparent) 55%,
+    transparent 100%);
+}
+.lnd .nt-banner-copy { max-width: 760px; }
+.lnd .nt-banner-title {
+  margin: 0; font-size: clamp(34px, 6.4vw, 76px); font-weight: 900; line-height: .98;
+  letter-spacing: -.045em; text-transform: uppercase;
+}
+.lnd .nt-banner-body { margin-top: 18px; max-width: 560px; font-size: 16px; line-height: 1.7; color: var(--body); }
+.lnd .nt-banner-body p { margin: 0 0 10px; }
+
+/* ── 사진 + 글 ──
+   화면 폭 전체를 반반으로 쓴다(.section 은 960px 글 상자라 거기서 꺼낸다).
+   패널은 버튼색 — 페이지에서 "눌러 볼 만한 것"과 같은 색이 강조 면이 된다. */
+.lnd .nt-split { width: 100%; max-width: none; padding: 0; }
+.lnd .nt-split-grid { display: grid; grid-template-columns: 1.35fr 1fr; min-height: clamp(320px, 42vw, 520px); }
+.lnd .nt-split.is-reverse .nt-split-grid { grid-template-columns: 1fr 1.35fr; }
+.lnd .nt-split.is-reverse .nt-split-media { order: 2; }
+.lnd .nt-split-media { position: relative; overflow: hidden; min-height: 260px; }
+.lnd .nt-split-media img {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block;
+  object-position: var(--fx, 50%) var(--fy, 50%);
+}
+.lnd .nt-split-panel {
+  display: flex; flex-direction: column; justify-content: center;
+  padding: clamp(36px, 5vw, 72px);
+  background: var(--btn); color: var(--on-btn);
+}
+.lnd .nt-split-kicker { font-size: 11.5px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; opacity: .85; margin-bottom: 12px; }
+.lnd .nt-split-title {
+  margin: 0; color: inherit; font-size: clamp(28px, 3.6vw, 46px); font-weight: 900; line-height: 1;
+  letter-spacing: -.04em; text-transform: uppercase; font-style: italic;
+}
+.lnd .nt-split-body { margin-top: 16px; font-size: 15px; line-height: 1.7; opacity: .92; }
+.lnd .nt-split-body p { margin: 0 0 10px; }
+
+/* ── 영상 ──
+   유튜브 iframe 은 비율 상자에 넣는다. 쇼츠(세로)는 폭을 줄여 화면을 다 먹지 않게.
+   캡션이 있으면 넓은 화면에서 영상 옆, 좁은 화면에서 아래. */
+.lnd .nt-video { display: grid; gap: clamp(24px, 4vw, 48px); align-items: center; justify-items: center; }
+.lnd .nt-video.has-caption { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); justify-items: stretch; }
+.lnd .nt-video.is-vertical.has-caption { grid-template-columns: minmax(0, 340px) minmax(0, 1fr); justify-content: center; }
+.lnd .nt-video-frame {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden;
+  border-radius: 18px; background: #000; box-shadow: var(--card-shadow);
+}
+.lnd .nt-video.is-vertical .nt-video-frame { aspect-ratio: 9 / 16; max-width: 340px; }
+.lnd .nt-video-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.lnd .nt-video-label {
+  display: inline-block; padding: 5px 10px; border-radius: 999px; font-size: 10.5px; font-weight: 800;
+  letter-spacing: .12em; text-transform: uppercase; background: var(--btn); color: var(--on-btn);
+}
+.lnd .nt-video-title { margin: 14px 0 0; font-size: clamp(24px, 3vw, 34px); font-weight: 900; line-height: 1.05; letter-spacing: -.03em; }
+.lnd .nt-video-body { margin: 12px 0 0; font-size: 14.5px; line-height: 1.7; color: var(--muted); }
+
+/* ── 신청 폼 ──
+   폼 자체의 모양은 등록 폼 런타임이 갖는다. 여기서는 자리만 잡고, 미리보기 자리표시만 칠한다. */
+.lnd .nt-form-slot { max-width: 640px; margin-inline: auto; }
+.lnd .nt-form-placeholder {
+  max-width: 640px; margin-inline: auto; padding: 48px 24px; border-radius: 18px; text-align: center;
+  font-size: 14px; font-weight: 700; color: var(--muted);
+  border: 1.5px dashed color-mix(in srgb, var(--paper) 28%, transparent);
+}
+
+@media (max-width: 760px) {
+  .lnd .nt-split-grid,
+  .lnd .nt-split.is-reverse .nt-split-grid { grid-template-columns: 1fr; }
+  .lnd .nt-split.is-reverse .nt-split-media { order: 0; }
+  .lnd .nt-split-media { min-height: 0; aspect-ratio: 4 / 3; }
+  .lnd .nt-split-media img { object-position: var(--mfx, 50%) var(--mfy, 50%); }
+  .lnd .nt-video.has-caption,
+  .lnd .nt-video.is-vertical.has-caption { grid-template-columns: 1fr; justify-items: center; }
+  .lnd .nt-video-caption { width: 100%; }
+}
+
 /* ── 히어로 세로 정렬 ──
    껍데기의 .hero-inner 는 grid + place-items:center 다. 랜딩은 그 안에 카피 한 덩어리뿐이라
    가운데에 놓였지만, 공고는 **카피 + 팩트 줄** 둘이라 암묵 행이 두 개가 된다. grid 의

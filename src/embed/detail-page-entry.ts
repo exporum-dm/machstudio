@@ -15,6 +15,8 @@ import { mountNotice } from "@/lib/notice/mount";
 interface BootPayload {
   pageId: string;
   name: string;
+  /** machstudio 주소 — 신청 폼 섹션이 등록 폼 로더를 부를 때 쓴다. */
+  origin: string;
   theme: Record<string, string>;
   /** { noticePage, page } — 서버가 정규화해 실어 보낸다. */
   config: unknown;
@@ -64,6 +66,7 @@ export function boot(payload: BootPayload) {
         name: payload.name,
         theme: payload.theme,
         settings: normalizeDetailPageSettings(payload.config),
+        formOrigin: payload.origin,
       }),
       config: payload.config,
       embedded: true,

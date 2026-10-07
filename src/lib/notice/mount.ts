@@ -13,18 +13,23 @@ import { buildNoticeModel } from "./build-model";
 import { renderHero, renderToc } from "./view-hero";
 import {
   renderApply,
+  renderBanner,
   renderConcept,
   renderCountdown,
   renderCriteria,
   renderEligibility,
   renderFaq,
+  renderForm,
   renderPrizes,
   renderSelection,
   renderSnapshot,
   renderSponsors,
+  renderSplit,
   renderTimeline,
+  renderVideo,
 } from "./view-sections";
-import { normalizeNoticePageConfig } from "./config";
+import { normalizeNoticePageConfig, type NoticeSectionKey } from "./config";
+import type { NoticeModel } from "./types";
 import type { NoticeCompetition } from "./types";
 import { paperFor } from "@/lib/color";
 
@@ -117,6 +122,25 @@ function attachCountdown(root: HTMLElement): () => void {
   return () => window.clearInterval(timer);
 }
 
+/**
+ * 신청 폼 섹션에 사전등록 폼을 채운다 — 등록 폼 로더(/f/{id})를 그대로 부른다.
+ * 로더는 `data-mach-form="{id}"` 자리를 스스로 찾아 붙는다(같은 번들·같은 캐시 정책).
+ * 같은 폼 스크립트가 이미 있으면 다시 넣지 않는다.
+ */
+function attachFormLoader(root: HTMLElement, m: NoticeModel): void {
+  if (m.isPreview || !m.formOrigin) return;
+  const slot = root.querySelector<HTMLElement>("[data-mach-form]");
+  const sourceId = slot?.getAttribute("data-mach-form");
+  if (!slot || !sourceId) return;
+  const doc = root.ownerDocument ?? document;
+  const src = `${m.formOrigin.replace(/\/$/, "")}/f/${sourceId}`;
+  if (doc.querySelector(`script[src="${src}"]`)) return;
+  const script = doc.createElement("script");
+  script.async = true;
+  script.src = src;
+  slot.after(script);
+}
+
 export function mountNotice(opts: MountNoticeOptions): NoticeHandle {
   const { mount, competition, embedded, isPreview, onApply } = opts;
   const uid = nextUid();
@@ -169,21 +193,29 @@ export function mountNotice(opts: MountNoticeOptions): NoticeHandle {
     root.appendChild(h("div", { class: "preview-badge" }, "비공개 상태 · 미리보기"));
   }
 
+  // 섹션은 운영자가 정한 순서(np.order)대로 — 히어로만 늘 맨 위다.
+  const renderers: Record<NoticeSectionKey, () => HTMLElement | null> = {
+    concept: () => renderConcept(m),
+    banner: () => renderBanner(m),
+    split: () => renderSplit(m),
+    video: () => renderVideo(m),
+    snapshot: () => renderSnapshot(m),
+    timeline: () => renderTimeline(m),
+    apply: () => renderApply(m),
+    eligibility: () => renderEligibility(m),
+    selection: () => renderSelection(m),
+    criteria: () => renderCriteria(m),
+    prizes: () => renderPrizes(m),
+    countdown: () => renderCountdown(m, onApply),
+    form: () => renderForm(m),
+    faq: () => renderFaq(m),
+    sponsors: () => renderSponsors(m),
+  };
   const body = h(
     "div",
     { class: "lnd-body" },
     renderHero(m, onApply),
-    renderConcept(m),
-    renderSnapshot(m),
-    renderTimeline(m),
-    renderApply(m),
-    renderEligibility(m),
-    renderSelection(m),
-    renderCriteria(m),
-    renderPrizes(m),
-    renderCountdown(m, onApply),
-    renderFaq(m),
-    renderSponsors(m),
+    np.order.map((key) => renderers[key]()),
   );
   root.appendChild(body);
 
@@ -201,6 +233,7 @@ export function mountNotice(opts: MountNoticeOptions): NoticeHandle {
     cleanups.push(() => releaseLayer(uid));
   }
 
+  attachFormLoader(root, m);
   cleanups.push(attachReveal(root));
   cleanups.push(attachCountdown(root));
   if (toc) {

@@ -38,6 +38,8 @@ export interface NoticeCompetition {
    * 링크, null 이면 링크를 아직 안 정한 것이라 버튼을 그리지 않는다.
    */
   cta?: { href: string; newTab: boolean } | null;
+  /** 신청 폼 섹션이 스크립트를 부를 machstudio 주소. 상세페이지 로더만 넘긴다 — 없으면 폼 섹션이 안 나온다. */
+  formOrigin?: string | null;
 }
 
 export interface NoticeRound {
@@ -85,6 +87,8 @@ export interface NoticeModel {
   criteriaItems: NoticeCriterionItem[];
   criteriaTotal: number;
 
+  /** 신청 폼 섹션용 machstudio 주소(없으면 null). */
+  formOrigin: string | null;
   /** 주 버튼을 그릴지 — 상세페이지에서 링크를 안 정했으면 false. */
   ctaVisible: boolean;
   /** 주 버튼이 링크면 그 주소. null 이면 버튼(onApply). */

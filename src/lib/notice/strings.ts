@@ -60,6 +60,10 @@ const KO: NoticeStrings = {
   tocLabel: "섹션 목차",
   sectionLabel: {
     concept: "개념",
+    banner: "하이라이트",
+    split: "소개",
+    video: "영상",
+    form: "신청",
     snapshot: "한눈에 보기",
     timeline: "타임라인",
     apply: "신청 방법",
@@ -90,6 +94,10 @@ const EN: NoticeStrings = {
   tocLabel: "Sections",
   sectionLabel: {
     concept: "About",
+    banner: "Highlights",
+    split: "Feature",
+    video: "Video",
+    form: "Register",
     snapshot: "At a glance",
     timeline: "Timeline",
     apply: "How to apply",
@@ -121,6 +129,10 @@ const FR: NoticeStrings = {
   tocLabel: "Sections",
   sectionLabel: {
     concept: "À propos",
+    banner: "En images",
+    split: "À découvrir",
+    video: "Vidéo",
+    form: "Inscription",
     snapshot: "En bref",
     timeline: "Calendrier",
     apply: "Comment participer",
@@ -151,6 +163,10 @@ const JA: NoticeStrings = {
   tocLabel: "セクション",
   sectionLabel: {
     concept: "概要",
+    banner: "ハイライト",
+    split: "紹介",
+    video: "動画",
+    form: "申し込み",
     snapshot: "ひと目でわかる",
     timeline: "スケジュール",
     apply: "応募方法",
