@@ -13,8 +13,8 @@ const DATA: ProjectOverview = {
   generatedAt: "2026-10-08T09:21:16.711Z",
   collect: {
     active: [
-      { id: "a", name: "2026 Korea Expo LA", mode: "builder", registration: "open", closesAt: "2026-10-21T21:00:00.000Z", total: 15747, today: 3, yesterday: 471, last7: [373, 479, 791, 509, 567, 471, 3], lastAt: "2026-10-08T09:16:12.282Z", checkedIn: null },
-      { id: "b", name: "2026 Korea Expo LA Oneday Class", mode: "builder", registration: "open", closesAt: "2026-10-12T07:00:00.000Z", total: 17, today: 3, yesterday: 5, last7: [0, 0, 0, 0, 9, 5, 3], lastAt: "2026-10-08T09:07:31.539Z", checkedIn: 0 },
+      { id: "a", name: "2026 Korea Expo LA", mode: "builder", registration: "open", closesAt: "2026-10-21T21:00:00.000Z", total: 15747, today: 3, yesterday: 471, startedAt: "2026-07-20", trend: [120, 340, 210, 180, 260, 300, 410, 380, 520, 610, 700, 650, 800, 900, 1100, 950, 1200, 1300, 1250, 1400, 373, 479, 791, 509, 567, 471, 3], lastAt: "2026-10-08T09:16:12.282Z", checkedIn: null },
+      { id: "b", name: "2026 Korea Expo LA Oneday Class", mode: "builder", registration: "open", closesAt: "2026-10-12T07:00:00.000Z", total: 17, today: 3, yesterday: 5, startedAt: "2026-10-01", trend: [0, 0, 0, 0, 9, 5, 3, 0], lastAt: "2026-10-08T09:07:31.539Z", checkedIn: 0 },
     ],
     otherCount: 0,
   },

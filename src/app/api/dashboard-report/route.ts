@@ -693,6 +693,17 @@ function buildCumulativeTrend(records: TimedRecord[], from: Date, to: Date, init
   return points;
 }
 
+async function clampToOperationStart(from: Date, source: { id: string; createdAt: Date } | undefined): Promise<Date> {
+  if (!source || from.getTime() >= source.createdAt.getTime()) return from;
+  const first = await prisma.collectRecord.findFirst({
+    where: { sourceId: source.id },
+    orderBy: { createdAt: "asc" },
+    select: { createdAt: true },
+  });
+  const start = first && first.createdAt < source.createdAt ? first.createdAt : source.createdAt;
+  return from.getTime() >= start.getTime() ? from : getKstDayStart(start);
+}
+
 export interface GenerateReportOptions {
   workspaceId: string;
   projectId: string;
@@ -743,7 +754,14 @@ export async function generateDashboardReport(options: GenerateReportOptions) {
 
   const now = new Date();
   const to = parseDate(options.to, now);
-  const from = parseDate(options.from, new Date(to.getTime() - 7 * DAY_MS));
+  const requestedFrom = parseDate(options.from, new Date(to.getTime() - 7 * DAY_MS));
+  /**
+   * "전체 기간"(epoch 부터)은 **그 폼이 운영을 시작한 날**부터로 자른다. 대시보드·현황 탭이 전체
+   * 기간을 기본으로 보게 되면서(2026-10-08) 그대로 두면 일별 추이를 1970년부터 하루씩 채우고,
+   * 비교 구간도 반세기 전이 된다. 시작일 = 폼 생성일과 첫 등록 중 이른 날(가져오기로 넣은 과거
+   * 등록이 생성일보다 앞설 수 있다).
+   */
+  const from = await clampToOperationStart(requestedFrom, eventPair.current?.source);
   const todayStart = getKstDayStart(now);
   const yesterdayStart = new Date(todayStart.getTime() - DAY_MS);
   const span = Math.max(to.getTime() - from.getTime(), DAY_MS);

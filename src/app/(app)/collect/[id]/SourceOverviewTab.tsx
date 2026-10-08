@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Filter, RefreshCw, X } from "lucide-react";
 import { kstDateString } from "@/lib/datetime";
-import DateRangePicker, { DateRange } from "@/components/DateRangePicker";
+import DateRangePicker, { ALL_TIME_LABEL, DateRange } from "@/components/DateRangePicker";
 import RealtimeReport, { type RealtimeReportData } from "@/app/(app)/dashboard/RealtimeReport";
 
 const AUTO_REFRESH_MS = 180_000; // 3분 (egress 절감 — 과거 30초였음)
@@ -24,12 +24,15 @@ interface DashboardFilters {
   attribution?: "last" | "first";
 }
 
+/**
+ * 기본은 **전체 기간** — 최근 7일만 보면 "지금까지 몇 명 모였나" 가 안 읽힌다는 요청(2026-10-08).
+ * from 을 epoch 로 보내면 서버가 그 폼의 운영 시작일로 잘라 준다(dashboard-report clampToOperationStart).
+ */
 function defaultRange(): DateRange {
   const ks = kstDateString(new Date());
   const today = new Date(ks + "T00:00:00+09:00");
-  const from = new Date(today.getTime() - 7 * 86400_000);
   const to = new Date(today.getTime() + 86400_000 - 1);
-  return { from, to, label: "최근 7일" };
+  return { from: new Date(0), to, label: ALL_TIME_LABEL };
 }
 
 function getFilterCount(filters: DashboardFilters) {
@@ -118,7 +121,7 @@ export default function SourceOverviewTab({
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <p className="min-w-0 flex-1 text-sm text-muted-foreground">이 폼의 등록 흐름·유입 경로·등록자 구성이에요.</p>
         <div className="flex flex-wrap items-center gap-2">
-          <DateRangePicker value={range} onChange={setRange} />
+          <DateRangePicker value={range} onChange={setRange} allowAllTime />
           <motion.button
             whileHover={{ y: -1 }}
             whileTap={{ scale: 0.96 }}
@@ -245,7 +248,16 @@ export default function SourceOverviewTab({
       )}
       </AnimatePresence>
 
-      <RealtimeReport data={reportData} loading={reportLoading} rangeLabel={range.label} />
+      <RealtimeReport
+        data={reportData}
+        loading={reportLoading}
+        // 전체 기간이면 실제로 센 시작일(운영 시작)을 같이 적는다 — "전체" 만으로는 언제부터인지 모른다.
+        rangeLabel={
+          range.label === ALL_TIME_LABEL && reportData?.range?.from
+            ? `${ALL_TIME_LABEL} (${kstDateString(new Date(reportData.range.from)).replace(/-/g, ".")}~)`
+            : range.label
+        }
+      />
     </div>
   );
 }

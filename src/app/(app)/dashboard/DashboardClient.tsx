@@ -3,8 +3,9 @@
 /**
  * 프로젝트 대시보드 — 지금 진행 중인 사전등록·광고·대회·웨비나·상세페이지를 한 장에.
  *
- * 읽는 화면이다(AGENTS §1 Calm Hierarchy): 메뉴마다 "오늘 무슨 일이 있나" 숫자 하나를 크게,
- * 나머지는 작게. 자세한 건 카드를 눌러 그 메뉴로 간다 — 사전등록 통계는 각 폼의 "현황" 탭,
+ * 읽는 화면이다(AGENTS §1 Calm Hierarchy): 메뉴마다 숫자 하나를 크게, 나머지는 작게.
+ * 숫자는 **운영 시작부터 지금까지(전체 기간)** 기준이다 — 최근 7일만 보여 주면 "지금까지 얼마나
+ * 모였나" 가 안 읽힌다는 요청(2026-10-08). 오늘·어제는 보조로 붙인다. 자세한 건 카드를 눌러 그 메뉴로 간다 — 사전등록 통계는 각 폼의 "현황" 탭,
  * 광고는 폴더, 대회는 대회 화면. 끝난 것은 첫 화면에서 내리고 "지난 n개" 로만 남긴다.
  */
 import { useCallback, useEffect, useState } from "react";
@@ -28,6 +29,7 @@ const AUTO_REFRESH_MS = 180_000;
 const spring = { type: "spring", stiffness: 420, damping: 30 } as const;
 
 const num = (value: number) => value.toLocaleString("ko-KR");
+const kstDateKey = (iso: string) => new Date(new Date(iso).getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
 function money(value: number, currency: string) {
   try {
     return new Intl.NumberFormat("ko-KR", { style: "currency", currency, maximumFractionDigits: currency === "KRW" ? 0 : 2 }).format(value);
@@ -35,6 +37,17 @@ function money(value: number, currency: string) {
     return num(Math.round(value));
   }
 }
+/** "2026-09-30" → "9.30" */
+const shortDate = (day: string) => {
+  const [, m, d] = day.split("-");
+  return m && d ? `${Number(m)}.${Number(d)}` : day;
+};
+/** 일별 → 누적. 전체 기간 추이는 누적선이 "지금까지 어떻게 모였나" 를 바로 보여 준다. */
+const cumulative = (daily: number[]) => {
+  let sum = 0;
+  return daily.map((n) => (sum += n));
+};
+
 /** 오늘(KST)에서 그날까지 남은 날 — 0 이면 오늘 마감. */
 function daysLeft(iso: string | null): number | null {
   if (!iso) return null;
@@ -137,13 +150,14 @@ export default function DashboardClient() {
 /** 대시보드 본문 — 데이터만 받아 그린다(개발 하니스가 같은 화면을 로그인 없이 확인한다). */
 export function OverviewSections({ data, onShare }: { data: ProjectOverview; onShare: () => void }) {
   const todayTotal = data.collect.active.reduce((sum, s) => sum + s.today, 0);
+  const grandTotal = data.collect.active.reduce((sum, s) => sum + s.total, 0);
   return (
     <>
-      {/* ── 사전등록 ── 첫 화면의 주인공: 오늘 들어온 등록 */}
+      {/* ── 사전등록 ── 첫 화면의 주인공: 지금까지 모인 등록(전체 기간) */}
       <Section
         icon={Database}
         title="사전등록"
-        headline={data.collect.active.length > 0 ? `오늘 ${num(todayTotal)}명` : null}
+        headline={data.collect.active.length > 0 ? `누적 ${num(grandTotal)}명 · 오늘 +${num(todayTotal)}` : null}
         otherCount={data.collect.otherCount}
         otherHref="/collect"
         emptyText="진행 중인 사전등록이 없어요"
@@ -174,13 +188,14 @@ export function OverviewSections({ data, onShare }: { data: ProjectOverview; onS
               </div>
               <div className="mt-3 flex items-end justify-between gap-3">
                 <div>
-                  <div className="text-2xl font-semibold tabular-nums">{num(s.today)}</div>
-                  <div className="text-[11px] text-muted-foreground">오늘 · 어제 {num(s.yesterday)}</div>
+                  <div className="text-2xl font-semibold tabular-nums">{num(s.total)}</div>
+                  <div className="text-[11px] text-muted-foreground">누적 · {shortDate(s.startedAt)}부터 {s.trend.length}일째</div>
                 </div>
-                <div className="h-10 w-28 shrink-0"><Sparkline points={s.last7} /></div>
+                <div className="h-10 w-28 shrink-0"><Sparkline points={cumulative(s.trend)} /></div>
               </div>
               <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t border-border pt-2 text-[11px] text-muted-foreground">
-                <span>누적 <b className="text-foreground tabular-nums">{num(s.total)}</b></span>
+                <span>오늘 <b className="text-foreground tabular-nums">+{num(s.today)}</b></span>
+                <span>어제 <b className="text-foreground tabular-nums">+{num(s.yesterday)}</b></span>
                 {s.checkedIn !== null && <span>현장 입장 <b className="text-foreground tabular-nums">{num(s.checkedIn)}</b></span>}
               </div>
             </CardLink>
@@ -205,6 +220,8 @@ export function OverviewSections({ data, onShare }: { data: ProjectOverview; onS
                 <span className="min-w-0 truncate text-sm font-medium">{f.name}</span>
                 <span className="shrink-0 text-[10px] text-muted-foreground">{f.platforms.join(" · ")}</span>
               </div>
+              {/* 광고 숫자는 폴더 보고 기간 전체 누적이다 — 시작일을 같이 적는다. */}
+              <div className="mt-0.5 text-[11px] text-muted-foreground">{shortDate(kstDateKey(f.reportStart))}부터 누적</div>
               <div className="mt-3 grid grid-cols-2 gap-3">
                 <Metric label="비용" value={money(f.cost, f.currency)} />
                 <Metric label="결과" value={num(f.conversions)} helper={cpa !== null ? `결과당 ${money(cpa, f.currency)}` : undefined} />
