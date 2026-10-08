@@ -30,8 +30,13 @@ export interface OverviewCollectSource {
   total: number;
   today: number;
   yesterday: number;
-  /** 최근 7일(오늘 포함) KST 일별 등록 수, 오래된 날 → 오늘 */
-  last7: number[];
+  /** 운영 시작일(KST 날짜, YYYY-MM-DD) — 폼 생성일과 첫 등록 중 이른 날. */
+  startedAt: string;
+  /**
+   * 운영 시작일부터 오늘까지 KST 일별 등록 수(오래된 날 → 오늘). 대시보드는 **전체 기간**으로 본다
+   * — 최근 7일만 그리면 "지금까지 어떻게 모였나" 가 안 읽힌다는 요청(2026-10-08).
+   */
+  trend: number[];
   lastAt: string | null;
   /** 현장 체크인을 켠 폼의 입장 인원(중복 스캔 제외). 안 켰으면 null. */
   checkedIn: number | null;
@@ -87,6 +92,17 @@ function kstDay(date: Date): string {
   return new Date(date.getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
 }
 
+/** from~to(포함) KST 날짜 키 목록. 너무 길어지지 않게 최근 3년으로 자른다. */
+function daySeries(from: string, to: string): string[] {
+  const out: string[] = [];
+  let t = Date.parse(`${from}T00:00:00Z`);
+  const end = Date.parse(`${to}T00:00:00Z`);
+  if (Number.isNaN(t) || Number.isNaN(end)) return [to];
+  t = Math.max(t, end - 3 * 365 * DAY_MS);
+  for (; t <= end; t += DAY_MS) out.push(new Date(t).toISOString().slice(0, 10));
+  return out;
+}
+
 export async function buildProjectOverview(workspaceId: string, projectId: string, now = new Date()): Promise<ProjectOverview> {
   const [sources, folders, competitions, webinars, pages] = await Promise.all([
     prisma.collectSource.findMany({
@@ -115,15 +131,19 @@ export async function buildProjectOverview(workspaceId: string, projectId: strin
   // ── 사전등록 ──────────────────────────────────────────────────────
   const sourceIds = sources.map((s) => s.id);
   const todayKey = kstDay(now);
-  const dayKeys = Array.from({ length: 7 }, (_, i) => kstDay(new Date(now.getTime() - (6 - i) * DAY_MS)));
-  const since = new Date(`${dayKeys[0]}T00:00:00+09:00`);
   const [totals, daily, checkins] = sourceIds.length
     ? await Promise.all([
-        prisma.collectRecord.groupBy({ by: ["sourceId"], where: { sourceId: { in: sourceIds } }, _count: { _all: true }, _max: { createdAt: true } }),
+        prisma.collectRecord.groupBy({
+          by: ["sourceId"],
+          where: { sourceId: { in: sourceIds } },
+          _count: { _all: true },
+          _min: { createdAt: true },
+          _max: { createdAt: true },
+        }),
         prisma.$queryRaw<Array<{ sourceId: string; day: string; n: number }>>`
           SELECT "sourceId", to_char("createdAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS day, count(*)::int AS n
           FROM "CollectRecord"
-          WHERE "sourceId" = ANY(${sourceIds}) AND "createdAt" >= ${since}
+          WHERE "sourceId" = ANY(${sourceIds})
           GROUP BY 1, 2`,
         prisma.$queryRaw<Array<{ sourceId: string; n: number }>>`
           SELECT "sourceId", count(DISTINCT "recordId")::int AS n
@@ -132,7 +152,7 @@ export async function buildProjectOverview(workspaceId: string, projectId: strin
           GROUP BY 1`,
       ])
     : [[], [], []];
-  const totalBy = new Map(totals.map((t) => [t.sourceId, { n: t._count._all, last: t._max.createdAt }]));
+  const totalBy = new Map(totals.map((t) => [t.sourceId, { n: t._count._all, first: t._min.createdAt, last: t._max.createdAt }]));
   const dailyBy = new Map(daily.map((d) => [`${d.sourceId}:${d.day}`, d.n]));
   const checkinBy = new Map(checkins.map((c) => [c.sourceId, c.n]));
 
@@ -142,7 +162,9 @@ export async function buildProjectOverview(workspaceId: string, projectId: strin
     const registration = config ? resolveRegistrationStatus(config, now) : null;
     const last = totalBy.get(s.id)?.last ?? null;
     const recent = !!last && now.getTime() - last.getTime() < COLLECT_RECENT_DAYS * DAY_MS;
-    const last7 = dayKeys.map((day) => dailyBy.get(`${s.id}:${day}`) ?? 0);
+    const first = totalBy.get(s.id)?.first ?? null;
+    const startedAt = kstDay(first && first < s.createdAt ? first : s.createdAt);
+    const trend = daySeries(startedAt, todayKey).map((day) => dailyBy.get(`${s.id}:${day}`) ?? 0);
     // 빌더형은 등록 기간이 곧 진행 여부다. 막 만든 폼(아직 0건)도 열려 있으면 보여 준다.
     const keep = s.isActive && (builder ? registration !== "closed" || recent : recent);
     return {
@@ -153,8 +175,9 @@ export async function buildProjectOverview(workspaceId: string, projectId: strin
       closesAt: config?.eventInfo.registrationWindow.closesAt ?? null,
       total: totalBy.get(s.id)?.n ?? 0,
       today: dailyBy.get(`${s.id}:${todayKey}`) ?? 0,
-      yesterday: last7[5] ?? 0,
-      last7,
+      yesterday: dailyBy.get(`${s.id}:${kstDay(new Date(now.getTime() - DAY_MS))}`) ?? 0,
+      startedAt,
+      trend,
       lastAt: last ? last.toISOString() : null,
       checkedIn: s.checkinEnabled ? (checkinBy.get(s.id) ?? 0) : null,
       keep,
