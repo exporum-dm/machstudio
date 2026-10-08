@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ExternalLink, ImagePlus, Loader2, Trash2, Users } from "lucide-react";
+import { Download, ExternalLink, ImagePlus, Loader2, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { InlineError } from "@/components/ui/inline-error";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -126,9 +126,29 @@ export default function EntriesTab({
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">
-        전체 {entries.length}건 · 투표 노출 {publishedCount}건 — <b>노출</b>을 켠 참가작만 투표 화면에 나옵니다.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          전체 {entries.length}건 · 투표 노출 {publishedCount}건 — <b>노출</b>을 켠 참가작만 투표 화면에 나옵니다.
+        </p>
+        {/* 신청 폼 항목·팀원 명단·사진/영상 링크·동의·라운드별 투표 수까지 한 장으로. 연락처가 들어가 활동 기록에 남는다. */}
+        <div className="flex shrink-0 gap-1.5">
+          <a
+            href={`/api/competitions/${competition.id}/entries/export?format=xlsx`}
+            download
+            className={`flex items-center gap-1 bg-secondary px-2.5 py-1.5 text-[11px] font-medium text-foreground transition-colors hover:bg-secondary/70 ${R.control}`}
+          >
+            <Download className="h-3 w-3" />
+            엑셀 다운로드
+          </a>
+          <a
+            href={`/api/competitions/${competition.id}/entries/export?format=csv`}
+            download
+            className={`flex items-center gap-1 bg-secondary px-2.5 py-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground ${R.control}`}
+          >
+            CSV
+          </a>
+        </div>
+      </div>
 
       <div className="space-y-2">
         {entries.map((entry) => {

@@ -125,6 +125,7 @@ export type ActivityAction =
   | "competition.award_saved"
   | "competition.award_deleted"
   | "competition.result_published"
+  | "competition.entries_exported"
   | "detailPage.created"
   | "detailPage.deleted"
   | "media.uploaded"
