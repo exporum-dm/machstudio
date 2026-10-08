@@ -5,11 +5,17 @@
  * 이 판정은 **연동형 화면을 그대로 두는가**를 결정하므로(레코드 52,000건이 그 화면으로
  * 운영 중이다) 회귀 테스트가 붙을 수 있는 자리에 있어야 한다.
  */
-import { Activity, Code2, HardDriveDownload, Info, ScanLine, Settings2, Shield, Table2, Wrench, type LucideIcon } from "lucide-react";
+import { Activity, BarChart3, Code2, HardDriveDownload, Info, ScanLine, Settings2, Shield, Table2, Wrench, type LucideIcon } from "lucide-react";
 
+/**
+ * "현황"(통계)과 "등록자 DB"(명단)를 나눠 둔다 — 예전엔 프로젝트 대시보드가 사전등록 통계를 들고
+ * 있었고 수집 데이터 탭 위에도 요약 카드가 얹혀 있었다. 대시보드가 메뉴 전체 요약으로 바뀌며
+ * (2026-10-08) 통계는 폼마다 여기서 본다. 현황이 맨 앞이자 기본 탭이다.
+ */
 export const TABS = [
+  { id: "overview", label: "현황", icon: BarChart3 },
+  { id: "records", label: "등록자 DB", icon: Table2 },
   { id: "info", label: "기본 정보", icon: Info },
-  { id: "records", label: "수집 데이터", icon: Table2 },
   { id: "form", label: "등록 폼", icon: Settings2 },
   { id: "checkin", label: "현장 체크인", icon: ScanLine },
   { id: "fields", label: "필드", icon: Settings2 },

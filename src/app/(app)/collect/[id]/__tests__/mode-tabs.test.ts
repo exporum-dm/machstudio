@@ -10,12 +10,13 @@ import { tabsFor } from "../tabs";
 describe("tabsFor", () => {
   const ids = (mode: string) => tabsFor(mode).map((t) => t.id);
 
+  /** 2026-10-08: 현황(통계) 탭이 맨 앞에 생기고, 기본 정보는 등록자 DB 뒤로 갔다 — 두 방식 공통. */
   it("연동형은 기존 탭 구성 그대로 — 등록 폼 탭만 안 보인다", () => {
-    expect(ids("capture")).toEqual(["info", "records", "fields", "script", "install", "settings", "data-mgmt", "activity"]);
+    expect(ids("capture")).toEqual(["overview", "records", "info", "fields", "script", "install", "settings", "data-mgmt", "activity"]);
   });
 
   it("빌더형은 스크립트·필드 매핑·설치 대신 등록 폼 · 현장 체크인", () => {
-    expect(ids("builder")).toEqual(["info", "records", "form", "checkin", "settings", "data-mgmt", "activity"]);
+    expect(ids("builder")).toEqual(["overview", "records", "info", "form", "checkin", "settings", "data-mgmt", "activity"]);
   });
 
   /** mode 는 DB 에서 제약 없는 String 이다 — 모르는 값이 오면 기존 동작으로 떨어져야 한다. */
@@ -24,9 +25,9 @@ describe("tabsFor", () => {
     expect(ids("bulider")).toEqual(ids("capture"));
   });
 
-  it("두 방식 모두 수집 데이터·설정·활동은 항상 있다", () => {
+  it("두 방식 모두 현황·등록자 DB·설정·활동은 항상 있다", () => {
     for (const mode of ["capture", "builder"]) {
-      for (const must of ["records", "settings", "activity"]) expect(ids(mode)).toContain(must);
+      for (const must of ["overview", "records", "settings", "activity"]) expect(ids(mode)).toContain(must);
     }
   });
 });
