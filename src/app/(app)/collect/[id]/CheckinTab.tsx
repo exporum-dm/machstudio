@@ -179,7 +179,7 @@ export default function CheckinTab({ sourceId, canEdit }: { sourceId: string; ca
           <div className="min-w-0">
             <h2 className="flex items-center gap-2 text-sm font-semibold"><ScanLine className="h-4 w-4 text-emerald-500" /> 현장 체크인</h2>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              켜면 운영요원이 휴대폰으로 방문자 QR을 찍어 입장을 기록해요. 스캔할 때마다 시각이 쌓이고, 수집 데이터 표와 CSV에 입장 시각이 나와요.
+              켜면 운영요원이 휴대폰으로 방문자 QR을 찍어 입장을 기록해요. 스캔할 때마다 시각이 쌓이고, 등록자 DB 표와 CSV에 입장 시각이 나와요.
             </p>
           </div>
           <Switch label="현장 체크인" on={state.enabled} disabled={!canEdit || saving} onChange={(enabled) => patch({ enabled }, enabled ? "현장 체크인을 켰어요" : "현장 체크인을 껐어요")} />

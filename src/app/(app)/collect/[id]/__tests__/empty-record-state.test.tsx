@@ -21,6 +21,8 @@ vi.mock("@/contexts/workspace", () => ({
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace }),
+  // 기본 탭이 현황이 됐다(2026-10-08) — 이 테스트는 등록자 DB 탭의 빈 상태를 본다.
+  useSearchParams: () => new URLSearchParams("tab=records"),
 }));
 
 vi.mock("next/link", () => ({

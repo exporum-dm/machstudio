@@ -15,13 +15,14 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useWorkspace } from "@/contexts/workspace";
 import ActiveToggle from "@/app/(app)/collect/_components/ActiveToggle";
 import FormBuilderTab from "./FormBuilderTab";
 import InfoTab, { type VenueInfo } from "./InfoTab";
 import CheckinTab from "./CheckinTab";
-import { tabsFor, type Tab } from "./tabs";
+import { TABS, tabsFor, type Tab } from "./tabs";
+import SourceOverviewTab from "./SourceOverviewTab";
 import dynamic from "next/dynamic";
 const ImportModal = dynamic(() => import("./ImportModal"), { ssr: false });
 const CleanupModal = dynamic(() => import("./CleanupModal"), { ssr: false });
@@ -35,9 +36,6 @@ import DateRangeField from "@/components/DateRangeField";
 import { formatKst, formatKstDateTime } from "@/lib/datetime";
 import { dateTimeIn } from "@/lib/collect-checkin";
 import { formatCollectValue } from "@/lib/collect-columns";
-import ProjectSummaryCard from "@/app/(app)/dashboard/ProjectSummaryCard";
-import { useWorkspaceChannelColors } from "@/components/ui/use-workspace-channel-colors";
-import type { RealtimeReportData } from "@/app/(app)/dashboard/RealtimeReport";
 
 const spring = { type: "spring", stiffness: 420, damping: 30 } as const;
 
@@ -270,12 +268,12 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
   const { currentProject, workspace, setCurrentProject, projects } = useWorkspace();
   const [source, setSource] = useState<CollectSource | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [tab, setTab] = useState<Tab>("records");
-  // 이 소스만의 요약 카드 — 프로젝트에 소스가 여럿이면 프로젝트 합계와 다른 숫자다.
-  const [sourceReport, setSourceReport] = useState<RealtimeReportData | null>(null);
-  const [sourceReportLoading, setSourceReportLoading] = useState(false);
-  // 도넛 차트 채널 색 — 워크스페이스 단위 설정이라 소스가 아니라 워크스페이스 ID로 조회한다.
-  const { channelColors, setChannelColorOverride } = useWorkspaceChannelColors(source?.workspaceId);
+  // 대시보드 카드가 ?tab=overview 로 바로 현황을 연다. 모르는 값이면 현황(기본 탭)으로.
+  const searchParams = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => {
+    const requested = searchParams.get("tab");
+    return TABS.find((t) => t.id === requested)?.id ?? "overview";
+  });
 
   // GA4 분석 연동 — 소스가 아니라 "프로젝트" 단위 설정이지만(§데이터 관리 탭 참고),
   // 데이터를 다루는 이 화면에서 바로 고칠 수 있어야 접근성이 있다.
@@ -379,24 +377,6 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
       setIsLoading(false);
     }
   }, [id]);
-
-  // 소스 단위 요약 — generateDashboardReport 가 sourceId 필터를 지원해 이 소스만의 숫자를 받는다.
-  const fetchSourceReport = useCallback(async (workspaceId: string, projectId: string, sourceId: string) => {
-    setSourceReportLoading(true);
-    try {
-      const res = await fetch("/api/dashboard-report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workspaceId, projectId, filters: { sourceId } }),
-      });
-      const data = await res.json().catch(() => null);
-      if (res.ok) setSourceReport(data);
-    } catch (error) {
-      console.error("[collect-source-summary] failed", error);
-    } finally {
-      setSourceReportLoading(false);
-    }
-  }, []);
 
   const fetchGa4Settings = useCallback(async (projectId: string) => {
     setGa4Loading(true);
@@ -645,10 +625,6 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
 
   useEffect(() => { fetchSource(); }, [fetchSource]);
 
-  useEffect(() => {
-    if (!source) return;
-    void fetchSourceReport(source.workspaceId, source.projectId, source.id);
-  }, [source?.id, source?.workspaceId, source?.projectId, fetchSourceReport]);
   // 52,000건 capture 설치 경로와 localhost 경고는 현재 host를 함께 보여야 해 이번 범위에서 보존한다.
   // eslint-disable-next-line no-restricted-syntax
   useEffect(() => { setBrowserOrigin(window.location.origin); }, []);
@@ -1236,6 +1212,11 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
       <AnimatePresence mode="wait">
         <motion.div key={tab} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
 
+          {/* 현황 탭 — 이 폼의 등록 흐름·유입·구성(예전 프로젝트 대시보드의 실시간 보고서) */}
+          {tab === "overview" && (
+            <SourceOverviewTab workspaceId={source.workspaceId} projectId={source.projectId} sourceId={source.id} />
+          )}
+
           {/* 기본 정보 탭 */}
           {tab === "info" && (
             <InfoTab
@@ -1248,24 +1229,9 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
           {/* 현장 체크인 탭 (빌더형) — 권한은 서버가 본다(ADMIN 이상만 바꿀 수 있다) */}
           {tab === "checkin" && <CheckinTab sourceId={source.id} canEdit />}
 
-          {/* 수집 데이터 탭 */}
+          {/* 등록자 DB 탭 */}
           {tab === "records" && (
             <div>
-              {sourceReport ? (
-                <div className="mb-4">
-                  <ProjectSummaryCard
-                    data={sourceReport}
-                    title={source.name}
-                    channelColors={channelColors}
-                    onChannelColorChange={setChannelColorOverride}
-                  />
-                </div>
-              ) : sourceReportLoading ? (
-                <div className="mb-4 flex h-32 items-center justify-center rounded-2xl border border-dashed border-border text-sm text-muted-foreground">
-                  요약을 불러오는 중...
-                </div>
-              ) : null}
-
               <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
                 <p className="text-sm text-muted-foreground">
                   {hasActiveFilter
@@ -1295,7 +1261,7 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
                   </motion.button>
                   <motion.button
                     whileTap={{ scale: 0.92 }} transition={spring}
-                    onClick={() => { fetchRecords(); void fetchSourceReport(source.workspaceId, source.projectId, source.id); }}
+                    onClick={() => fetchRecords()}
                     className="p-1.5 rounded-lg hover:bg-secondary transition-colors text-muted-foreground"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
@@ -1768,7 +1734,7 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
                   <div>
                     <h3 className="text-sm font-medium">필드 매핑</h3>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      인덱스는 아래 &ldquo;필드 묶음 선택자&rdquo;로 찾은 순서(0부터)예요 · 눈 아이콘으로 수집 데이터 표에 보일지 정해요(값은 계속 수집돼요) · &ldquo;필수&rdquo;를 하나라도 켜면, 그 필드들이 전부 채워진 제출만 저장돼요 · &ldquo;통계&rdquo;는 프로젝트 대시보드에 값 분포 카드로 보일지예요(기본 켜짐, 필요없으면 꺼주세요)
+                      인덱스는 아래 &ldquo;필드 묶음 선택자&rdquo;로 찾은 순서(0부터)예요 · 눈 아이콘으로 등록자 DB 표에 보일지 정해요(값은 계속 수집돼요) · &ldquo;필수&rdquo;를 하나라도 켜면, 그 필드들이 전부 채워진 제출만 저장돼요 · &ldquo;통계&rdquo;는 현황 탭에 값 분포 카드로 보일지예요(기본 켜짐, 필요없으면 꺼주세요)
                     </p>
                   </div>
                 </div>
@@ -1822,7 +1788,7 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
                           통계
                         </label>
                         <button onClick={() => updateField(idx, { hidden: !field.hidden })}
-                          title={field.hidden ? "수집 데이터 표에서 숨김 — 클릭해서 보이기" : "수집 데이터 표에 보임 — 클릭해서 숨기기"}
+                          title={field.hidden ? "등록자 DB 표에서 숨김 — 클릭해서 보이기" : "등록자 DB 표에 보임 — 클릭해서 숨기기"}
                           className={`p-1 rounded-lg transition-colors shrink-0 ${field.hidden ? "text-muted-foreground hover:text-foreground hover:bg-secondary" : "text-violet-500 hover:bg-violet-500/10"}`}>
                           {field.hidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                         </button>

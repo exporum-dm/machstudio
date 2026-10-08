@@ -82,7 +82,7 @@ export default function FormBuilderTab({
         // Email 칸을 이메일 유형으로 고친 직후: 그 전에 들어온 등록 중 이미 같은 이메일이 두 번 들어온 건이 있으면 알린다
         const data = (await res.json().catch(() => null)) as { emailBackfill?: { filled: number; duplicates: number } } | null;
         if (data?.emailBackfill?.duplicates) {
-          toast.warning(`같은 이메일로 이미 중복 등록된 건이 ${data.emailBackfill.duplicates}건 있어요. 수집 데이터에서 확인해 정리해 주세요.`);
+          toast.warning(`같은 이메일로 이미 중복 등록된 건이 ${data.emailBackfill.duplicates}건 있어요. 등록자 DB에서 확인해 정리해 주세요.`);
         }
       }
       return res.ok;

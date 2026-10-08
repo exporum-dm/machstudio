@@ -1,138 +1,81 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { Filter, LayoutDashboard, Loader2, RefreshCw, Share2, X } from "lucide-react";
+/**
+ * 프로젝트 대시보드 — 지금 진행 중인 사전등록·광고·대회·웨비나·상세페이지를 한 장에.
+ *
+ * 읽는 화면이다(AGENTS §1 Calm Hierarchy): 메뉴마다 "오늘 무슨 일이 있나" 숫자 하나를 크게,
+ * 나머지는 작게. 자세한 건 카드를 눌러 그 메뉴로 간다 — 사전등록 통계는 각 폼의 "현황" 탭,
+ * 광고는 폴더, 대회는 대회 화면. 끝난 것은 첫 화면에서 내리고 "지난 n개" 로만 남긴다.
+ */
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { motion } from "framer-motion";
+import {
+  BarChart3, ChevronRight, Database, FileText, LayoutDashboard, Loader2, RefreshCw, Share2, Trophy, Video,
+  type LucideIcon,
+} from "lucide-react";
 import { useWorkspace } from "@/contexts/workspace";
-import { kstDateString } from "@/lib/datetime";
-import DateRangePicker, { DateRange } from "@/components/DateRangePicker";
-import RealtimeReport, { type RealtimeReportData } from "./RealtimeReport";
+import { InlineError } from "@/components/ui/inline-error";
+import { FINISH, R } from "@/components/ui/primitives";
+import { formatKstDateTime } from "@/lib/datetime";
+import { COMPETITION_PHASE_META } from "@/lib/competition-status";
+import { WEBINAR_STATUS_META } from "@/lib/webinar-status";
+import type { ProjectOverview } from "@/lib/project-overview";
+import Sparkline from "./Sparkline";
 import { DashboardShareModal } from "./DashboardShareModal";
 
-const AUTO_REFRESH_MS = 180_000; // 3분 (egress 절감 — 과거 30초였음)
+const AUTO_REFRESH_MS = 180_000;
 const spring = { type: "spring", stiffness: 420, damping: 30 } as const;
 
-interface DashboardFilters {
-  sourceId?: string;
-  utmSource?: string;
-  utmMedium?: string;
-  utmCampaign?: string;
-  attribution?: "last" | "first";
+const num = (value: number) => value.toLocaleString("ko-KR");
+function money(value: number, currency: string) {
+  try {
+    return new Intl.NumberFormat("ko-KR", { style: "currency", currency, maximumFractionDigits: currency === "KRW" ? 0 : 2 }).format(value);
+  } catch {
+    return num(Math.round(value));
+  }
 }
-
-interface SourceOption {
-  id: string;
-  name: string;
+/** 오늘(KST)에서 그날까지 남은 날 — 0 이면 오늘 마감. */
+function daysLeft(iso: string | null): number | null {
+  if (!iso) return null;
+  const kst = (d: Date) => new Date(d.getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
+  const diff = (Date.parse(kst(new Date(iso))) - Date.parse(kst(new Date()))) / 86_400_000;
+  return Number.isFinite(diff) ? Math.round(diff) : null;
 }
-
-function defaultRange(): DateRange {
-  const ks = kstDateString(new Date());
-  const today = new Date(ks + "T00:00:00+09:00");
-  const from = new Date(today.getTime() - 7 * 86400_000);
-  const to = new Date(today.getTime() + 86400_000 - 1);
-  return { from, to, label: "최근 7일" };
-}
-
-function getFilterCount(filters: DashboardFilters) {
-  return [filters.sourceId, filters.utmSource, filters.utmMedium, filters.utmCampaign].filter(Boolean).length;
-}
+const dday = (iso: string | null) => {
+  const d = daysLeft(iso);
+  if (d === null) return null;
+  return d > 0 ? `마감 D-${d}` : d === 0 ? "오늘 마감" : null;
+};
 
 export default function DashboardClient() {
   const { workspace, currentProject, isLoading: wsLoading } = useWorkspace();
-  const [sources, setSources] = useState<SourceOption[]>([]);
-  const [sourcesLoading, setSourcesLoading] = useState(false);
-  const [range, setRange] = useState<DateRange>(defaultRange());
-  const [filters, setFilters] = useState<DashboardFilters>({ attribution: "last" });
-  const [showFilters, setShowFilters] = useState(false);
-  const [reportData, setReportData] = useState<RealtimeReportData | null>(null);
-  const [reportLoading, setReportLoading] = useState(false);
-  const [refreshTick, setRefreshTick] = useState(0);
+  const [data, setData] = useState<ProjectOverview | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
 
-  const filterCount = useMemo(() => getFilterCount(filters), [filters]);
-  const hasActiveFilter = filterCount > 0;
-
-  const fetchSources = useCallback(async () => {
+  const fetchOverview = useCallback(async () => {
     if (!workspace || !currentProject) return;
-
-    setSourcesLoading(true);
+    setLoading(true);
+    setError(false);
     try {
-      const res = await fetch(`/api/collect-sources?workspaceId=${workspace.id}&projectId=${currentProject.id}`);
-      const data = await res.json().catch(() => ({}));
-      setSources((data.sources ?? []).map((source: { id: string; name: string }) => ({
-        id: source.id,
-        name: source.name,
-      })));
-    } catch (error) {
-      console.error("[dashboard] collect sources failed", error);
-      setSources([]);
+      const res = await fetch(`/api/project-overview?workspaceId=${workspace.id}&projectId=${currentProject.id}`);
+      if (!res.ok) { setError(true); return; }
+      setData(await res.json());
+    } catch {
+      setError(true);
     } finally {
-      setSourcesLoading(false);
+      setLoading(false);
     }
   }, [workspace, currentProject]);
 
-  const fetchReport = useCallback(async () => {
-    if (!workspace || !currentProject) return;
-
-    setReportLoading(true);
-    try {
-      const res = await fetch("/api/dashboard-report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          workspaceId: workspace.id,
-          projectId: currentProject.id,
-          from: range.from.toISOString(),
-          to: range.to.toISOString(),
-          filters,
-        }),
-      });
-      const data = await res.json().catch(() => null);
-
-      if (res.ok) {
-        setReportData(data);
-      } else {
-        console.error("[dashboard-report] failed", data);
-      }
-    } catch (error) {
-      console.error("[dashboard-report] failed", error);
-    } finally {
-      setReportLoading(false);
-    }
-  }, [workspace, currentProject, range, filters]);
-
+  useEffect(() => { void Promise.resolve().then(fetchOverview); }, [fetchOverview]);
   useEffect(() => {
-    void Promise.resolve().then(fetchSources);
-  }, [fetchSources]);
-
-  useEffect(() => {
-    void Promise.resolve().then(fetchReport);
-  }, [fetchReport, refreshTick]);
-
-  useEffect(() => {
-    // egress 절감: 탭이 보일 때만 자동 새로고침, 백그라운드(숨김)면 중단.
-    const id = setInterval(() => {
-      if (!document.hidden) setRefreshTick((tick) => tick + 1);
-    }, AUTO_REFRESH_MS);
-    // 탭으로 돌아오면 1회 즉시 갱신
-    const onVisible = () => { if (!document.hidden) setRefreshTick((tick) => tick + 1); };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      clearInterval(id);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, []);
-
-  const updateFilter = <Key extends keyof DashboardFilters>(key: Key, value: DashboardFilters[Key] | "") => {
-    setFilters((current) => ({
-      ...current,
-      [key]: value || undefined,
-    }));
-  };
-
-  const clearFilters = () => {
-    setFilters({ attribution: filters.attribution ?? "last" });
-  };
+    // 보이는 동안만 3분마다 — 숨긴 탭에서 계속 부르지 않는다(egress·DB 절감).
+    const id = setInterval(() => { if (!document.hidden) void fetchOverview(); }, AUTO_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [fetchOverview]);
 
   if (wsLoading) {
     return (
@@ -141,7 +84,6 @@ export default function DashboardClient() {
       </div>
     );
   }
-
   if (!currentProject) {
     return (
       <div className="flex h-64 flex-col items-center justify-center text-center">
@@ -152,178 +94,289 @@ export default function DashboardClient() {
   }
 
   return (
-    <div className="space-y-4 p-4 sm:p-6 lg:p-8">
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
-        <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-semibold">실시간 보고서</h1>
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold">대시보드</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {currentProject.name}의 등록 흐름과 전시팀 인사이트를 요약합니다
+            {currentProject.name} · 지금 진행 중인 것만 모아 봐요
+            {data && <span className="ml-1.5 text-xs">({formatKstDateTime(data.generatedAt).slice(5, 16)} 기준)</span>}
           </p>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <DateRangePicker value={range} onChange={setRange} />
-          <motion.button
-            whileHover={{ y: -1 }}
-            whileTap={{ scale: 0.96 }}
-            transition={spring}
-            onClick={() => setShowFilters((open) => !open)}
-            className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition-colors ${
-              showFilters || hasActiveFilter
-                ? "border-violet-400 bg-violet-500/10 text-violet-600"
-                : "border-border bg-background hover:bg-secondary"
-            }`}
-          >
-            <Filter className="h-3.5 w-3.5" />
-            필터
-            {filterCount > 0 && (
-              <span className="rounded-full bg-violet-500 px-1.5 py-0.5 text-[10px] leading-none text-white">
-                {filterCount}
-              </span>
-            )}
-          </motion.button>
-          <motion.button
-            whileHover={{ y: -1 }}
-            whileTap={{ scale: 0.96 }}
-            transition={spring}
-            onClick={() => setShareOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-            title="공유"
-          >
-            <Share2 className="h-3.5 w-3.5" />
-            공유
-          </motion.button>
-          <motion.button
-            whileHover={{ y: -1 }}
-            whileTap={{ scale: 0.96 }}
-            transition={spring}
-            onClick={() => setRefreshTick((tick) => tick + 1)}
-            className="rounded-xl border border-border p-1.5 text-muted-foreground transition-colors hover:bg-secondary"
-            title="새로고침"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${reportLoading ? "animate-spin" : ""}`} />
-          </motion.button>
-        </div>
+        <motion.button
+          whileTap={{ scale: 0.96 }}
+          transition={spring}
+          onClick={() => void fetchOverview()}
+          className="self-start rounded-xl border border-border p-1.5 text-muted-foreground transition-colors hover:bg-secondary sm:self-auto"
+          title="새로고침"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+        </motion.button>
       </div>
 
-      <AnimatePresence initial={false}>
-      {showFilters && (
-        <motion.div
-          initial={{ opacity: 0, y: -4, height: 0 }}
-          animate={{ opacity: 1, y: 0, height: "auto" }}
-          exit={{ opacity: 0, y: -4, height: 0 }}
-          transition={spring}
-          className="overflow-hidden rounded-2xl border border-border bg-background p-4"
-        >
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-semibold">보고서 필터</h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">선택한 조건은 실시간 보고서 전체에 적용됩니다.</p>
-            </div>
-            {hasActiveFilter && (
-              <motion.button
-                whileHover={{ y: -1 }}
-                whileTap={{ scale: 0.96 }}
-                transition={spring}
-                onClick={clearFilters}
-                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-              >
-                <X className="h-3 w-3" />
-                초기화
-              </motion.button>
-            )}
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            <label className="space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">수집 폼</span>
-              <select
-                value={filters.sourceId ?? ""}
-                onChange={(event) => updateFilter("sourceId", event.target.value)}
-                className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none transition-colors focus:border-violet-400"
-              >
-                <option value="">{sourcesLoading ? "불러오는 중..." : "모든 수집 폼"}</option>
-                {sources.map((source) => (
-                  <option key={source.id} value={source.id}>{source.name}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">UTM 소스</span>
-              <input
-                type="text"
-                placeholder="예: google"
-                value={filters.utmSource ?? ""}
-                onChange={(event) => updateFilter("utmSource", event.target.value)}
-                className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none transition-colors focus:border-violet-400"
-              />
-            </label>
-
-            <label className="space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">UTM 매체</span>
-              <input
-                type="text"
-                placeholder="예: banner"
-                value={filters.utmMedium ?? ""}
-                onChange={(event) => updateFilter("utmMedium", event.target.value)}
-                className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none transition-colors focus:border-violet-400"
-              />
-            </label>
-
-            <label className="space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">UTM 캠페인</span>
-              <input
-                type="text"
-                placeholder="예: registration"
-                value={filters.utmCampaign ?? ""}
-                onChange={(event) => updateFilter("utmCampaign", event.target.value)}
-                className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none transition-colors focus:border-violet-400"
-              />
-            </label>
-
-            <div className="space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">기여 기준</span>
-              <div className="relative grid h-10 grid-cols-2 rounded-xl border border-border bg-secondary/30 p-1">
-                {(["last", "first"] as const).map((attribution) => {
-                  const active = (filters.attribution ?? "last") === attribution;
-                  return (
-                    <button
-                      key={attribution}
-                      onClick={() => setFilters((current) => ({ ...current, attribution }))}
-                      className={`relative z-10 rounded-lg text-xs font-medium transition-colors ${
-                        active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                      }`}
-                      title={attribution === "last" ? "최종 유입 기준" : "최초 유입 기준"}
-                    >
-                      {active && (
-                        <motion.span
-                          layoutId="attribution-pill"
-                          transition={spring}
-                          className="absolute inset-0 -z-10 rounded-lg bg-background shadow-sm"
-                        />
-                      )}
-                      {attribution === "last" ? "Last" : "First"}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </motion.div>
+      {error && !data ? (
+        <InlineError message="대시보드를 불러오지 못했어요" onRetry={fetchOverview} />
+      ) : !data ? (
+        <div className="flex h-48 items-center justify-center">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
+        <OverviewSections data={data} onShare={() => setShareOpen(true)} />
       )}
-      </AnimatePresence>
 
-      <RealtimeReport data={reportData} loading={reportLoading} rangeLabel={range.label} />
-
-      {currentProject && (
-        <DashboardShareModal
-          open={shareOpen}
-          onClose={() => setShareOpen(false)}
-          projectId={currentProject.id}
-          projectName={currentProject.name}
-        />
-      )}
+      <DashboardShareModal
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        projectId={currentProject.id}
+        projectName={currentProject.name}
+      />
     </div>
   );
+}
+
+/** 대시보드 본문 — 데이터만 받아 그린다(개발 하니스가 같은 화면을 로그인 없이 확인한다). */
+export function OverviewSections({ data, onShare }: { data: ProjectOverview; onShare: () => void }) {
+  const todayTotal = data.collect.active.reduce((sum, s) => sum + s.today, 0);
+  return (
+    <>
+      {/* ── 사전등록 ── 첫 화면의 주인공: 오늘 들어온 등록 */}
+      <Section
+        icon={Database}
+        title="사전등록"
+        headline={data.collect.active.length > 0 ? `오늘 ${num(todayTotal)}명` : null}
+        otherCount={data.collect.otherCount}
+        otherHref="/collect"
+        emptyText="진행 중인 사전등록이 없어요"
+        action={
+          <button
+            onClick={onShare}
+            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            title="사전등록 보고서 공유 링크"
+          >
+            <Share2 className="h-3 w-3" />
+            보고서 공유
+          </button>
+        }
+      >
+        {data.collect.active.map((s) => {
+          const due = dday(s.closesAt);
+          return (
+            <CardLink key={s.id} href={`/collect/${s.id}?tab=overview`}>
+              <div className="flex items-start justify-between gap-2">
+                <span className="min-w-0 truncate text-sm font-medium">{s.name}</span>
+                {s.registration === "before" ? (
+                  <Badge tone="bg-amber-500/10 text-amber-600 dark:text-amber-400">오픈 전</Badge>
+                ) : s.registration === "closed" ? (
+                  <Badge tone="bg-secondary text-muted-foreground">마감</Badge>
+                ) : due ? (
+                  <Badge tone="bg-violet-500/10 text-violet-600 dark:text-violet-400">{due}</Badge>
+                ) : null}
+              </div>
+              <div className="mt-3 flex items-end justify-between gap-3">
+                <div>
+                  <div className="text-2xl font-semibold tabular-nums">{num(s.today)}</div>
+                  <div className="text-[11px] text-muted-foreground">오늘 · 어제 {num(s.yesterday)}</div>
+                </div>
+                <div className="h-10 w-28 shrink-0"><Sparkline points={s.last7} /></div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t border-border pt-2 text-[11px] text-muted-foreground">
+                <span>누적 <b className="text-foreground tabular-nums">{num(s.total)}</b></span>
+                {s.checkedIn !== null && <span>현장 입장 <b className="text-foreground tabular-nums">{num(s.checkedIn)}</b></span>}
+              </div>
+            </CardLink>
+          );
+        })}
+      </Section>
+
+      {/* ── 광고 성과 ── */}
+      <Section
+        icon={BarChart3}
+        title="광고 성과"
+        otherCount={data.ads.otherCount}
+        otherHref="/analytics"
+        emptyText="기간 중인 광고 폴더가 없어요"
+      >
+        {data.ads.active.map((f) => {
+          const cpa = f.conversions > 0 ? f.cost / f.conversions : null;
+          const ctr = f.impressions > 0 ? (f.clicks / f.impressions) * 100 : null;
+          return (
+            <CardLink key={f.id} href={`/analytics/${f.id}`}>
+              <div className="flex items-start justify-between gap-2">
+                <span className="min-w-0 truncate text-sm font-medium">{f.name}</span>
+                <span className="shrink-0 text-[10px] text-muted-foreground">{f.platforms.join(" · ")}</span>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <Metric label="비용" value={money(f.cost, f.currency)} />
+                <Metric label="결과" value={num(f.conversions)} helper={cpa !== null ? `결과당 ${money(cpa, f.currency)}` : undefined} />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t border-border pt-2 text-[11px] text-muted-foreground">
+                <span>노출 <b className="text-foreground tabular-nums">{num(f.impressions)}</b></span>
+                <span>클릭 <b className="text-foreground tabular-nums">{num(f.clicks)}</b>{ctr !== null && ` (${ctr.toFixed(2)}%)`}</span>
+                {f.lastSyncedAt && <span>동기화 {formatKstDateTime(f.lastSyncedAt).slice(5, 16)}</span>}
+              </div>
+            </CardLink>
+          );
+        })}
+      </Section>
+
+      {/* ── 대회 ── */}
+      <Section
+        icon={Trophy}
+        title="대회"
+        otherCount={data.competitions.otherCount}
+        otherHref="/competition"
+        emptyText="진행 중인 대회가 없어요"
+      >
+        {data.competitions.active.map((c) => {
+          const meta = COMPETITION_PHASE_META[c.phase];
+          const due = c.phase === "recruiting" || c.phase === "upcoming" ? dday(c.recruitCloseAt) : null;
+          return (
+            <CardLink key={c.id} href={`/competition/${c.slug}`}>
+              <div className="flex items-start justify-between gap-2">
+                <span className="min-w-0 truncate text-sm font-medium">{c.name}</span>
+                <div className="flex shrink-0 gap-1">
+                  <Badge tone={meta.tone}>{meta.label}</Badge>
+                  {due && <Badge tone="bg-violet-500/10 text-violet-600 dark:text-violet-400">{due}</Badge>}
+                </div>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <Metric label="참가작" value={num(c.entries)} helper={`승인 ${num(c.approved)} · 노출 ${num(c.published)}`} />
+                <Metric label="투표" value={num(c.votes)} helper={c.advanced > 0 ? `본선 ${num(c.advanced)}팀` : undefined} />
+              </div>
+            </CardLink>
+          );
+        })}
+      </Section>
+
+      {/* ── 웨비나 · 상세페이지 ── 수가 적어 한 줄 목록으로 */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Section
+          icon={Video}
+          title="웨비나"
+          otherCount={data.webinars.otherCount}
+          otherHref="/webinar"
+          emptyText="예정·진행 중인 웨비나가 없어요"
+          list
+        >
+          {data.webinars.active.map((w) => {
+            const meta = WEBINAR_STATUS_META[w.status];
+            return (
+              <RowLink key={w.id} href={`/webinar/${w.slug}`}>
+                <span className="min-w-0 flex-1 truncate">{w.name}</span>
+                <Badge tone={meta.tone}>{meta.label}</Badge>
+                <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+                  {formatKstDateTime(w.liveStartAt).slice(5, 16)} · 등록 {num(w.registrations)}
+                </span>
+              </RowLink>
+            );
+          })}
+        </Section>
+        <Section
+          icon={FileText}
+          title="상세페이지"
+          otherCount={data.detailPages.otherCount}
+          otherHref="/detail-page"
+          otherLabel="비공개"
+          emptyText="공개 중인 상세페이지가 없어요"
+          list
+        >
+          {data.detailPages.published.map((p) => (
+            <RowLink key={p.id} href={`/detail-page/${p.id}`}>
+              <span className="min-w-0 flex-1 truncate">{p.name}</span>
+              <Badge tone="bg-emerald-500/10 text-emerald-600">공개</Badge>
+              <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+                수정 {formatKstDateTime(p.updatedAt).slice(5, 10)}
+              </span>
+            </RowLink>
+          ))}
+        </Section>
+      </div>
+    </>
+  );
+}
+
+function Section({
+  icon: Icon,
+  title,
+  headline,
+  action,
+  otherCount,
+  otherHref,
+  otherLabel = "지난",
+  emptyText,
+  list,
+  children,
+}: {
+  icon: LucideIcon;
+  title: string;
+  headline?: string | null;
+  action?: React.ReactNode;
+  otherCount: number;
+  otherHref: string;
+  otherLabel?: string;
+  emptyText: string;
+  list?: boolean;
+  children: React.ReactNode[];
+}) {
+  const empty = children.length === 0;
+  return (
+    <section className="min-w-0 space-y-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <h2 className="text-sm font-semibold">{title}</h2>
+          {headline && <span className="text-sm font-semibold text-violet-600 dark:text-violet-400">{headline}</span>}
+        </div>
+        <div className="flex items-center gap-1">
+          {action}
+          {otherCount > 0 && (
+            <Link href={otherHref} className="rounded-lg px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
+              {otherLabel} {otherCount}개 보기
+            </Link>
+          )}
+        </div>
+      </div>
+      {empty ? (
+        <div className={`border border-dashed border-border px-4 py-5 text-center text-xs text-muted-foreground ${R.panel}`}>{emptyText}</div>
+      ) : list ? (
+        <div className={`divide-y divide-border overflow-hidden bg-background ${R.panel} ${FINISH.s1}`}>{children}</div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{children}</div>
+      )}
+    </section>
+  );
+}
+
+function CardLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link href={href} className={`group block min-w-0 bg-background p-4 transition-transform hover:-translate-y-0.5 ${R.panel} ${FINISH.s1}`}>
+      {children}
+      <div className="mt-2 flex items-center justify-end text-[11px] text-muted-foreground transition-colors group-hover:text-foreground">
+        자세히 <ChevronRight className="h-3 w-3" />
+      </div>
+    </Link>
+  );
+}
+
+function RowLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link href={href} className="flex min-w-0 flex-wrap items-center gap-2 px-4 py-3 text-sm transition-colors hover:bg-secondary/40">
+      {children}
+      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+    </Link>
+  );
+}
+
+function Metric({ label, value, helper }: { label: string; value: string; helper?: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="truncate text-lg font-semibold tabular-nums">{value}</div>
+      {helper && <div className="truncate text-[11px] text-muted-foreground">{helper}</div>}
+    </div>
+  );
+}
+
+function Badge({ tone, children }: { tone: string; children: React.ReactNode }) {
+  return <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${tone}`}>{children}</span>;
 }
