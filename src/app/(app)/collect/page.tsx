@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Database, Globe, Loader2, ChevronRight, Users, Trash2, Upload, UserPlus, Edit3, Check, X } from "lucide-react";
+import { Plus, Database, Globe, Loader2, ChevronRight, Users, Trash2, Upload, UserPlus, Edit3, Check, X, Copy } from "lucide-react";
+import { useRouter } from "next/navigation";
+import ModalShell from "@/app/(app)/collect/[id]/ModalShell";
 import { toast } from "sonner";
 import { useWorkspace } from "@/contexts/workspace";
 import Link from "next/link";
@@ -34,6 +36,11 @@ export default function CollectPage() {
   const [restoring, setRestoring] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
+  // 복제 — 폼 항목·문구·설정을 그대로 가져가 새 폼을 연다(등록 데이터·링크는 새로).
+  const router = useRouter();
+  const [duplicateTarget, setDuplicateTarget] = useState<CollectSource | null>(null);
+  const [duplicateNameInput, setDuplicateNameInput] = useState("");
+  const [duplicating, setDuplicating] = useState(false);
 
   const fetchSources = useCallback(async () => {
     if (!workspace || !currentProject) return;
@@ -115,6 +122,33 @@ export default function CollectPage() {
     if (!res.ok) { toast.error("이름 변경 실패"); return; }
     setSources((prev) => prev.map((s) => s.id === id ? { ...s, name } : s));
     toast.success("이름이 변경됐어요");
+  };
+
+  const openDuplicate = (source: CollectSource) => {
+    setDuplicateTarget(source);
+    setDuplicateNameInput(`${source.name} (복사본)`);
+  };
+
+  const handleDuplicate = async () => {
+    if (!duplicateTarget) return;
+    const name = duplicateNameInput.trim();
+    if (!name) { toast.error("새 폼 이름을 입력해주세요"); return; }
+    setDuplicating(true);
+    try {
+      const res = await fetch(`/api/collect-sources/${duplicateTarget.id}/duplicate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { toast.error(data.error ?? "복제하지 못했어요"); return; }
+      toast.success(`'${data.source.name}' 폼을 만들었어요 — 내용을 바꿔 주세요`);
+      setDuplicateTarget(null);
+      // 바로 고칠 수 있는 곳으로 — 빌더형은 등록 폼 탭, 연동형은 기본 정보.
+      router.push(`/collect/${data.source.id}?tab=${data.source.mode === "builder" ? "form" : "info"}`);
+    } finally {
+      setDuplicating(false);
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -415,6 +449,15 @@ export default function CollectPage() {
                   size="sm"
                   showLabel={false}
                 />
+                {/* 터치 기기엔 hover 가 없다 — 좁은 화면에서는 늘 보이게. */}
+                <button
+                  onClick={(e) => { e.preventDefault(); openDuplicate(source); }}
+                  className="p-1.5 rounded-xl hover:bg-secondary hover:text-foreground transition-colors text-muted-foreground sm:opacity-0 sm:group-hover:opacity-100"
+                  title="복제"
+                  aria-label={`${source.name} 복제`}
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
                 <button
                   onClick={(e) => { e.preventDefault(); setDeleteId(source.id); }}
                   className="p-1.5 rounded-xl hover:bg-red-500/10 hover:text-red-500 transition-colors text-muted-foreground opacity-0 group-hover:opacity-100"
@@ -429,6 +472,51 @@ export default function CollectPage() {
           ))}
         </div>
       )}
+
+      {/* 복제 */}
+      <ModalShell
+        open={!!duplicateTarget}
+        onClose={() => { if (!duplicating) setDuplicateTarget(null); }}
+        title="사전등록 폼 복제"
+        description={duplicateTarget ? `'${duplicateTarget.name}'의 폼 항목·문구·설정을 그대로 가져와 새 폼을 만들어요.` : undefined}
+        size="sm"
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setDuplicateTarget(null)}
+              disabled={duplicating}
+              className="rounded-xl px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-secondary disabled:opacity-50"
+            >
+              취소
+            </button>
+            <button
+              onClick={() => void handleDuplicate()}
+              disabled={duplicating}
+              className="flex items-center gap-1.5 rounded-xl bg-violet-500 px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-violet-600 disabled:opacity-50"
+            >
+              {duplicating && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              복제하기
+            </button>
+          </div>
+        }
+      >
+        <label className="block space-y-1.5">
+          <span className="text-xs font-medium text-muted-foreground">새 폼 이름</span>
+          <input
+            autoFocus
+            value={duplicateNameInput}
+            onChange={(e) => setDuplicateNameInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) void handleDuplicate(); }}
+            placeholder="예: 2026 Korea Expo LA Random Dance Play"
+            className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none transition-colors focus:border-violet-400"
+          />
+        </label>
+        <ul className="mt-3 space-y-1 text-[11px] text-muted-foreground">
+          <li>• <b className="text-foreground">가져가요</b> — 폼 항목, 안내·동의 문구, 확인 메일, 등록 기간, 디자인, 기본 정보</li>
+          <li>• <b className="text-foreground">새로 시작해요</b> — 등록자 데이터(0건), 설치 코드·미리보기 링크, 현장 체크인 링크·PIN, 웹훅</li>
+          <li>• 등록 기간·행사 정보는 원본 그대로라 <b className="text-foreground">새 행사에 맞게 꼭 바꿔 주세요</b></li>
+        </ul>
+      </ModalShell>
 
       {/* 삭제 확인 */}
       <AnimatePresence>
