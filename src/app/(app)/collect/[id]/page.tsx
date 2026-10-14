@@ -23,6 +23,8 @@ import InfoTab, { type VenueInfo } from "./InfoTab";
 import CheckinTab from "./CheckinTab";
 import { TABS, tabsFor, type Tab } from "./tabs";
 import SourceOverviewTab from "./SourceOverviewTab";
+import ColumnFilterButton, { summarizeFilter } from "./ColumnFilterButton";
+import { isColumnFilterActive, type ColumnFilter, type ColumnFilterKey } from "@/lib/collect-record-filter-model";
 import dynamic from "next/dynamic";
 const ImportModal = dynamic(() => import("./ImportModal"), { ssr: false });
 const CleanupModal = dynamic(() => import("./CleanupModal"), { ssr: false });
@@ -318,6 +320,9 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
   const [filterDateTo, setFilterDateTo] = useState("");
   const [filterUtmSource, setFilterUtmSource] = useState("");
   const [filterUtmMedium, setFilterUtmMedium] = useState("");
+  // 열 필터 — 열 머리의 필터 버튼으로 건다(포함·값 고르기·비어 있음). 키는 ColumnFilterKey.
+  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilter>>({});
+  const activeColumnFilters = Object.values(columnFilters).filter(isColumnFilterActive);
   // UTM 필터 드롭다운 옵션 — 누적된 distinct 값 (페이지/검색을 거치며 본 값들의 합집합)
   const [utmSourceOptions, setUtmSourceOptions] = useState<string[]>([]);
   const [utmMediumOptions, setUtmMediumOptions] = useState<string[]>([]);
@@ -427,13 +432,16 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
     if (filterDateTo) qs.set("to", `${filterDateTo}T23:59:59+09:00`);
     if (filterUtmSource) qs.set("utmSource", filterUtmSource);
     if (filterUtmMedium) qs.set("utmMedium", filterUtmMedium);
+    // 열 필터 — 목록·CSV·"필터 결과 전체 선택(삭제)" 이 모두 이 쿼리를 쓴다(화면과 같은 집합).
+    const activeColumns = Object.values(columnFilters).filter(isColumnFilterActive);
+    if (activeColumns.length) qs.set("cf", JSON.stringify(activeColumns));
     if (sort) {
       qs.set("sort", sort.kind);
       qs.set("dir", sort.dir);
       if (sort.kind === "field" && sort.fieldKey) qs.set("sortField", sort.fieldKey);
     }
     return qs;
-  }, [debouncedSearch, filterDateFrom, filterDateTo, filterUtmSource, filterUtmMedium, sort]);
+  }, [debouncedSearch, filterDateFrom, filterDateTo, filterUtmSource, filterUtmMedium, columnFilters, sort]);
 
   const fetchRecords = useCallback(async () => {
     setRecordsLoading(true);
@@ -558,11 +566,26 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
   // recordsTotal = 현재 필터 조건에 매칭되는 전체 건수, recordsGrandTotal = 무필터 전체 건수.
   const recordsGrandTotal = source?._count?.records ?? 0;
 
-  const hasActiveFilter = !!(searchQuery || filterDateFrom || filterDateTo || filterUtmSource || filterUtmMedium);
+  const hasActiveFilter = !!(searchQuery || filterDateFrom || filterDateTo || filterUtmSource || filterUtmMedium || activeColumnFilters.length);
   const resetFilters = () => {
     setSearchQuery(""); setFilterDateFrom(""); setFilterDateTo("");
     setFilterUtmSource(""); setFilterUtmMedium("");
+    setColumnFilters({});
     resetToFirstPage();
+  };
+  const setColumnFilter = (key: ColumnFilterKey, next: ColumnFilter | undefined) => {
+    setColumnFilters((prev) => {
+      const copy = { ...prev };
+      if (next) copy[key] = next;
+      else delete copy[key];
+      return copy;
+    });
+    resetToFirstPage();
+  };
+  /** 칩에 쓸 열 이름 — 항목은 라벨, 고정 열은 화면 이름. */
+  const columnFilterLabel = (key: string) => {
+    if (key.startsWith("field:")) return source?.fieldMappings.find((m) => m.key === key.slice(6))?.label || key.slice(6);
+    return ({ utmSource: "UTM 소스", utmMedium: "UTM 매체", registrationNo: "등록번호", checkin: "입장" } as Record<string, string>)[key] ?? key;
   };
 
   const totalPages = Math.max(1, Math.ceil(recordsTotal / pageSize));
@@ -1381,7 +1404,7 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
 
               {/* 검색/필터 바 — 데이터가 있거나 필터가 적용된 동안 항상 표시 (0건 결과에서도 해제 가능하도록) */}
               {(recordsGrandTotal > 0 || hasActiveFilter) && (() => {
-                const activeFilterCount = [filterDateFrom, filterDateTo, filterUtmSource, filterUtmMedium].filter(Boolean).length;
+                const activeFilterCount = [filterDateFrom, filterDateTo, filterUtmSource, filterUtmMedium].filter(Boolean).length + activeColumnFilters.length;
                 return (
                   <div className="mb-3">
                     <div className="flex items-center gap-2">
@@ -1457,6 +1480,20 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
                         </motion.div>
                       )}
                     </AnimatePresence>
+                    {/* 걸려 있는 열 필터 — 어느 열에 무엇이 걸렸는지 표 위에서 바로 보이고 하나씩 뗄 수 있게. */}
+                    {activeColumnFilters.length > 0 && (
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        {activeColumnFilters.map((cf) => (
+                          <span key={cf.c} className="inline-flex max-w-full items-center gap-1 rounded-full bg-violet-500/10 px-2 py-1 text-[11px] text-violet-600 dark:text-violet-400">
+                            <span className="truncate"><b>{columnFilterLabel(cf.c)}</b> · {summarizeFilter(cf)}</span>
+                            <button onClick={() => setColumnFilter(cf.c, undefined)} className="shrink-0 rounded-full p-0.5 hover:bg-violet-500/20" aria-label={`${columnFilterLabel(cf.c)} 필터 지우기`}>
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))}
+                        <button onClick={resetFilters} className="px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground">모두 지우기</button>
+                      </div>
+                    )}
                   </div>
                 );
               })()}
@@ -1523,19 +1560,36 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
                           />
                         </th>
                         <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground whitespace-nowrap sticky left-10 z-10 bg-secondary/50 shadow-[1px_0_0_0_hsl(var(--border))]">
-                          <button onClick={() => cycleSort("createdAt")} className="flex items-center gap-1 hover:text-foreground transition-colors">
-                            시간 {sortIcon("createdAt")}
-                          </button>
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => cycleSort("createdAt")} className="flex items-center gap-1 hover:text-foreground transition-colors">
+                              시간 {sortIcon("createdAt")}
+                            </button>
+                            {/* 시간은 기간으로 거른다 — 위 필터 칸의 기간 선택을 연다. */}
+                            <button
+                              onClick={() => setFiltersOpen(true)}
+                              className={`shrink-0 rounded p-0.5 transition-colors ${filterDateFrom || filterDateTo ? "text-violet-500" : "text-muted-foreground/50 hover:text-foreground"}`}
+                              title="기간 필터"
+                              aria-label="기간 필터"
+                            >
+                              <Filter className={`h-3 w-3 ${filterDateFrom || filterDateTo ? "fill-current" : ""}`} />
+                            </button>
+                          </div>
                         </th>
                         {/* 등록번호는 빌더형에만 있고 시간 바로 뒤다 — 현장에서 스캔한 번호로 찾는다. */}
                         {source.mode === "builder" && (
                           <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground whitespace-nowrap">
-                            등록번호
+                            <div className="flex items-center gap-1">
+                              등록번호
+                              <ColumnFilterButton sourceId={source.id} column="registrationNo" label="등록번호" value={columnFilters.registrationNo} onChange={(next) => setColumnFilter("registrationNo", next)} />
+                            </div>
                           </th>
                         )}
                         {showCheckinCol && (
                           <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground whitespace-nowrap">
-                            입장
+                            <div className="flex items-center gap-1">
+                              입장
+                              <ColumnFilterButton sourceId={source.id} column="checkin" kind="checkin" label="입장" value={columnFilters.checkin} onChange={(next) => setColumnFilter("checkin", next)} />
+                            </div>
                           </th>
                         )}
                         {source.fieldMappings.filter((f) => !f.hidden).map((f) => {
@@ -1550,29 +1604,44 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
                           */
                           return (
                           <th key={f.id} className={`text-left px-4 py-2.5 text-xs font-medium text-muted-foreground ${colWidth}`}>
-                            <button
-                              onClick={() => cycleSort("field", f.key)}
-                              title={f.label}
-                              className="flex w-full items-center gap-1 hover:text-foreground transition-colors"
-                            >
-                              <span className="truncate">{f.label}</span>
-                              <span className="shrink-0">{sortIcon("field", f.key)}</span>
-                            </button>
+                            <div className="flex w-full items-center gap-1">
+                              <button
+                                onClick={() => cycleSort("field", f.key)}
+                                title={f.label}
+                                className="flex min-w-0 flex-1 items-center gap-1 hover:text-foreground transition-colors"
+                              >
+                                <span className="truncate">{f.label}</span>
+                                <span className="shrink-0">{sortIcon("field", f.key)}</span>
+                              </button>
+                              <ColumnFilterButton
+                                sourceId={source.id}
+                                column={`field:${f.key}`}
+                                label={f.label}
+                                value={columnFilters[`field:${f.key}`]}
+                                onChange={(next) => setColumnFilter(`field:${f.key}`, next)}
+                              />
+                            </div>
                           </th>
                           );
                         })}
                         {showUtmSource && (
                           <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground whitespace-nowrap">
-                            <button onClick={() => cycleSort("utmSource")} className="flex items-center gap-1 hover:text-foreground transition-colors">
-                              UTM 소스 {sortIcon("utmSource")}
-                            </button>
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => cycleSort("utmSource")} className="flex items-center gap-1 hover:text-foreground transition-colors">
+                                UTM 소스 {sortIcon("utmSource")}
+                              </button>
+                              <ColumnFilterButton sourceId={source.id} column="utmSource" label="UTM 소스" value={columnFilters.utmSource} onChange={(next) => setColumnFilter("utmSource", next)} />
+                            </div>
                           </th>
                         )}
                         {showUtmMedium && (
                           <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground whitespace-nowrap">
-                            <button onClick={() => cycleSort("utmMedium")} className="flex items-center gap-1 hover:text-foreground transition-colors">
-                              UTM 매체 {sortIcon("utmMedium")}
-                            </button>
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => cycleSort("utmMedium")} className="flex items-center gap-1 hover:text-foreground transition-colors">
+                                UTM 매체 {sortIcon("utmMedium")}
+                              </button>
+                              <ColumnFilterButton sourceId={source.id} column="utmMedium" label="UTM 매체" value={columnFilters.utmMedium} onChange={(next) => setColumnFilter("utmMedium", next)} />
+                            </div>
                           </th>
                         )}
                       </tr>
