@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { columnFilterConditions, parseColumnFilters } from "@/lib/collect-record-filters";
 import { Prisma } from "@/generated/prisma";
 import { logActivity } from "@/lib/activity";
 
@@ -64,6 +65,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const sort = searchParams.get("sort");
   const dir = searchParams.get("dir");
   const sortField = searchParams.get("sortField");
+  // 열 필터(cf) — 목록·CSV·전체 선택이 같은 조건을 쓴다(lib/collect-record-filters.ts).
+  const columnFilters = parseColumnFilters(searchParams.get("cf"));
 
   const orderBy = buildOrderBy(sort, dir, sortField);
 
@@ -86,6 +89,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       OR COALESCE("registrationNo",'') ILIKE ${pattern}
     )`);
   }
+  conditions.push(...columnFilterConditions(columnFilters));
   const whereClause = Prisma.join(conditions, " AND ");
 
   // 1) 정렬·페이지네이션된 ID 목록을 raw SQL 로 조회 (JSONB 필드 정렬 지원)
