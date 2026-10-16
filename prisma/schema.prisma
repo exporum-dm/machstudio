@@ -40,6 +40,7 @@ model User {
   notificationPrefs    NotificationPref[]
   projectMemberships   ProjectMember[]
   adPerformanceImports AdPerformanceImportBatch[] @relation("AdPerformanceUploader")
+  workEntries          WorkEntry[]
   mediaAssets          MediaAsset[]
   oauthAuthorizationCodes OAuthAuthorizationCode[]
   oauthRefreshTokens      OAuthRefreshToken[]
@@ -86,6 +87,9 @@ model Workspace {
   webinarEmbedSites    WebinarEmbedSite[]
   adPerformanceImports AdPerformanceImportBatch[]
   adPerformanceViews   AdPerformanceView[]
+  eventTaxonomies      EventTaxonomy[]
+  workGroups           WorkGroup[]
+  workEntries          WorkEntry[]
   adPerformanceRecords AdPerformanceRecord[]
   adPerformanceFolders AdPerformanceFolder[]
   metaAdConnections    MetaAdConnection[]
@@ -186,6 +190,7 @@ model Project {
   mediaAssets          MediaAsset[]
   briefs               Brief[]
   detailPages          DetailPage[]
+  workGroups           WorkGroup[]
 }
 
 model AdPerformanceImportBatch {
@@ -788,6 +793,78 @@ model ShortLinkClick {
 
 /// 브리프 — 프로젝트별로 운영하는 큐레이션 시리즈(예: Korea Expo 의 "The Action").
 /// 링크를 모아 **채택**한 것만 카톡 텍스트·공개 페이지로 내보낸다.
+/// 이벤트 택소노미 — 워크스페이스 공통 이벤트 이름 규칙(GA4/GTM). UTM 값은 UTMPreset 이 맡는다.
+model EventTaxonomy {
+  id          String   @id @default(cuid())
+  workspaceId String
+  /// event_name (snake_case)
+  name        String
+  category    String   @default("")
+  description String   @default("")
+  /// 언제 발생하나
+  trigger     String   @default("")
+  /// [{ key, description, example }]
+  parameters  Json     @default("[]")
+  platforms   String[] @default([])
+  /// "active" | "deprecated"
+  status      String   @default("active")
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, name])
+}
+
+/// 주간업무보고의 "행사" 줄 — 프로젝트와 1:1 이 아니다(한 프로젝트에 LA·도쿄·파리 행사가 따로 있다).
+model WorkGroup {
+  id          String    @id @default(cuid())
+  workspaceId String
+  /// 지표(사전등록·광고)를 붙일 프로젝트. 없으면 지표 없이 글만.
+  projectId   String?
+  name        String
+  startDate   DateTime? @db.Date
+  endDate     DateTime? @db.Date
+  archived    Boolean   @default(false)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  entries   WorkEntry[]
+
+  @@index([workspaceId])
+}
+
+/// 업무일지 한 줄 — 주간 보고는 이 줄들로 만든다.
+model WorkEntry {
+  id          String   @id @default(cuid())
+  workspaceId String
+  groupId     String?
+  authorId    String
+  date        DateTime @db.Date
+  /// 운영·콘텐츠·퍼포먼스·홈페이지·제작·기획 …
+  category    String   @default("")
+  content     String
+  /// "planned" | "doing" | "done"
+  status      String   @default("done")
+  /// 결과 및 산출물
+  result      String   @default("")
+  /// 비고
+  note        String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  group     WorkGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  author    User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, date])
+  @@index([authorId, date])
+}
+
 /// 상세페이지 — 대회 공고와 같은 섹션 빌더로 만드는 독립 페이지. 아임웹에 /d/{id} 한 줄로 붙는다.
 model DetailPage {
   id          String    @id @default(cuid())

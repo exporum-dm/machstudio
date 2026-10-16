@@ -44,7 +44,7 @@ describe("메뉴 필터", () => {
 
   it("다른 메뉴는 게이트에 걸리지 않는다", () => {
     const off = filterNavItems(navItems, { expoHomepageEnabled: false });
-    for (const href of ["/dashboard", "/collect", "/analytics", "/utm-builder", "/webinar", "/competition"]) {
+    for (const href of ["/dashboard", "/collect", "/analytics", "/tools", "/worklog", "/webinar", "/competition"]) {
       expect(`${href}: ${off.some((item) => item.href === href)}`).toBe(`${href}: true`);
     }
   });

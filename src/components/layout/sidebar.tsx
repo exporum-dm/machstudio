@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, LayoutGrid, BarChart3, LogOut,
-  ChevronDown, Plus, FolderOpen, Check, Loader2, Settings2, Settings, Database, Video, Link2, Pencil, Trash2, ShieldCheck, Menu, Trophy, Globe, ImageIcon, Newspaper, FileText,
+  ChevronDown, Plus, FolderOpen, Check, Loader2, Settings2, Settings, Database, Video, Pencil, Trash2, ShieldCheck, Menu, Trophy, Globe, Newspaper, FileText, NotebookPen, Wrench,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/contexts/workspace";
@@ -33,19 +33,22 @@ export interface NavItem {
   icon: typeof LayoutDashboard;
   label: string;
   capability?: "expoHomepage";
+  /** 이 메뉴로 묶인 예전 주소 — 그 주소에 있어도 이 메뉴가 켜져 보인다(도구 = UTM 빌더·미디어). */
+  aliases?: string[];
 }
 
 export const navItems: NavItem[] = [
   { href: "/dashboard", icon: LayoutDashboard, label: "대시보드" },
   { href: "/collect", icon: Database, label: "사전등록" },
   { href: "/analytics", icon: BarChart3, label: "광고 성과" },
-  { href: "/utm-builder", icon: Link2, label: "UTM 빌더" },
   { href: "/webinar", icon: Video, label: "웨비나" },
   { href: "/competition", icon: Trophy, label: "대회" },
   { href: "/detail-page", icon: FileText, label: "상세페이지" },
   { href: "/homepage", icon: Globe, label: "홈페이지", capability: "expoHomepage" },
   { href: "/brief", icon: Newspaper, label: "브리프" },
-  { href: "/media", icon: ImageIcon, label: "미디어" },
+  { href: "/worklog", icon: NotebookPen, label: "업무일지" },
+  // UTM 빌더·미디어·이벤트 택소노미를 한 메뉴의 탭으로(2026-10-17). 예전 주소도 그대로 열린다.
+  { href: "/tools", icon: Wrench, label: "도구", aliases: ["/utm-builder", "/media"] },
 ];
 
 /**
@@ -547,8 +550,8 @@ export function Sidebar({ expoHomepageEnabled = false }: SidebarProps = {}) {
       {/* 네비게이션 */}
 
       <nav className="flex-1 px-3 py-1 space-y-0.5 overflow-y-auto">
-        {visibleNavItems.map(({ href, icon: Icon, label }) => {
-          const isActive = pathname === href || pathname.startsWith(href + "/");
+        {visibleNavItems.map(({ href, icon: Icon, label, aliases }) => {
+          const isActive = [href, ...(aliases ?? [])].some((p) => pathname === p || pathname.startsWith(p + "/"));
           return (
             <motion.div key={href} whileTap={{ scale: 0.96 }} className="relative">
               {isActive && (
