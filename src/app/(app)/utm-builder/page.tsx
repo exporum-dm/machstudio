@@ -9,6 +9,7 @@ import {
   AlertCircle, ArrowUpDown, CopyPlus, CheckCircle2, LayoutList,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
+import { downloadQr } from "@/lib/qr-download";
 import { toast } from "sonner";
 import { useWorkspace } from "@/contexts/workspace";
 import { Select } from "@/components/ui/select";
@@ -539,16 +540,15 @@ function UTMRow({ link, onDelete, onShortUrlSaved, onEdit, onDuplicate }: {
                       <QRCodeSVG id={`qr-${link.id}`} value={link.shortUrl || link.fullUrl} size={120} />
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => {
-                        const svg = document.getElementById(`qr-${link.id}`);
-                        if (!svg) return;
-                        const blob = new Blob([svg.outerHTML], { type: "image/svg+xml" });
-                        const a = document.createElement("a");
-                        a.href = URL.createObjectURL(blob); a.download = `qr-${link.utmCampaign || link.id}.svg`; a.click();
-                        toast.success("QR 다운로드됨");
-                      }} className="text-xs text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-lg border border-border hover:bg-secondary transition-colors">
-                        SVG 다운로드
-                      </button>
+                      {(["png", "svg"] as const).map((format) => (
+                        <button key={format} onClick={async () => {
+                          const ok = await downloadQr(document.getElementById(`qr-${link.id}`), `qr-${link.utmCampaign || link.id}`, format).catch(() => false);
+                          if (ok) toast.success(`QR ${format.toUpperCase()} 다운로드됨`);
+                          else toast.error("QR을 내려받지 못했어요");
+                        }} className="text-xs text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-lg border border-border hover:bg-secondary transition-colors">
+                          {format.toUpperCase()} 다운로드
+                        </button>
+                      ))}
                       <button onClick={() => setShowQR(false)}
                         className="text-xs text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-lg border border-border hover:bg-secondary transition-colors">
                         닫기
@@ -977,13 +977,13 @@ function CreateDrawer({ open, onClose, presets, templates, onSaved, editingLink,
             {showQR ? (
               <div className="flex items-center gap-3">
                 <div className="bg-white rounded-xl p-2"><QRCodeSVG id="qr-drawer" value={url} size={80} /></div>
-                <button onClick={() => {
-                  const svg = document.getElementById("qr-drawer");
-                  if (!svg) return;
-                  const blob = new Blob([svg.outerHTML], { type: "image/svg+xml" });
-                  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "qrcode.svg"; a.click();
-                  toast.success("QR 다운로드됨");
-                }} className="text-xs text-muted-foreground hover:text-foreground">다운로드</button>
+                {(["png", "svg"] as const).map((format) => (
+                  <button key={format} onClick={async () => {
+                    const ok = await downloadQr(document.getElementById("qr-drawer"), "qrcode", format).catch(() => false);
+                    if (ok) toast.success(`QR ${format.toUpperCase()} 다운로드됨`);
+                    else toast.error("QR을 내려받지 못했어요");
+                  }} className="text-xs text-muted-foreground hover:text-foreground">{format.toUpperCase()}</button>
+                ))}
               </div>
             ) : (
               <button onClick={() => setShowQR(true)}
