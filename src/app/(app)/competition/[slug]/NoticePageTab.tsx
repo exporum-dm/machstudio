@@ -108,7 +108,7 @@ function criteriaOf(round: RoundDto | undefined) {
 }
 
 export default function NoticePageTab({ competition, rounds, patch }: Props) {
-  const status = resolveCompetitionStatus(competition);
+  const status = resolveCompetitionStatus({ ...competition, rounds });
   const host: NoticeEditorHost = {
     kind: "competition",
     config: competition.config as unknown as Record<string, unknown>,

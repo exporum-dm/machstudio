@@ -63,7 +63,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     });
   }
 
-  const status = resolveCompetitionStatus(competition);
   // 공개 페이로드에는 공개용 config 만 싣는다(꺼 둔 블록·항목 제외). 참가자 개인정보는 애초에 없다.
   const normalizedConfig = normalizeCompetitionConfig(competition.config);
   const org = resolveOrgProfile(competition.workspace.legalProfile as WorkspaceLegalProfile | null, normalizedConfig.legal.country);
@@ -77,8 +76,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const rounds = await prisma.competitionRound.findMany({
     where: { competitionId: competition.id },
     orderBy: { sortOrder: "asc" },
-    select: { kind: true, name: true, publicWeight: true, judgeWeight: true, judgeCriteria: true },
+    select: { kind: true, name: true, publicWeight: true, judgeWeight: true, judgeCriteria: true, voteEnabled: true, voteOpenAt: true, voteCloseAt: true },
   });
+  // 단계는 라운드 일정까지 보고 정한다 — 본선 투표가 열렸으면 본선(예전엔 접수 마감 뒤 늘 예선).
+  const status = resolveCompetitionStatus({ ...competition, rounds });
   const noticeRounds = rounds.map((round) => ({
     kind: round.kind === "final" ? ("final" as const) : ("prelim" as const),
     name: round.name,

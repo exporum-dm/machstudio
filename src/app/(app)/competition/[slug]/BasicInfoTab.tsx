@@ -8,16 +8,19 @@ import {
   COMPETITION_PHASE_META,
   COMPETITION_PHASE_OVERRIDES,
   resolveCompetitionStatus,
+  type RoundTiming,
 } from "@/lib/competition-status";
 import { NOTICE_LANGUAGES } from "@/lib/notice/config";
 import type { CompetitionDetail } from "./page";
 
 interface Props {
   competition: CompetitionDetail;
+  /** 단계 자동 판정용 라운드 일정 */
+  rounds?: RoundTiming[];
   patch: (body: Record<string, unknown>, successMessage?: string) => Promise<boolean>;
 }
 
-export default function BasicInfoTab({ competition, patch }: Props) {
+export default function BasicInfoTab({ competition, rounds, patch }: Props) {
   const [name, setName] = useState(competition.name);
   const [description, setDescription] = useState(competition.description ?? "");
   const [slug, setSlug] = useState(competition.slug);
@@ -25,7 +28,7 @@ export default function BasicInfoTab({ competition, patch }: Props) {
   const [closeAt, setCloseAt] = useState(competition.recruitCloseAt ? kstDateTimeLocalInput(competition.recruitCloseAt) : "");
   const [saving, setSaving] = useState(false);
 
-  const status = resolveCompetitionStatus(competition);
+  const status = resolveCompetitionStatus({ ...competition, rounds });
 
   const save = async () => {
     if (!name.trim()) { toast.error("대회 이름을 입력해주세요"); return; }
