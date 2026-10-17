@@ -115,7 +115,7 @@ export async function buildProjectOverview(workspaceId: string, projectId: strin
     }),
     prisma.competition.findMany({
       where: { workspaceId, projectId },
-      select: { id: true, slug: true, name: true, recruitOpenAt: true, recruitCloseAt: true, phaseOverride: true, resultPublishedAt: true },
+      select: { id: true, slug: true, name: true, recruitOpenAt: true, recruitCloseAt: true, phaseOverride: true, resultPublishedAt: true, rounds: { select: { kind: true, voteEnabled: true, voteOpenAt: true, voteCloseAt: true } } },
     }),
     prisma.webinar.findMany({
       where: { workspaceId, projectId },

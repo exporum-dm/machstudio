@@ -98,18 +98,18 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
 </html>`);
   }
 
-  const status = resolveCompetitionStatus(competition);
+  // 공고의 선발 방식·심사 기준은 투표 설정·심사단 탭 값을 그대로 그린다(auto 소스).
+  const rounds = await prisma.competitionRound.findMany({
+    where: { competitionId: competition.id },
+    orderBy: { sortOrder: "asc" },
+    select: { kind: true, name: true, publicWeight: true, judgeWeight: true, judgeCriteria: true, voteEnabled: true, voteOpenAt: true, voteCloseAt: true },
+  });
+  const status = resolveCompetitionStatus({ ...competition, rounds });
   // ?phase= 로 접수 전·마감 화면을 지금 확인한다 — 마감 화면을 마감 당일에 처음 보면 늦다.
   const requested = url.searchParams.get("phase");
   const phase = requested && (PHASES as string[]).includes(requested) ? (requested as CompetitionPhase) : status.phase;
   const canApply = requested ? phase === "recruiting" : status.canApply;
 
-  // 공고의 선발 방식·심사 기준은 투표 설정·심사단 탭 값을 그대로 그린다(auto 소스).
-  const rounds = await prisma.competitionRound.findMany({
-    where: { competitionId: competition.id },
-    orderBy: { sortOrder: "asc" },
-    select: { kind: true, name: true, publicWeight: true, judgeWeight: true, judgeCriteria: true },
-  });
 
   const normalizedConfig = normalizeCompetitionConfig(competition.config);
   const previewOrg = resolveOrgProfile(competition.workspace.legalProfile as WorkspaceLegalProfile | null, normalizedConfig.legal.country);

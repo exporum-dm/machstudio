@@ -29,6 +29,8 @@ export async function GET(request: Request) {
     include: {
       _count: { select: { entries: true } },
       project: { select: { id: true, name: true } },
+      // 목록 배지의 단계도 라운드 일정까지 보고 정한다(본선 투표가 열렸으면 본선).
+      rounds: { select: { kind: true, voteEnabled: true, voteOpenAt: true, voteCloseAt: true } },
     },
     orderBy: { createdAt: "desc" },
   });

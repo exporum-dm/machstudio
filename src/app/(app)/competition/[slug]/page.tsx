@@ -111,7 +111,7 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ sl
     );
   }
 
-  const status = resolveCompetitionStatus(competition);
+  const status = resolveCompetitionStatus({ ...competition, rounds });
   const meta = COMPETITION_PHASE_META[status.phase];
 
   return (
@@ -162,7 +162,7 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ sl
         })}
       </div>
 
-      {tab === "basic" && <BasicInfoTab competition={competition} patch={patch} />}
+      {tab === "basic" && <BasicInfoTab competition={competition} rounds={rounds} patch={patch} />}
       {tab === "notice" && <NoticePageTab competition={competition} rounds={rounds} patch={patch} />}
       {tab === "form" && <EntryFormTab competition={competition} patch={patch} workspaceId={workspace?.id} />}
       {tab === "entries" && <EntriesTab competition={competition} onCountChange={setEntryCount} />}

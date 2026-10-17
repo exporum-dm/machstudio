@@ -20,6 +20,7 @@ interface Competition {
   recruitCloseAt: string | null;
   createdAt: string;
   _count: { entries: number };
+  rounds?: Array<{ kind: string; voteEnabled: boolean; voteOpenAt: string | null; voteCloseAt: string | null }>;
 }
 
 /** 한글 이름을 슬러그로 바꾸면 "-"·"--" 로 뭉개진다 — 그때는 비워 두고 사용자가 직접 쓰게 한다. */
