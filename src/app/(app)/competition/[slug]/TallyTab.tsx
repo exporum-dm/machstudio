@@ -8,6 +8,7 @@ import { FINISH, R } from "@/components/ui/primitives";
 import ScoringPanel from "./ScoringPanel";
 import type { CompetitionDetail } from "./page";
 import type { RoundDto } from "./VoteSettingsTab";
+import { secondaryTeamName } from "@/lib/competition-config";
 
 interface TallyRow {
   entryId: string;
@@ -156,7 +157,7 @@ export default function TallyTab({ competition, rounds }: { competition: Competi
                       <div className="flex flex-wrap items-baseline gap-1.5">
                         <span className="font-mono text-[11px] text-muted-foreground">{row.entryNo}</span>
                         <span className="truncate text-sm font-medium">{row.title}</span>
-                        {row.teamName && <span className="truncate text-[11px] text-muted-foreground">{row.teamName}</span>}
+                        {secondaryTeamName(row.title, row.teamName) && <span className="truncate text-[11px] text-muted-foreground">{row.teamName}</span>}
                       </div>
                       <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-secondary">
                         <motion.div

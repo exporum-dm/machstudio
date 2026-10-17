@@ -8,7 +8,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Switch } from "@/components/ui/switch";
 import { FINISH, R } from "@/components/ui/primitives";
 import { formatKst } from "@/lib/datetime";
-import { normalizeMedia, youtubeThumbnailUrl } from "@/lib/competition-config";
+import { normalizeMedia, secondaryTeamName, youtubeThumbnailUrl } from "@/lib/competition-config";
 import EntryDetailModal from "./EntryDetailModal";
 import type { CompetitionDetail } from "./page";
 
@@ -195,7 +195,7 @@ export default function EntriesTab({
                   )}
                 </div>
                 <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                  {[entry.teamName, entry.contactName, entry.contactEmail].filter(Boolean).join(" · ")}
+                  {[secondaryTeamName(entry.title, entry.teamName), entry.contactName, entry.contactEmail].filter(Boolean).join(" · ")}
                 </p>
                 <p className="text-[10px] text-muted-foreground/70">{formatKst(entry.submittedAt)}</p>
               </button>

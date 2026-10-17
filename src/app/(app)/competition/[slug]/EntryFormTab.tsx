@@ -185,6 +185,27 @@ export default function EntryFormTab({ competition, patch, workspaceId }: Props)
           <span className="text-[11px] text-muted-foreground">{form.fields.length}개</span>
         </div>
 
+        {/*
+          대표 이름 — 참가작 목록·투표·심사·진출·결과·발표에 크게 나오는 이름. 기본은 작품명(title)인데,
+          기본 항목의 라벨을 바꿔 다른 용도(Instagram 등)로 쓰면 그 값이 대표 이름이 되어 버린다.
+          저장하면 이미 들어온 참가작도 고른 항목 값으로 바뀐다(서버가 다시 쓴다).
+        */}
+        <label className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-medium">참가작 대표 이름</span>
+          <select
+            value={form.displayNameKey}
+            onChange={(e) => update({ displayNameKey: e.target.value })}
+            className={`${FIELD_CLS} h-8 w-auto min-w-[180px] text-xs`}
+          >
+            {form.fields
+              .filter((f) => f.type === "text" && (f.enabled || f.key === form.displayNameKey))
+              .map((f) => (
+                <option key={f.id} value={f.key}>{(typeof f.label === "string" ? f.label : f.key) || f.key}</option>
+              ))}
+          </select>
+          <span className="text-[11px] text-muted-foreground">목록·투표·진출·결과 화면에 이 항목 값이 이름으로 나와요. 바꾸고 저장하면 이미 들어온 참가작도 바뀌어요.</span>
+        </label>
+
         <Reorder.Group axis="y" values={form.fields} onReorder={(fields) => update({ fields })} className="mt-4 space-y-2">
           {form.fields.map((field, index) => (
             <Reorder.Item key={field.id} value={field} className={`bg-secondary/20 p-3 ${R.surface} ${FINISH.s2}`}>

@@ -53,6 +53,15 @@ export interface CompetitionFormField extends Omit<WebinarRegistrationField, "ty
   isLogo?: boolean;
 }
 
+/**
+ * 대표 이름 옆에 붙이는 팀명 — 대표 이름이 이미 팀명이면 비운다("EVO NXT · EVO NXT" 처럼 두 번 나오지 않게).
+ */
+export function secondaryTeamName(title: string, teamName: string | null | undefined): string | null {
+  const team = (teamName ?? "").trim();
+  if (!team || team.toLowerCase() === title.trim().toLowerCase()) return null;
+  return team;
+}
+
 /** 공고 페이지 블록. 대회 소개·참가 자격·신청 절차·일정·FAQ 를 구조로 표현한다. */
 export type CompetitionNoticeBlock =
   | { id: string; kind: "richText"; enabled: boolean; title: string; body: string }
@@ -79,6 +88,12 @@ export interface CompetitionConfig {
      * validation.defaultCountry 와 같은 개념. 국가번호 없이 입력한 번호를 이 나라 기준으로 읽는다.
      */
     defaultCountry: string;
+    /**
+     * 참가작의 **대표 이름**으로 쓸 신청 항목의 key — 목록·투표·심사·진출·결과·발표 화면이 모두 이 이름을 쓴다.
+     * 기본은 "title"(작품명). 기본 항목의 라벨을 바꿔 다른 용도(예: "Instagram")로 쓰면 그 값이 대표 이름이
+     * 되어 버린다 — LA K-POP 대회에서 인스타 ID 가 팀 이름 자리에 나왔다(2026-10-18). 그럴 땐 "teamName" 으로.
+     */
+    displayNameKey: string;
     submitLabel: string;
     /** 동의 — 웨비나 등록 폼과 같은 계약(문구·전문·기본 체크). */
     privacyText: string;
@@ -341,6 +356,7 @@ export function normalizeCompetitionConfig(
       // 모양만 본다(2글자) — 실재하는 코드인지는 collect-phone.isSupportedCountry 가 맡는다.
       // 이 파일은 임베드 번들에 들어가므로 국가 메타데이터를 들이지 않는다(같은 이유 §6.3).
       defaultCountry: /^[A-Za-z]{2}$/.test(str(formRaw.defaultCountry)) ? str(formRaw.defaultCountry).toUpperCase() : "US",
+      displayNameKey: /^[A-Za-z0-9_]{1,60}$/.test(str(formRaw.displayNameKey)) ? str(formRaw.displayNameKey) : "title",
       submitLabel: str(formRaw.submitLabel),
       privacyText: str(formRaw.privacyText, "[필수] 개인정보 수집 및 이용에 동의합니다"),
       privacyBody: str(formRaw.privacyBody),

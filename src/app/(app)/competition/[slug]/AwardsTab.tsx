@@ -12,6 +12,7 @@ import { PreviewFrame } from "@/components/ui/PreviewFrame";
 import { formatKst } from "@/lib/datetime";
 import { normalizeShowConfig, SHOW_MODES, type ShowConfig } from "@/lib/competition-show";
 import type { CompetitionDetail } from "./page";
+import { secondaryTeamName } from "@/lib/competition-config";
 
 interface Candidate { id: string; entryNo: string; title: string; teamName: string | null }
 interface AwardRow {
@@ -163,7 +164,7 @@ export default function AwardsTab({
                     <option value="">— 미배정 —</option>
                     {candidates.map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.entryNo}. {c.title}{c.teamName ? ` (${c.teamName})` : ""}
+                        {c.entryNo}. {c.title}{secondaryTeamName(c.title, c.teamName) ? ` (${c.teamName})` : ""}
                       </option>
                     ))}
                   </select>
@@ -601,7 +602,7 @@ function FinalOrderCard({ competition }: { competition: CompetitionDetail }) {
             </span>
             <span className="font-mono text-[11px] text-muted-foreground">{entry.entryNo}</span>
             <span className="min-w-0 flex-1 truncate text-sm">{entry.title}</span>
-            {entry.teamName && <span className="truncate text-[11px] text-muted-foreground">{entry.teamName}</span>}
+            {secondaryTeamName(entry.title, entry.teamName) && <span className="truncate text-[11px] text-muted-foreground">{entry.teamName}</span>}
             <button
               onClick={() => move(index, -1)}
               disabled={index === 0}

@@ -166,7 +166,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
   }
 
-  const title = data.title || data.teamName || data.name || "제목 없음";
+  // 대표 이름 — 운영자가 고른 항목(기본 작품명). 비어 있으면 예전 순서로 떨어진다.
+  const displayKey = config.form.displayNameKey;
+  const displayValue = typeof data[displayKey] === "string" ? (data[displayKey] as string).trim() : "";
+  const title = displayValue || data.title || data.teamName || data.name || "제목 없음";
   const contactEmail = data.email ? data.email.toLowerCase() : null;
 
   // 1팀 1작품 — maxEntriesPerApplicant 를 넘으면 막는다. 이메일 기준.

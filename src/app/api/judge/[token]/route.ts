@@ -10,7 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { getClientIp, rateLimit } from "@/lib/ratelimit";
 import { verifySharePassword } from "@/lib/share-password";
 import { createJudgeSession, judgeCookieName, verifyJudgeSession } from "@/lib/competition-judge-session";
-import { normalizeMedia } from "@/lib/competition-config";
+import { normalizeMedia, secondaryTeamName } from "@/lib/competition-config";
 import { criteriaMaxTotal, normalizeCriteria } from "@/lib/competition-scoring";
 
 async function loadJudge(token: string) {
@@ -84,7 +84,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
       id: entry.id,
       entryNo: entry.entryNo,
       title: entry.title,
-      teamName: entry.teamName,
+      teamName: secondaryTeamName(entry.title, entry.teamName),
       summary: entry.summary,
       media: normalizeMedia(entry.media),
     })),

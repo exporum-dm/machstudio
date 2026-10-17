@@ -124,6 +124,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const updated = await prisma.competition.update({ where: { id }, data });
 
+  // 대표 이름 항목을 바꾸면 이미 들어온 참가작도 그 항목 값으로 다시 쓴다 — 안 그러면 새 신청만 바뀌고
+  // 기존 참가작은 투표·진출·결과 화면에 예전 이름(예: 인스타 ID)으로 남는다. 값이 빈 참가작은 그대로.
+  if (body.config !== undefined) {
+    const prevKey = normalizeCompetitionConfig(competition.config, { includeDisabled: true }).form.displayNameKey;
+    const nextKey = normalizeCompetitionConfig(updated.config, { includeDisabled: true }).form.displayNameKey;
+    if (prevKey !== nextKey) {
+      await prisma.$executeRaw`
+        UPDATE "CompetitionEntry"
+        SET "title" = btrim("data"->>${nextKey}), "updatedAt" = now()
+        WHERE "competitionId" = ${id} AND COALESCE(btrim("data"->>${nextKey}), '') <> ''`;
+    }
+  }
+
   await logActivity({
     workspaceId: competition.workspaceId,
     userId: user.id,

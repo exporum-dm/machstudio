@@ -6,7 +6,7 @@
  */
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { normalizeCompetitionConfig, normalizeMedia } from "@/lib/competition-config";
+import { normalizeCompetitionConfig, normalizeMedia, secondaryTeamName } from "@/lib/competition-config";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -70,7 +70,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
           entry: {
             entryNo: award.entry!.entryNo,
             title: award.entry!.title,
-            teamName: award.entry!.teamName,
+            teamName: secondaryTeamName(award.entry!.title, award.entry!.teamName),
             summary: award.entry!.summary,
             media: normalizeMedia(award.entry!.media),
           },
