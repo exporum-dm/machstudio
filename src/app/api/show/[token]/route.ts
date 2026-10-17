@@ -10,7 +10,7 @@
  */
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { normalizeCompetitionConfig, normalizeMedia } from "@/lib/competition-config";
+import { normalizeCompetitionConfig, normalizeMedia, secondaryTeamName } from "@/lib/competition-config";
 import { normalizeShowConfig, rehearsalPayload } from "@/lib/competition-show";
 import {
   combineScores,
@@ -89,7 +89,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
     }).map((row) => ({
       entryNo: row.entryNo,
       title: row.title,
-      teamName: row.teamName,
+      teamName: secondaryTeamName(row.title, row.teamName),
       rank: row.rank,
       combined: row.combined,
       publicScore: row.publicScore,
@@ -112,7 +112,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
           entry: {
             entryNo: award.entry!.entryNo,
             title: award.entry!.title,
-            teamName: award.entry!.teamName,
+            teamName: secondaryTeamName(award.entry!.title, award.entry!.teamName),
             summary: award.entry!.summary,
             media: normalizeMedia(award.entry!.media),
           },

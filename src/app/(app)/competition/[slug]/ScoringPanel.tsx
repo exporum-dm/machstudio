@@ -10,6 +10,7 @@ import { FIELD_CLS, FINISH, R } from "@/components/ui/primitives";
 import { formatKst } from "@/lib/datetime";
 import type { AdvanceSnapshot, CombinedRow, JudgeCriterion } from "@/lib/competition-scoring";
 import type { CompetitionDetail } from "./page";
+import { secondaryTeamName } from "@/lib/competition-config";
 
 interface ScoringResponse {
   round: { kind: string; name: string; publicWeight: number; judgeWeight: number; advanceCount: number | null };
@@ -160,7 +161,7 @@ export default function ScoringPanel({
                   <div className="flex flex-wrap items-baseline gap-1.5">
                     <span className="font-mono text-[11px] text-muted-foreground">{row.entryNo}</span>
                     <span className="truncate text-sm font-medium">{row.title}</span>
-                    {row.teamName && <span className="truncate text-[11px] text-muted-foreground">{row.teamName}</span>}
+                    {secondaryTeamName(row.title, row.teamName) && <span className="truncate text-[11px] text-muted-foreground">{row.teamName}</span>}
                     {row.tied && (
                       <span
                         className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400"

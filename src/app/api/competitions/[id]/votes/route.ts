@@ -8,7 +8,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientIp, rateLimit } from "@/lib/ratelimit";
-import { normalizeCompetitionConfig, normalizeMedia } from "@/lib/competition-config";
+import { normalizeCompetitionConfig, normalizeMedia, secondaryTeamName } from "@/lib/competition-config";
 import { resolveCompetitionStatus } from "@/lib/competition-status";
 import { roundDisplayName } from "@/lib/notice/build-model";
 import { noticeStrings } from "@/lib/notice/strings";
@@ -158,7 +158,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         id: entry.id,
         entryNo: entry.entryNo,
         title: entry.title,
-        teamName: entry.teamName,
+        teamName: secondaryTeamName(entry.title, entry.teamName),
         summary: entry.summary,
         media: normalizeMedia(entry.media),
       })),
