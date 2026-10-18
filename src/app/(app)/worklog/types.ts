@@ -15,11 +15,21 @@ export interface WorkEntryDto {
   groupId: string | null;
   authorId: string;
   authorName: string;
-  date: string;
+  /** null = 먼 미래 */
+  date: string | null;
+  /** 시트의 "공통" 열 */
+  common: boolean;
+  sortOrder: number;
   category: string;
   content: string;
   status: WorkStatus;
   result: string;
   note: string;
+  createdAt: string;
   updatedAt: string;
+}
+
+export interface WorkMemberDto {
+  id: string;
+  name: string;
 }

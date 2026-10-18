@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blockText, buildWeeklyReport, groupDateLabel, reportTable, weekOf, type WorkEntryInput } from "@/lib/worklog";
+import { blockText, buildWeeklyReport, effectiveStatus, groupDateLabel, openStatus, parsePastedWork, reportTable, resolveWorkTag, splitWorkTag, weekOf, type WorkEntryInput } from "@/lib/worklog";
 
 const entry = (patch: Partial<WorkEntryInput>): WorkEntryInput => ({
   id: Math.random().toString(36).slice(2), groupId: "la", authorId: "u1", date: "2026-10-14",
@@ -97,5 +97,38 @@ describe("주간 보고 만들기", () => {
     expect(laRows[1][2]).toBe("");
     expect(laRows[1][4]).toBe("");
     expect(blockText(r.rows[0].pairs[0].last)).toBe("[운영]\n- a");
+  });
+});
+
+describe("시트처럼 적기", () => {
+  const groups = [
+    { id: "la", name: "코리아 엑스포 LA", sortOrder: 1 },
+    { id: "stk", name: "STK", sortOrder: 2 },
+  ];
+
+  it("머리표를 떼고 글머리도 뗀다", () => {
+    expect(splitWorkTag("[LA] - 배너 교체")).toEqual({ tag: "LA", content: "배너 교체" });
+    expect(splitWorkTag("- 스토리 업로드")).toEqual({ tag: null, content: "스토리 업로드" });
+  });
+
+  it("머리표 → 행사(이름 일부도), 아니면 분류", () => {
+    expect(resolveWorkTag("LA", groups)).toEqual({ groupId: "la", category: "" });
+    expect(resolveWorkTag("stk", groups)).toEqual({ groupId: "stk", category: "" });
+    expect(resolveWorkTag("운영", groups)).toEqual({ groupId: null, category: "운영" });
+  });
+
+  it("시트 칸을 붙여 넣으면 머리표가 아래 줄로 이어진다", () => {
+    expect(parsePastedWork("[STK]\n- 웨비나 예정\n- GEO\n\n[IB]\n- 사전등록 데이터")).toEqual([
+      { tag: "STK", content: "웨비나 예정" },
+      { tag: "STK", content: "GEO" },
+      { tag: "IB", content: "사전등록 데이터" },
+    ]);
+  });
+
+  it("취소선이 아니면 날짜로 진행/예정", () => {
+    expect(effectiveStatus("done", "2026-10-30", "2026-10-18")).toBe("done");
+    expect(effectiveStatus("planned", "2026-10-12", "2026-10-18")).toBe("doing");
+    expect(effectiveStatus("doing", "2026-10-30", "2026-10-18")).toBe("planned");
+    expect(openStatus(null, "2026-10-18")).toBe("planned");
   });
 });

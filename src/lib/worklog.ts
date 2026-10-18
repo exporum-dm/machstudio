@@ -229,3 +229,62 @@ export function reportTable(report: WeeklyReport, opts: { hideOwners?: boolean }
 export function reportSheetName(reportDate: string): string {
   return reportDate.replace(/-/g, "").slice(2);
 }
+
+// ── 시트처럼 적기(2026-10-18) ─────────────────────────────────────────────
+// 일지는 시트(DM 업무 현황)와 같은 모양이다: 행 = 날짜(맨 위 "먼 미래"), 열 = 공통 + 사람.
+// 칸 안에 "[행사] - 할 일" 처럼 줄을 적고, 끝나면 취소선(완료). 상태는 사람이 고르지 않는다 —
+// 취소선이면 완료, 아니면 날짜가 지났으면 진행 · 아직이면 예정.
+
+/** 취소선이 아닌 줄의 상태 — 기준일(보통 오늘·보고일)보다 뒤거나 날짜가 없으면 예정, 아니면 진행. */
+export function openStatus(date: string | null, today: string): WorkStatus {
+  return !date || date > today ? "planned" : "doing";
+}
+
+/** 저장된 상태를 기준일로 다시 본다 — 미리 적어 둔 "예정" 도 날짜가 지나면 진행(이월 대상). */
+export function effectiveStatus(status: WorkStatus, date: string | null, today: string): WorkStatus {
+  return status === "done" ? "done" : openStatus(date, today);
+}
+
+const normTag = (s: string) => s.toLowerCase().replace(/[\s·・.\-_]/g, "");
+
+/**
+ * "[LA]" 같은 머리표 → 행사 또는 분류. 행사 이름과 같으면 그 행사, 이름에 들어 있으면(LA → 코리아 엑스포 LA)
+ * 순서가 앞선 행사. 행사가 아니면 분류로 남긴다 — 보고서의 [운영]·[콘텐츠] 와 같은 자리.
+ */
+export function resolveWorkTag(
+  tag: string,
+  groups: Array<{ id: string; name: string; archived?: boolean; sortOrder?: number }>,
+): { groupId: string | null; category: string } {
+  const t = normTag(tag);
+  if (!t) return { groupId: null, category: "" };
+  const ordered = [...groups].sort((a, b) => Number(!!a.archived) - Number(!!b.archived) || (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  const exact = ordered.find((g) => normTag(g.name) === t);
+  const partial = exact ?? ordered.find((g) => normTag(g.name).includes(t));
+  if (partial) return { groupId: partial.id, category: "" };
+  return { groupId: null, category: tag.trim().slice(0, 40) };
+}
+
+/** 줄 앞의 "[머리표]" 를 떼어 낸다. "[LA] - 배너 교체" → { tag: "LA", content: "배너 교체" } */
+export function splitWorkTag(line: string): { tag: string | null; content: string } {
+  const m = line.match(/^\s*\[([^\]]{1,40})\]\s*(.*)$/);
+  const strip = (s: string) => s.replace(/^\s*(?:[-–—•·*]|\d+[.)])\s*/, "").trim();
+  if (!m) return { tag: null, content: strip(line) };
+  return { tag: m[1].trim(), content: strip(m[2]) };
+}
+
+/**
+ * 붙여 넣은 여러 줄(시트 칸 그대로) → 줄 목록. "[IB]" 만 있는 줄은 아래 줄들의 머리표가 되고,
+ * "- 할 일" 의 글머리는 뗀다. 빈 줄은 버린다.
+ */
+export function parsePastedWork(text: string): Array<{ tag: string | null; content: string }> {
+  const out: Array<{ tag: string | null; content: string }> = [];
+  let current: string | null = null;
+  for (const raw of text.split(/\r?\n/)) {
+    if (!raw.trim()) continue;
+    const { tag, content } = splitWorkTag(raw);
+    if (tag !== null) current = tag;
+    if (!content) continue;
+    out.push({ tag: current, content: content.slice(0, 2000) });
+  }
+  return out;
+}

@@ -17,17 +17,21 @@ const GROUPS: WorkGroupDto[] = [
   { id: "stk", name: "STK", projectId: null, startDate: "2027-06-02", endDate: "2027-06-04", archived: false, sortOrder: 2 },
 ];
 
-type Row = WorkEntryInput & { authorName: string; updatedAt: string };
+type Row = Omit<WorkEntryInput, "date"> & { date: string | null; common: boolean; sortOrder: number; authorName: string; createdAt: string; updatedAt: string };
+let n = 0;
 const store: Row[] = (() => {
   const mon = weekOf(kstToday()).start;
   const last = shiftDay(mon, -7);
-  const mk = (p: Partial<Row>): Row => ({ id: Math.random().toString(36).slice(2), groupId: "la", authorId: "me", authorName: "이창환", date: mon, category: "운영", content: "", status: "done", result: "", note: "", updatedAt: new Date().toISOString(), ...p });
+  const mk = (p: Partial<Row>): Row => ({ id: Math.random().toString(36).slice(2), groupId: "la", authorId: "me", authorName: "이창환", date: mon, common: false, sortOrder: ++n, category: "운영", content: "", status: "done", result: "", note: "", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...p });
   return [
     mk({ date: shiftDay(last, 1), content: "엠버서더 3차 미션 운영" }),
     mk({ date: shiftDay(last, 2), category: "콘텐츠", content: "D-10 스토리 업로드", result: "인스타 스토리 2건" }),
     mk({ date: shiftDay(last, 3), category: "퍼포먼스", content: "메타 광고비 증액, 소재 추가", status: "doing" }),
     mk({ date: mon, content: "현장 미션 전달", status: "planned", note: "10/22 전" }),
     mk({ date: mon, groupId: "stk", category: "홈페이지", content: "FAQ 메뉴 생성", status: "doing", authorId: "u2", authorName: "소현지" }),
+    mk({ date: kstToday(), groupId: null, category: "", content: "주간업무회의", status: "planned", common: true }),
+    mk({ date: shiftDay(kstToday(), 3), category: "", content: "현장 리허설", status: "planned" }),
+    mk({ date: null, groupId: null, category: "기타", content: "월간엑스포럼 형식 변경 검토", status: "planned" }),
   ];
 })();
 
@@ -40,12 +44,22 @@ if (typeof window !== "undefined" && !(window as { __wl?: boolean }).__wl) {
     if (url.pathname === "/api/worklog/entries") {
       if (!init?.method || init.method === "GET") {
         const from = url.searchParams.get("from")!, to = url.searchParams.get("to")!;
-        const mine = url.searchParams.get("mine") === "1";
-        return json({ entries: store.filter((e) => e.date >= from && e.date <= to && (!mine || e.authorId === "me")), me: "me", isAdmin: false });
+        const someday = url.searchParams.get("someday") === "1";
+        return json({
+          entries: store.filter((e) => (e.date === null ? someday : e.date >= from && e.date <= to)),
+          members: [{ id: "me", name: "이창환" }, { id: "u2", name: "소현지" }, { id: "u3", name: "김주현" }],
+          me: "me", isAdmin: false,
+        });
       }
       const body = init.body ? JSON.parse(String(init.body)) : {};
       if (init.method === "POST") {
-        const row: Row = { id: Math.random().toString(36).slice(2), authorId: "me", authorName: "이창환", updatedAt: new Date().toISOString(), groupId: body.groupId, date: body.date, category: body.category ?? "", content: body.content, status: body.status, result: body.result ?? "", note: "" };
+        const mkRow = (b: Record<string, unknown>): Row => ({ id: Math.random().toString(36).slice(2), authorId: "me", authorName: "이창환", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), groupId: (b.groupId as string) ?? null, date: (b.date as string | null) ?? null, common: !!b.common, sortOrder: Number(b.sortOrder) || 0, category: (b.category as string) ?? "", content: b.content as string, status: (b.status as Row["status"]) ?? "planned", result: (b.result as string) ?? "", note: (b.note as string) ?? "" });
+        if (Array.isArray(body.items)) {
+          const rows = body.items.map(mkRow);
+          store.push(...rows);
+          return json({ entries: rows }, 201);
+        }
+        const row = mkRow(body);
         store.push(row);
         return json({ entry: row }, 201);
       }
@@ -64,7 +78,7 @@ if (typeof window !== "undefined" && !(window as { __wl?: boolean }).__wl) {
       const report = buildWeeklyReport({
         reportDate: url.searchParams.get("date")!,
         groups: GROUPS,
-        entries: store,
+        entries: store.filter((e): e is Row & { date: string } => e.date !== null),
         authorName: (id) => store.find((e) => e.authorId === id)?.authorName ?? id,
       });
       return json({ report, table: reportTable(report, { hideOwners: url.searchParams.get("hideOwners") === "1" }) });
