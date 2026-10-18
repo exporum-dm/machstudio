@@ -55,10 +55,23 @@ export function isCompetitionPhaseOverride(value: unknown): value is Competition
   return typeof value === "string" && (COMPETITION_PHASE_OVERRIDES as readonly string[]).includes(value);
 }
 
+/** 라운드의 투표 일정 — 단계 자동 판정과 "지금 라운드" 고르기에 쓴다. */
+export interface RoundTiming {
+  kind: string;
+  voteEnabled: boolean;
+  voteOpenAt: Date | string | null;
+  voteCloseAt: Date | string | null;
+}
+
 export interface CompetitionStatusInput {
   recruitOpenAt?: Date | string | null;
   recruitCloseAt?: Date | string | null;
   phaseOverride?: string | null;
+  /**
+   * 라운드 일정(선택). 있으면 접수 마감 뒤의 단계를 라운드로 판정한다 — 없으면 접수가 끝난 뒤로는
+   * 영원히 "예선" 이었다. 본선 투표가 열렸는데도 예선으로 보였다(2026-10-18 LA K-POP).
+   */
+  rounds?: RoundTiming[];
 }
 
 export interface CompetitionStatusResult {
@@ -74,6 +87,48 @@ function toDate(value: Date | string | null | undefined): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+/**
+ * 접수 마감 뒤의 자동 단계 — 본선 투표가 시작됐으면 본선, 예선 투표가 끝났고 본선 전이면 심사 중,
+ * 그 밖에는 예선. 발표·종료는 운영자가 정한다(수동 전환).
+ */
+function phaseFromRounds(rounds: RoundTiming[] | undefined, now: Date): CompetitionPhase {
+  if (!rounds?.length) return "prelim";
+  const t = now.getTime();
+  const final = rounds.find((r) => r.kind === "final");
+  const prelim = rounds.find((r) => r.kind === "prelim");
+  const finalOpen = toDate(final?.voteOpenAt ?? null);
+  if (final && finalOpen && t >= finalOpen.getTime()) return "final";
+  const prelimClose = toDate(prelim?.voteCloseAt ?? null);
+  if (prelimClose && t > prelimClose.getTime()) return "judging";
+  return "prelim";
+}
+
+/**
+ * 라운드를 안 정한 투표 화면(설치 코드에 ?round= 없음)이 보여 줄 라운드 —
+ * 지금 열린 라운드 → 곧 열릴 라운드(켜져 있는 것 중 가장 이른) → 가장 최근에 닫힌 라운드 → 예선.
+ * 설치 코드 하나로 예선부터 본선까지 쓸 수 있게(예전엔 늘 예선이라, 본선 때 코드를 바꿔 붙여야 했다).
+ */
+export function currentRoundKind(rounds: RoundTiming[], now: Date = new Date()): "prelim" | "final" {
+  const t = now.getTime();
+  const norm = (k: string): "prelim" | "final" => (k === "final" ? "final" : "prelim");
+  const open = rounds.filter((r) => {
+    if (!r.voteEnabled) return false;
+    const o = toDate(r.voteOpenAt);
+    const c = toDate(r.voteCloseAt);
+    return (!o || t >= o.getTime()) && (!c || t <= c.getTime());
+  });
+  if (open.length) return norm(open.some((r) => r.kind === "final") ? "final" : open[0].kind);
+  const upcoming = rounds
+    .filter((r) => r.voteEnabled && toDate(r.voteOpenAt) && toDate(r.voteOpenAt)!.getTime() > t)
+    .sort((a, b) => toDate(a.voteOpenAt)!.getTime() - toDate(b.voteOpenAt)!.getTime());
+  if (upcoming.length) return norm(upcoming[0].kind);
+  const closed = rounds
+    .filter((r) => toDate(r.voteCloseAt) && toDate(r.voteCloseAt)!.getTime() < t)
+    .sort((a, b) => toDate(b.voteCloseAt)!.getTime() - toDate(a.voteCloseAt)!.getTime());
+  if (closed.length) return norm(closed[0].kind);
+  return "prelim";
+}
+
 export function resolveCompetitionStatus(
   input: CompetitionStatusInput,
   now: Date = new Date(),
@@ -84,7 +139,7 @@ export function resolveCompetitionStatus(
 
   let auto: CompetitionPhase;
   if (openAt && t < openAt.getTime()) auto = "upcoming";
-  else if (closeAt && t > closeAt.getTime()) auto = "prelim";
+  else if (closeAt && t > closeAt.getTime()) auto = phaseFromRounds(input.rounds, now);
   else if (openAt || closeAt) auto = "recruiting";
   // 기간을 아무것도 안 정했으면 아직 준비 중으로 본다 — 빈 값이 곧 "모두에게 열림"이 되면 안 된다.
   else auto = "upcoming";
