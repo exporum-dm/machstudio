@@ -1,16 +1,22 @@
 /**
  * 업무일지 → 주간업무보고.
  *
- * 양식은 DM 팀의 dm-report-weekly 시트 그대로다(2026-10-17): 주마다 시트 하나, 행사별 줄,
+ * 양식은 DM 팀의 dm-report-weekly 시트 그대로다: 보고일마다 시트 하나, 행사별 줄,
  * 왼쪽 "전주 달성"(내역·담당·달성·결과 및 산출물) / 오른쪽 "금주 목표"(내역·담당·달성·비고).
- * 한 칸 안에는 "[분류] - 내역 - 내역" 처럼 분류별로 묶어 적는다.
+ * 한 칸 안에는 "[분류]\n- 내역\n- 내역" 처럼 분류별로 묶어 적는다.
  *
- * 규칙
- *  - 주는 월~일(KST). 보고일이 속한 주 = 금주, 그 앞 주 = 전주.
- *  - 전주 달성 = 전주 날짜로 적힌 줄. 금주 목표 = 금주 날짜로 적힌 줄 + 전주에 "진행"으로 끝난 줄(이월).
+ * 실제 보고서를 일지와 맞대 본 규칙(2026-10-18, 261001·261008 시트 ↔ DM 업무 현황):
+ *  - 보고일은 목요일(금요일 주간업무회의 전날). 전주 달성 = 보고일까지 7일(d-6 ~ d),
+ *    금주 목표 = 다음 7일(d+1 ~ d+7). "뉴스레터 발송(10/8)" 처럼 보고일 당일 일은 전주에 들어간다.
+ *  - 일지 머리표 "[코엑]" "[교박]" "[STK]" 는 **행사**다(보고서의 줄). 보고서의 "[운영]·[콘텐츠]·
+ *    [퍼포먼스]·[제작]·[기획]" 은 일지에 없다 — 쓰는 사람이 내용을 보고 나눈다. 여기서는 낱말로 나눈다.
+ *  - 회의·연차·전표 입력·주간업무보고 작성 같은 일상 업무는 보고서에 쓰지 않는다.
+ *  - 행사 줄은 일이 없어도 다 보인다(보관한 행사는 일이 있을 때만). 맨 끝은 늘 "기타".
  *  - 같은 분류 묶음의 달성: 진행이 하나라도 있으면 진행, 전부 완료면 완료, 전부 예정이면 예정,
  *    완료와 예정이 섞이면 진행.
  *  - 같은 내역이 며칠 적혀 있으면 한 번만(매일 "광고 모니터링" 을 적어도 보고서에는 한 줄).
+ *  - 금주 목표 = 다음 7일에 미리 적어 둔 줄 + 전주에 끝내지 못한 줄(이월).
+ * 여러 줄을 한 문장으로 합치는 건 사람(또는 AI 다듬기)이 한다 — 이건 그 초안이다.
  *
  * DB 를 모른다 — 화면·엑셀·테스트가 같은 결과를 쓴다.
  */
@@ -18,8 +24,9 @@
 export type WorkStatus = "planned" | "doing" | "done";
 export const WORK_STATUS_LABEL: Record<WorkStatus, string> = { planned: "예정", doing: "진행", done: "완료" };
 export const WORK_STATUSES: WorkStatus[] = ["done", "doing", "planned"];
-/** 분류 — 보고서 묶음 순서이기도 하다. 목록에 없는 분류는 뒤에 이름순. */
-export const WORK_CATEGORIES = ["운영", "콘텐츠", "퍼포먼스", "홈페이지", "제작", "기획", "기타"] as const;
+/** 보고서 분류 — 묶음 순서이기도 하다. 목록에 없는 분류는 뒤에 이름순. */
+export const WORK_CATEGORIES = ["운영", "콘텐츠", "퍼포먼스", "제작", "홈페이지", "기획", "SNS", "기타"] as const;
+export const REPORT_STATUS_LABELS = ["진행", "완료", "예정"] as const;
 
 export function isWorkStatus(v: unknown): v is WorkStatus {
   return v === "planned" || v === "doing" || v === "done";
@@ -32,6 +39,8 @@ export interface WorkGroupInput {
   endDate: string | null;
   sortOrder: number;
   archived?: boolean;
+  /** 일지 머리표 줄임말("코엑", "교박") */
+  aliases?: string[];
 }
 
 export interface WorkEntryInput {
@@ -44,6 +53,7 @@ export interface WorkEntryInput {
   status: WorkStatus;
   result: string;
   note: string;
+  common?: boolean;
 }
 
 export interface ReportBlock {
@@ -64,7 +74,9 @@ export interface ReportRow {
 
 export interface WeeklyReport {
   reportDate: string;
+  /** 금주 목표 기간(d+1 ~ d+7) */
   thisWeek: { start: string; end: string };
+  /** 전주 달성 기간(d-6 ~ d) */
   lastWeek: { start: string; end: string };
   rows: ReportRow[];
 }
@@ -90,6 +102,19 @@ export function kstToday(now = new Date()): string {
   return new Date(now.getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
 }
 
+/** 기본 보고일 — 그 주(월~일)의 목요일. */
+export function defaultReportDate(today: string): string {
+  return shiftDay(weekOf(today).start, 3);
+}
+
+/** 보고일 → 전주 달성(d-6 ~ d) · 금주 목표(d+1 ~ d+7). */
+export function reportWindows(reportDate: string) {
+  return {
+    last: { start: shiftDay(reportDate, -6), end: reportDate },
+    next: { start: shiftDay(reportDate, 1), end: shiftDay(reportDate, 7) },
+  };
+}
+
 /** "(2026. 10. 22 - 24)" — 시트에 적던 모양. 끝 날짜가 다른 달이면 월도 적는다. */
 export function groupDateLabel(start: string | null, end: string | null): string {
   if (!start) return "";
@@ -106,6 +131,40 @@ function categoryRank(category: string): number {
   return i < 0 ? WORK_CATEGORIES.length : i;
 }
 
+export function isReportCategory(category: string): boolean {
+  return (WORK_CATEGORIES as readonly string[]).includes(category.trim());
+}
+
+// ── 낱말로 분류 · 일상 업무 거르기 ─────────────────────────────────────────
+// 실제 보고서에서 같은 분류에 들어간 일들의 낱말이다. 앞에서부터 처음 맞는 분류.
+const CATEGORY_RULES: Array<[string, RegExp]> = [
+  ["퍼포먼스", /광고|캠페인|메타|구글|틱톡|디멘드젠|\bGA4?\b|\bGTM\b|\bSA\b|\bDA\b|예산|오디언스|타겟|소재|전환|입찰|키워드|픽셀|성과|CPA|CTR|ROAS|모니터링/i],
+  ["콘텐츠", /콘텐츠|컨텐츠|업로드|영상|릴스|쇼츠|shorts|스토리|카드뉴스|게시물|피드|칼럼|블로그|인스타|유튜브|촬영|편집|보도자료|축전|타임테이블|탐테|라인업/i],
+  ["제작", /페이지|홈페이지|랜딩|폼\b|신청\s*폼|개발|QR|체크인|디자인|배너|포스터|시안|키비|인쇄|출력물|OOH|제작/i],
+  ["기획", /기획|전략|계획|가이드|WBS|아이데이션|리서치|자료\s*조사|분석|제안서/i],
+];
+
+/** 내역 낱말로 보고서 분류를 고른다. 아무것도 안 맞으면 운영(소통·안내·관리·발송…). */
+export function classifyWork(content: string): string {
+  for (const [category, re] of CATEGORY_RULES) if (re.test(content)) return category;
+  return "운영";
+}
+
+const ROUTINE = [
+  /^(연차|반차|오전\s*반차|오후\s*반차|휴가|병가|재택|출국|입국|출장|외근|교육|현장\s*지원)$/,
+  /주간\s*업무\s*(회의|보고)/,
+  /전표\s*(입력|마감)?/,
+  /^\d{1,2}(:\d{2})?\s*시?\s*.*회의$/,
+  /회의$/,
+  /^↳/,
+  /^good\s*bye/i,
+];
+/** 보고서에 쓰지 않는 일상 업무. */
+export function isRoutineWork(content: string): boolean {
+  const c = content.trim();
+  return ROUTINE.some((re) => re.test(c));
+}
+
 function blockStatus(statuses: WorkStatus[]): string {
   if (statuses.includes("doing")) return WORK_STATUS_LABEL.doing;
   const done = statuses.includes("done");
@@ -119,7 +178,7 @@ function buildBlock(category: string, entries: WorkEntryInput[], authorName: (id
   const lines: string[] = [];
   for (const e of entries) {
     const text = e.content.trim();
-    const key = text.toLowerCase();
+    const key = text.toLowerCase().replace(/\s+/g, "");
     if (!text || seen.has(key)) continue;
     seen.add(key);
     lines.push(text);
@@ -139,45 +198,55 @@ export function buildWeeklyReport(input: {
   entries: WorkEntryInput[];
   authorName: (id: string) => string;
 }): WeeklyReport {
-  const thisWeek = weekOf(input.reportDate);
-  const lastWeek = { start: shiftDay(thisWeek.start, -7), end: shiftDay(thisWeek.start, -1) };
+  const { last: lastWeek, next: thisWeek } = reportWindows(input.reportDate);
   const inRange = (day: string, r: { start: string; end: string }) => day >= r.start && day <= r.end;
-
-  const lastEntries = input.entries.filter((e) => inRange(e.date, lastWeek));
-  const thisEntries = input.entries.filter((e) => inRange(e.date, thisWeek));
-  // 이월 — 전주에 진행으로 끝난 줄은 금주 목표에도 올린다(금주에 같은 내역을 이미 적었으면 그쪽이 이긴다).
-  const thisKeys = new Set(thisEntries.map((e) => `${e.groupId}|${e.category}|${e.content.trim().toLowerCase()}`));
-  const carried = lastEntries.filter(
-    (e) => e.status === "doing" && !thisKeys.has(`${e.groupId}|${e.category}|${e.content.trim().toLowerCase()}`),
-  );
-  const nextEntries = [...thisEntries, ...carried];
 
   const groupOrder = [...input.groups].sort((a, b) => a.sortOrder - b.sortOrder);
   const groupIds = new Set(groupOrder.map((g) => g.id));
-  // 행사가 지워졌거나 안 고른 줄은 "기타" 로 모은다.
-  const gid = (e: WorkEntryInput) => (e.groupId && groupIds.has(e.groupId) ? e.groupId : null);
+  // 행사: 고른 행사 → 없으면 머리표(분류 칸에 남은 "[코엑]")를 줄임말로 찾는다 → 그래도 없으면 기타.
+  const gid = (e: WorkEntryInput): string | null => {
+    if (e.groupId && groupIds.has(e.groupId)) return e.groupId;
+    if (e.category && !isReportCategory(e.category)) return matchGroup(e.category, groupOrder)?.id ?? null;
+    return null;
+  };
+  // 분류: 보고서 분류면 그대로, 아니면 낱말로. 기타 줄에서는 행사를 못 찾은 머리표를 분류 자리에 남긴다("[더모스트]").
+  const catOf = (e: WorkEntryInput): string => {
+    const c = e.category.trim();
+    if (c && isReportCategory(c)) return c;
+    if (c && gid(e) === null) return c;
+    return classifyWork(e.content);
+  };
+
+  const usable = input.entries.filter((e) => !isRoutineWork(e.content) && !(e.common && !e.groupId && !e.category));
+  const lastEntries = usable.filter((e) => inRange(e.date, lastWeek) && e.status !== "planned");
+  const plannedNext = usable.filter((e) => inRange(e.date, thisWeek));
+  // 이월 — 전주에 끝내지 못한 줄은 금주 목표에도 올린다(금주에 같은 내역을 이미 적었으면 그쪽이 이긴다).
+  const key = (e: WorkEntryInput) => `${gid(e)}|${e.content.trim().toLowerCase().replace(/\s+/g, "")}`;
+  const nextKeys = new Set(plannedNext.map(key));
+  const carried = usable.filter((e) => inRange(e.date, lastWeek) && e.status !== "done" && !nextKeys.has(key(e)));
+  const nextEntries = [...plannedNext, ...carried.map((e) => ({ ...e, status: "doing" as WorkStatus }))];
 
   const rows: ReportRow[] = [];
   const slots: Array<{ id: string | null; name: string; hideWhenEmpty: boolean }> = [
     ...groupOrder.map((g) => ({
       id: g.id as string | null,
-      name: [g.name, groupDateLabel(g.startDate, g.endDate)].filter(Boolean).join(" "),
-      // 보관한 행사는 그 주에 적은 줄이 있을 때만 보인다.
+      name: [g.name, groupDateLabel(g.startDate, g.endDate)].filter(Boolean).join("\n"),
+      // 보관한 행사는 그 기간에 적은 줄이 있을 때만 보인다.
       hideWhenEmpty: !!g.archived,
     })),
-    { id: null, name: "기타", hideWhenEmpty: true },
+    { id: null, name: "기타", hideWhenEmpty: false },
   ];
 
   for (const slot of slots) {
     const last = lastEntries.filter((e) => gid(e) === slot.id);
     const next = nextEntries.filter((e) => gid(e) === slot.id);
     if (slot.hideWhenEmpty && last.length === 0 && next.length === 0) continue;
-    const categories = [...new Set([...last, ...next].map((e) => e.category.trim()))].sort(
+    const categories = [...new Set([...last, ...next].map(catOf))].sort(
       (a, b) => categoryRank(a) - categoryRank(b) || a.localeCompare(b, "ko"),
     );
     const pairs = categories.map((category) => {
-      const l = last.filter((e) => e.category.trim() === category);
-      const n = next.filter((e) => e.category.trim() === category);
+      const l = last.filter((e) => catOf(e) === category);
+      const n = next.filter((e) => catOf(e) === category);
       return {
         last: l.length ? buildBlock(category, l, input.authorName, (e) => e.result) : null,
         next: n.length ? buildBlock(category, n, input.authorName, (e) => e.note) : null,
@@ -191,13 +260,32 @@ export function buildWeeklyReport(input: {
 
 /** 칸 안의 글 — 시트에 적던 모양 "[운영]\n- 내역\n- 내역". 분류가 없으면 머리 없이. */
 export function blockText(block: ReportBlock | null): string {
-  if (!block || block.lines.length === 0) return "";
+  if (!block || block.lines.length === 0) return block?.category ? `[${block.category}]` : "";
   const head = block.category ? `[${block.category}]\n` : "";
   return head + block.lines.map((l) => `- ${l}`).join("\n");
 }
 
+/** 칸 글 → 묶음(분류·줄). blockText 의 반대 — 화면에서 칸을 고칠 때. */
+export function parseBlockText(text: string): { category: string; lines: string[] } {
+  let category = "";
+  const lines: string[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const head = line.match(/^\[([^\]]{1,40})\]\s*(.*)$/);
+    if (head && !category && lines.length === 0) {
+      category = head[1].trim();
+      const rest = head[2].replace(/^[-–—•·*]\s*/, "").trim();
+      if (rest) lines.push(rest);
+      continue;
+    }
+    lines.push(line.replace(/^[-–—•·*]\s*/, "").trim());
+  }
+  return { category, lines: lines.filter(Boolean) };
+}
+
 /** 시트에 붙여 넣을 표(행사 줄마다 분류 묶음 하나씩). 첫 칸은 행사 이름 — 묶음 첫 줄에만. */
-export function reportTable(report: WeeklyReport, opts: { hideOwners?: boolean } = {}): string[][] {
+export function reportTable(report: Pick<WeeklyReport, "rows">, opts: { hideOwners?: boolean } = {}): string[][] {
   const header = [
     ["", "전주 달성", "", "", "", "금주 목표", "", "", ""],
     ["행사", "내역", "담당", "달성", "결과 및 산출물", "내역", "담당", "달성", "비고"],
@@ -230,6 +318,31 @@ export function reportSheetName(reportDate: string): string {
   return reportDate.replace(/-/g, "").slice(2);
 }
 
+/** 저장된 보고서 rows(JSON) 를 믿을 수 있는 모양으로. */
+export function normalizeReportRows(raw: unknown): ReportRow[] {
+  if (!Array.isArray(raw)) return [];
+  const str = (v: unknown, max = 4000) => (typeof v === "string" ? v.slice(0, max) : "");
+  const strs = (v: unknown) => (Array.isArray(v) ? v.map((x) => str(x, 2000)).filter((x) => x.trim()) : []);
+  const block = (b: unknown): ReportBlock | null => {
+    if (!b || typeof b !== "object") return null;
+    const o = b as Record<string, unknown>;
+    const out = { category: str(o.category, 40).trim(), lines: strs(o.lines), owners: strs(o.owners), status: str(o.status, 10), extra: strs(o.extra) };
+    return out.lines.length || out.category || out.extra.length ? out : null;
+  };
+  return raw.slice(0, 100).map((r) => {
+    const o = (r ?? {}) as Record<string, unknown>;
+    const pairs = Array.isArray(o.pairs) ? o.pairs.slice(0, 40) : [];
+    return {
+      groupId: typeof o.groupId === "string" ? o.groupId : null,
+      groupName: str(o.groupName, 200),
+      pairs: pairs.map((p) => {
+        const po = (p ?? {}) as Record<string, unknown>;
+        return { last: block(po.last), next: block(po.next) };
+      }),
+    };
+  });
+}
+
 // ── 시트처럼 적기(2026-10-18) ─────────────────────────────────────────────
 // 일지는 시트(DM 업무 현황)와 같은 모양이다: 행 = 날짜(맨 위 "먼 미래"), 열 = 공통 + 사람.
 // 칸 안에 "[행사] - 할 일" 처럼 줄을 적고, 끝나면 취소선(완료). 상태는 사람이 고르지 않는다 —
@@ -245,22 +358,31 @@ export function effectiveStatus(status: WorkStatus, date: string | null, today: 
   return status === "done" ? "done" : openStatus(date, today);
 }
 
-const normTag = (s: string) => s.toLowerCase().replace(/[\s·・.\-_]/g, "");
+const normTag = (s: string) => s.toLowerCase().replace(/[\s·・.\-_&]/g, "");
+
+type TagGroup = { id: string; name: string; archived?: boolean; sortOrder?: number; aliases?: string[] };
+
+/** 머리표 → 행사. 줄임말이 같거나, 이름이 같거나, 이름에 들어 있으면(LA → 코리아 엑스포 LA). 보관하지 않은 행사·앞 순서 우선. */
+export function matchGroup<G extends TagGroup>(tag: string, groups: G[]): G | null {
+  const t = normTag(tag);
+  if (!t) return null;
+  const ordered = [...groups].sort((a, b) => Number(!!a.archived) - Number(!!b.archived) || (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  return (
+    ordered.find((g) => (g.aliases ?? []).some((a) => normTag(a) === t)) ??
+    ordered.find((g) => normTag(g.name) === t) ??
+    (t.length >= 2 ? ordered.find((g) => normTag(g.name).includes(t)) : undefined) ??
+    null
+  );
+}
 
 /**
- * "[LA]" 같은 머리표 → 행사 또는 분류. 행사 이름과 같으면 그 행사, 이름에 들어 있으면(LA → 코리아 엑스포 LA)
- * 순서가 앞선 행사. 행사가 아니면 분류로 남긴다 — 보고서의 [운영]·[콘텐츠] 와 같은 자리.
+ * "[LA]" 같은 머리표 → 행사 또는 분류. 행사(줄임말·이름)를 찾으면 그 행사, 아니면 분류로 남긴다 —
+ * 보고서의 [운영]·[콘텐츠] 와 같은 자리.
  */
-export function resolveWorkTag(
-  tag: string,
-  groups: Array<{ id: string; name: string; archived?: boolean; sortOrder?: number }>,
-): { groupId: string | null; category: string } {
-  const t = normTag(tag);
-  if (!t) return { groupId: null, category: "" };
-  const ordered = [...groups].sort((a, b) => Number(!!a.archived) - Number(!!b.archived) || (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-  const exact = ordered.find((g) => normTag(g.name) === t);
-  const partial = exact ?? ordered.find((g) => normTag(g.name).includes(t));
-  if (partial) return { groupId: partial.id, category: "" };
+export function resolveWorkTag(tag: string, groups: TagGroup[]): { groupId: string | null; category: string } {
+  if (!normTag(tag)) return { groupId: null, category: "" };
+  const g = isReportCategory(tag) ? null : matchGroup(tag, groups);
+  if (g) return { groupId: g.id, category: "" };
   return { groupId: null, category: tag.trim().slice(0, 40) };
 }
 

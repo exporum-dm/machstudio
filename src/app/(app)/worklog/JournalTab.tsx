@@ -54,7 +54,17 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
   const [me, setMe] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [showWeekend, setShowWeekend] = useState(false);
-  const [onlyMine, setOnlyMine] = useState(false);
+  // 보는 사람(열) — null 이면 전체. 사람마다 브라우저에 기억한다.
+  const viewKey = `worklog-cols:${workspaceId}`;
+  const [visible, setVisibleState] = useState<string[] | null>(() => {
+    if (typeof window === "undefined") return null;
+    try { const v = JSON.parse(window.localStorage.getItem(viewKey) ?? "null"); return Array.isArray(v) ? v : null; } catch { return null; }
+  });
+  const setVisible = (next: string[] | null) => {
+    setVisibleState(next);
+    try { window.localStorage.setItem(viewKey, JSON.stringify(next)); } catch { /* 사생활 보호 모드 */ }
+  };
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [mobileCol, setMobileCol] = useState<string | null>(null);
   const [focus, setFocus] = useState<Focus>(null);
   const [dropKey, setDropKey] = useState<string | null>(null);
@@ -140,10 +150,13 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
     return cols;
   }, [members, me, myName, lines]);
 
-  const activeMobileCol = mobileCol ?? me ?? COMMON;
-  const cols = isMobile
-    ? allCols.filter((c) => c.key === activeMobileCol)
-    : onlyMine ? allCols.filter((c) => c.key === COMMON || c.mine) : allCols;
+  const shownCols = visible ? allCols.filter((c) => visible.includes(c.key)) : allCols;
+  const pickable = shownCols.length ? shownCols : allCols;
+  const activeMobileCol = pickable.some((c) => c.key === mobileCol) ? mobileCol! : (pickable.find((c) => c.mine) ?? pickable[0])?.key ?? COMMON;
+  const cols = isMobile ? pickable.filter((c) => c.key === activeMobileCol) : pickable;
+  const pickerLabel = !visible || shownCols.length === allCols.length
+    ? "전체"
+    : shownCols.length <= 2 ? shownCols.map((c) => (c.mine ? "나" : c.label)).join(", ") : `${shownCols.length}명`;
 
   const days = useMemo(() => {
     const used = new Set((lines ?? []).map((l) => l.date).filter(Boolean));
@@ -425,7 +438,20 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
         <div className="flex flex-wrap items-center gap-1.5">
           <button onClick={scrollToToday} className={`bg-secondary px-2.5 py-1 text-xs font-medium hover:bg-secondary/70 ${R.control}`}>오늘로</button>
           <Toggle on={showWeekend} onClick={() => setShowWeekend((v) => !v)}>주말 보기</Toggle>
-          {!isMobile && <Toggle on={onlyMine} onClick={() => setOnlyMine((v) => !v)}>공통 + 내 칸만</Toggle>}
+          <div className="relative">
+            <button onClick={() => setPickerOpen((v) => !v)} aria-expanded={pickerOpen}
+              className={`flex items-center gap-1 px-2.5 py-1 text-xs transition-colors ${R.control} ${visible ? "bg-foreground text-background" : "bg-secondary text-muted-foreground hover:text-foreground"}`}>
+              보는 사람: {pickerLabel}<ChevronDown className="h-3 w-3" />
+            </button>
+            {pickerOpen && (
+              <PeoplePicker
+                cols={allCols}
+                visible={visible}
+                onChange={setVisible}
+                onClose={() => setPickerOpen(false)}
+              />
+            )}
+          </div>
         </div>
         <p className="hidden text-[11px] text-muted-foreground sm:block">
           칸을 눌러 바로 적기 · <Kbd>Enter</Kbd> 다음 줄 · <Kbd>Ctrl</Kbd>+<Kbd>Enter</Kbd> 또는 ● 완료(취소선) · <code className="rounded bg-secondary px-1">[LA] 할 일</code> 로 행사 지정(<button onClick={onGoGroups} className="underline">행사 관리</button>) · 줄을 끌어 다른 날로
@@ -434,7 +460,7 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
 
       {isMobile && (
         <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
-          {allCols.map((c) => (
+          {pickable.map((c) => (
             <button key={c.key} onClick={() => setMobileCol(c.key)}
               className={`shrink-0 px-3 py-1.5 text-xs transition-colors ${R.control} ${activeMobileCol === c.key ? "bg-foreground text-background" : "bg-secondary text-muted-foreground"}`}>
               {c.label}{c.mine ? " (나)" : ""}
@@ -790,6 +816,47 @@ function LineMenu({
       </div>
     </div>,
     document.body,
+  );
+}
+
+function PeoplePicker({ cols, visible, onChange, onClose }: {
+  cols: Array<{ key: string; label: string; mine?: boolean }>;
+  visible: string[] | null;
+  onChange: (next: string[] | null) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const down = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("mousedown", down);
+    document.addEventListener("keydown", key);
+    return () => { document.removeEventListener("mousedown", down); document.removeEventListener("keydown", key); };
+  }, [onClose]);
+  const on = (key: string) => !visible || visible.includes(key);
+  const toggle = (key: string) => {
+    const current = visible ?? cols.map((c) => c.key);
+    const next = current.includes(key) ? current.filter((k) => k !== key) : [...current, key];
+    onChange(next.length === 0 || next.length === cols.length ? null : next);
+  };
+  const me = cols.find((c) => c.mine);
+  return (
+    <div ref={ref} className={`absolute left-0 top-full z-40 mt-1 w-56 space-y-1 bg-background p-2 text-xs shadow-xl ring-1 ring-border ${R.panel}`}>
+      <div className="flex gap-1 pb-1">
+        <button onClick={() => onChange(null)} className={`flex-1 bg-secondary px-2 py-1 hover:bg-secondary/70 ${R.control}`}>전체</button>
+        {me && <button onClick={() => onChange([me.key])} className={`flex-1 bg-secondary px-2 py-1 hover:bg-secondary/70 ${R.control}`}>나만</button>}
+        {me && <button onClick={() => onChange([COMMON, me.key])} className={`flex-1 bg-secondary px-2 py-1 hover:bg-secondary/70 ${R.control}`}>공통+나</button>}
+      </div>
+      <div className="max-h-72 overflow-auto">
+        {cols.map((c) => (
+          <label key={c.key} className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 hover:bg-secondary/60">
+            <input type="checkbox" checked={on(c.key)} onChange={() => toggle(c.key)} className="accent-violet-500" />
+            <span className="truncate">{c.label}</span>
+            {c.mine && <span className="text-[10px] text-violet-500">나</span>}
+          </label>
+        ))}
+      </div>
+    </div>
   );
 }
 

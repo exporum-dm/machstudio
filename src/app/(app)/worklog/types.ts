@@ -8,6 +8,8 @@ export interface WorkGroupDto {
   endDate: string | null;
   archived: boolean;
   sortOrder: number;
+  /** 일지 머리표 줄임말("코엑", "교박") */
+  aliases: string[];
 }
 
 export interface WorkEntryDto {

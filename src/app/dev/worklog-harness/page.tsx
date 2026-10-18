@@ -13,18 +13,21 @@ import { buildWeeklyReport, kstToday, reportTable, shiftDay, weekOf, type WorkEn
 import type { WorkGroupDto } from "@/app/(app)/worklog/types";
 
 const GROUPS: WorkGroupDto[] = [
-  { id: "la", name: "코리아 엑스포 LA", projectId: null, startDate: "2026-10-22", endDate: "2026-10-24", archived: false, sortOrder: 1 },
-  { id: "stk", name: "STK", projectId: null, startDate: "2027-06-02", endDate: "2027-06-04", archived: false, sortOrder: 2 },
+  { id: "la", name: "코리아 엑스포 LA", projectId: null, startDate: "2026-10-22", endDate: "2026-10-24", archived: false, sortOrder: 1, aliases: ["코엑"] },
+  { id: "stk", name: "STK", projectId: null, startDate: "2027-06-02", endDate: "2027-06-04", archived: false, sortOrder: 2, aliases: [] },
 ];
 
 type Row = Omit<WorkEntryInput, "date"> & { date: string | null; common: boolean; sortOrder: number; authorName: string; createdAt: string; updatedAt: string };
 let n = 0;
+const savedReports = new Map<string, { rows: ReturnType<typeof buildWeeklyReport>["rows"]; source: string; updatedAt: string }>();
 const store: Row[] = (() => {
   const mon = weekOf(kstToday()).start;
   const last = shiftDay(mon, -7);
   const mk = (p: Partial<Row>): Row => ({ id: Math.random().toString(36).slice(2), groupId: "la", authorId: "me", authorName: "이창환", date: mon, common: false, sortOrder: ++n, category: "운영", content: "", status: "done", result: "", note: "", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...p });
   return [
     mk({ date: shiftDay(last, 1), content: "엠버서더 3차 미션 운영" }),
+    mk({ date: shiftDay(last, 2), groupId: null, category: "코엑", content: "바닐라코 협찬 소통" }),
+    mk({ date: shiftDay(last, 2), groupId: null, category: "", content: "주간업무보고 작성", common: true }),
     mk({ date: shiftDay(last, 2), category: "콘텐츠", content: "D-10 스토리 업로드", result: "인스타 스토리 2건" }),
     mk({ date: shiftDay(last, 3), category: "퍼포먼스", content: "메타 광고비 증액, 소재 추가", status: "doing" }),
     mk({ date: mon, content: "현장 미션 전달", status: "planned", note: "10/22 전" }),
@@ -75,13 +78,22 @@ if (typeof window !== "undefined" && !(window as { __wl?: boolean }).__wl) {
       }
     }
     if (url.pathname === "/api/worklog/report") {
-      const report = buildWeeklyReport({
-        reportDate: url.searchParams.get("date")!,
+      const date = url.searchParams.get("date")!;
+      if (init?.method === "PUT") {
+        const body = JSON.parse(String(init.body));
+        savedReports.set(body.date, { rows: body.rows, source: body.source, updatedAt: new Date().toISOString() });
+        return json({ saved: { source: body.source, updatedAt: new Date().toISOString() } });
+      }
+      if (init?.method === "DELETE") { savedReports.delete(date); return json({ ok: true }); }
+      const draft = buildWeeklyReport({
+        reportDate: date,
         groups: GROUPS,
         entries: store.filter((e): e is Row & { date: string } => e.date !== null),
         authorName: (id) => store.find((e) => e.authorId === id)?.authorName ?? id,
       });
-      return json({ report, table: reportTable(report, { hideOwners: url.searchParams.get("hideOwners") === "1" }) });
+      const hit = url.searchParams.get("fresh") === "1" ? undefined : savedReports.get(date);
+      const report = hit ? { ...draft, rows: hit.rows } : draft;
+      return json({ report, table: reportTable(report), saved: hit ? { source: hit.source, updatedAt: hit.updatedAt } : null, aiAvailable: false });
     }
     return orig(input, init);
   };

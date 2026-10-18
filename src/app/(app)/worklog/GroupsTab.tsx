@@ -64,7 +64,7 @@ export default function GroupsTab({ workspaceId, groups, onChange }: { workspace
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">주간 보고는 이 순서로 행사별로 묶여요. 프로젝트를 이으면 전주 사전등록·광고 숫자가 함께 붙어요.</p>
+      <p className="text-xs text-muted-foreground">주간 보고는 이 순서로 행사별로 묶여요. <b className="font-medium text-foreground">머리표</b>는 일지에 쓰는 줄임말이에요 — 일지에 <code className="rounded bg-secondary px-1">[코엑] 할 일</code> 로 적으면 그 행사로 들어가요. 프로젝트를 이으면 전주 사전등록·광고 숫자가 함께 붙어요.</p>
       {groups.length === 0 && (
         <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border py-8 text-center">
           <p className="text-sm text-muted-foreground">아직 행사가 없어요</p>
@@ -76,17 +76,23 @@ export default function GroupsTab({ workspaceId, groups, onChange }: { workspace
       )}
       {sorted.length > 0 && (
         <div className={`divide-y divide-border overflow-hidden bg-background ${R.panel} ${FINISH.s1}`}>
-          <div className="hidden grid-cols-[48px_minmax(0,1.4fr)_130px_130px_minmax(0,1fr)_64px_28px] gap-2 bg-secondary/40 px-3 py-2 text-[11px] font-medium text-muted-foreground md:grid">
-            <span>순서</span><span>행사</span><span>시작</span><span>종료</span><span>이어진 프로젝트(지표)</span><span>보관</span><span />
+          <div className="hidden grid-cols-[48px_minmax(0,1.4fr)_minmax(0,1fr)_130px_130px_minmax(0,1fr)_64px_28px] gap-2 bg-secondary/40 px-3 py-2 text-[11px] font-medium text-muted-foreground md:grid">
+            <span>순서</span><span>행사</span><span>머리표(쉼표로)</span><span>시작</span><span>종료</span><span>이어진 프로젝트(지표)</span><span>보관</span><span />
           </div>
           {sorted.map((g, i) => (
-            <div key={g.id} className={`grid grid-cols-2 gap-2 px-3 py-2 md:grid-cols-[48px_minmax(0,1.4fr)_130px_130px_minmax(0,1fr)_64px_28px] md:items-center ${g.archived ? "opacity-60" : ""}`}>
+            <div key={g.id} className={`grid grid-cols-2 gap-2 px-3 py-2 md:grid-cols-[48px_minmax(0,1.4fr)_minmax(0,1fr)_130px_130px_minmax(0,1fr)_64px_28px] md:items-center ${g.archived ? "opacity-60" : ""}`}>
               <div className="flex gap-0.5">
                 <button onClick={() => void move(i, -1)} disabled={i === 0} className="rounded p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30" aria-label="위로"><ChevronUp className="h-3.5 w-3.5" /></button>
                 <button onClick={() => void move(i, 1)} disabled={i === sorted.length - 1} className="rounded p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30" aria-label="아래로"><ChevronDown className="h-3.5 w-3.5" /></button>
               </div>
               <input defaultValue={g.name} onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== g.name) void patch(g, { name: v }); }}
                 className={`${FIELD_CLS} col-span-2 h-8 text-xs md:col-span-1`} aria-label="행사 이름" />
+              <input key={g.aliases.join(",")} defaultValue={g.aliases.join(", ")} placeholder="코엑, LA"
+                onBlur={(e) => {
+                  const next = e.target.value.split(",").map((s) => s.replace(/[[\]]/g, "").trim()).filter(Boolean);
+                  if (next.join(",") !== g.aliases.join(",")) void patch(g, { aliases: next });
+                }}
+                className={`${FIELD_CLS} col-span-2 h-8 text-xs md:col-span-1`} aria-label="머리표" />
               <input type="date" value={g.startDate ?? ""} onChange={(e) => void patch(g, { startDate: e.target.value || null })} className={`${FIELD_CLS} h-8 text-xs`} aria-label="시작일" />
               <input type="date" value={g.endDate ?? ""} onChange={(e) => void patch(g, { endDate: e.target.value || null })} className={`${FIELD_CLS} h-8 text-xs`} aria-label="종료일" />
               <select value={g.projectId ?? ""} onChange={(e) => void patch(g, { projectId: e.target.value || null })} className={`${FIELD_CLS} col-span-2 h-8 text-xs md:col-span-1`} aria-label="프로젝트">

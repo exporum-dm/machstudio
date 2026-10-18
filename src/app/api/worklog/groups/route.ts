@@ -11,22 +11,25 @@ const dayOrNull = (v: unknown) => (typeof v === "string" && DAY_RE.test(v) && !N
 const toDay = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
 
 /** dm-report-weekly-2026 시트(2026-10-16)의 행사 줄 — 프로젝트는 이름이 분명한 것만 잇는다. */
-const SEED: Array<{ name: string; start: string | null; end: string | null; project?: string }> = [
-  { name: "X-Space 2026", start: "2026-10-13", end: "2026-10-16", project: "X-Space" },
-  { name: "코리아 엑스포 LA", start: "2026-10-22", end: "2026-10-24", project: "Korea Expo" },
-  { name: "대한민국 교육박람회", start: "2027-01-27", end: "2027-01-29" },
-  { name: "THE MINT SEOUL", start: "2027-04-15", end: "2027-04-16" },
-  { name: "코리아 엑스포 도쿄", start: "2027-04-02", end: "2027-04-04", project: "Korea Expo" },
-  { name: "인디뷰티 서울", start: "2027-04-08", end: "2027-04-10", project: "Indie Beauty Seoul" },
-  { name: "STK", start: "2027-06-02", end: "2027-06-04", project: "STK" },
-  { name: "코리아 엑스포 파리", start: "2027-06-17", end: "2027-06-19", project: "Korea Expo" },
-  { name: "서울 국제 주얼리 & 액세서리 쇼", start: "2027-08-13", end: "2027-08-15" },
-  { name: "에듀테크 코리아 페어", start: null, end: null, project: "Edtech Korea Fair" },
-  { name: "서울바앤스피릿쇼", start: "2027-11-12", end: "2027-11-14", project: "Seoul Bar & Spirits Show" },
+// aliases = DM 업무 현황 시트에서 쓰던 머리표(빈도순으로 확인, 2026-10-18).
+const SEED: Array<{ name: string; start: string | null; end: string | null; project?: string; aliases: string[] }> = [
+  { name: "X-Space 2026", start: "2026-10-13", end: "2026-10-16", project: "X-Space", aliases: ["xspace", "x-space", "x-spce", "xsapce", "엑스스페이스"] },
+  { name: "코리아 엑스포 LA", start: "2026-10-22", end: "2026-10-24", project: "Korea Expo", aliases: ["코엑", "LA", "코엑LA"] },
+  { name: "대한민국 교육박람회", start: "2027-01-27", end: "2027-01-29", aliases: ["교박"] },
+  { name: "THE MINT SEOUL", start: "2027-04-15", end: "2027-04-16", aliases: ["더민트", "민트"] },
+  { name: "코리아 엑스포 도쿄", start: "2027-04-02", end: "2027-04-04", project: "Korea Expo", aliases: ["도쿄", "코엑도쿄"] },
+  { name: "인디뷰티 서울", start: "2027-04-08", end: "2027-04-10", project: "Indie Beauty Seoul", aliases: ["IB", "IBS", "인디뷰티"] },
+  { name: "STK", start: "2027-06-02", end: "2027-06-04", project: "STK", aliases: ["STK", "스마트테크"] },
+  { name: "코리아 엑스포 파리", start: "2027-06-17", end: "2027-06-19", project: "Korea Expo", aliases: ["파리", "코엑파리"] },
+  { name: "서울 국제 주얼리 & 액세서리 쇼", start: "2027-08-13", end: "2027-08-15", project: "The MOST", aliases: ["주얼리", "더모스트", "더모", "THE MOST"] },
+  { name: "에듀테크 코리아 페어", start: null, end: null, project: "Edtech Korea Fair", aliases: ["에듀", "에듀테크"] },
+  { name: "서울바앤스피릿쇼", start: "2027-11-12", end: "2027-11-14", project: "Seoul Bar & Spirits Show", aliases: ["바쇼"] },
 ];
+const aliasList = (v: unknown) =>
+  Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === "string").map((x) => x.trim().slice(0, 40)).filter(Boolean))].slice(0, 20) : [];
 
-function serialize(g: { id: string; name: string; projectId: string | null; startDate: Date | null; endDate: Date | null; archived: boolean; sortOrder: number }) {
-  return { id: g.id, name: g.name, projectId: g.projectId, startDate: toDay(g.startDate), endDate: toDay(g.endDate), archived: g.archived, sortOrder: g.sortOrder };
+function serialize(g: { id: string; name: string; projectId: string | null; startDate: Date | null; endDate: Date | null; archived: boolean; sortOrder: number; aliases: string[] }) {
+  return { id: g.id, name: g.name, projectId: g.projectId, startDate: toDay(g.startDate), endDate: toDay(g.endDate), archived: g.archived, sortOrder: g.sortOrder, aliases: g.aliases };
 }
 
 async function projectInWorkspace(projectId: unknown, workspaceId: string): Promise<string | null | "invalid"> {
@@ -62,6 +65,7 @@ export async function POST(request: Request) {
         endDate: dayOrNull(s.end),
         projectId: projects.find((p) => p.name === s.project)?.id ?? null,
         sortOrder: i + 1,
+        aliases: s.aliases,
       })),
     });
     const groups = await prisma.workGroup.findMany({ where: { workspaceId: workspaceId! }, orderBy: { sortOrder: "asc" } });
@@ -74,7 +78,7 @@ export async function POST(request: Request) {
   if (projectId === "invalid") return NextResponse.json({ error: "프로젝트를 찾을 수 없어요" }, { status: 400 });
   const last = await prisma.workGroup.findFirst({ where: { workspaceId: workspaceId! }, orderBy: { sortOrder: "desc" }, select: { sortOrder: true } });
   const group = await prisma.workGroup.create({
-    data: { workspaceId: workspaceId!, name, projectId, startDate: dayOrNull(body.startDate), endDate: dayOrNull(body.endDate), sortOrder: (last?.sortOrder ?? 0) + 1 },
+    data: { workspaceId: workspaceId!, name, projectId, startDate: dayOrNull(body.startDate), endDate: dayOrNull(body.endDate), sortOrder: (last?.sortOrder ?? 0) + 1, aliases: aliasList(body.aliases) },
   });
   return NextResponse.json({ group: serialize(group) }, { status: 201 });
 }
@@ -101,6 +105,7 @@ export async function PATCH(request: Request) {
     data.projectId = projectId;
   }
   if (typeof body.archived === "boolean") data.archived = body.archived;
+  if ("aliases" in body) data.aliases = aliasList(body.aliases);
   if (typeof body.sortOrder === "number") data.sortOrder = Math.round(body.sortOrder);
   const group = await prisma.workGroup.update({ where: { id }, data });
   return NextResponse.json({ group: serialize(group) });
