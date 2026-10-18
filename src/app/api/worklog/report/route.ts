@@ -8,7 +8,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireWorkspaceMember } from "@/lib/workspace-access";
-import { buildWeeklyReport, kstToday, reportSheetName, reportTable, shiftDay, type ReportBlock, type WorkStatus } from "@/lib/worklog";
+import { buildWeeklyReport, effectiveStatus, kstToday, reportSheetName, reportTable, shiftDay, type ReportBlock, type WorkStatus } from "@/lib/worklog";
 import { buildReportWorkbook } from "@/lib/worklog-xlsx";
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -85,8 +85,9 @@ export async function GET(request: Request) {
       endDate: g.endDate ? g.endDate.toISOString().slice(0, 10) : null,
     })),
     entries: entries.map((e) => ({
-      id: e.id, groupId: e.groupId, authorId: e.authorId, date: e.date.toISOString().slice(0, 10),
-      category: e.category, content: e.content, status: e.status as WorkStatus, result: e.result, note: e.note,
+      id: e.id, groupId: e.groupId, authorId: e.authorId, date: e.date!.toISOString().slice(0, 10),
+      // 시트처럼 취소선만 긋는다 — 안 그은 줄은 보고일 기준으로 진행/예정을 다시 정한다(미리 적어 둔 일이 날짜가 지나면 진행·이월).
+      category: e.category, content: e.content, status: effectiveStatus(e.status as WorkStatus, e.date!.toISOString().slice(0, 10), reportDate), result: e.result, note: e.note,
     })),
     authorName: (id) => names.get(id) ?? "",
   });

@@ -844,7 +844,12 @@ model WorkEntry {
   workspaceId String
   groupId     String?
   authorId    String
-  date        DateTime @db.Date
+  /// NULL = 먼 미래(날짜 없이 미리 적어 둔 일). 주간 보고에서 빠진다.
+  date        DateTime? @db.Date
+  /// 시트의 "공통" 열 — 팀 전체 일. 누구나 고친다.
+  common      Boolean  @default(false)
+  /// 한 칸 안의 줄 순서
+  sortOrder   Float    @default(0)
   /// 운영·콘텐츠·퍼포먼스·홈페이지·제작·기획 …
   category    String   @default("")
   content     String
