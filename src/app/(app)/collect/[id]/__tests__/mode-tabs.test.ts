@@ -15,8 +15,8 @@ describe("tabsFor", () => {
     expect(ids("capture")).toEqual(["overview", "records", "info", "fields", "script", "install", "settings", "data-mgmt", "activity"]);
   });
 
-  it("빌더형은 스크립트·필드 매핑·설치 대신 등록 폼 · 현장 체크인", () => {
-    expect(ids("builder")).toEqual(["overview", "records", "info", "form", "checkin", "settings", "data-mgmt", "activity"]);
+  it("빌더형은 스크립트·필드 매핑·설치 대신 등록 폼 · 현장 체크인 · 만족도 조사", () => {
+    expect(ids("builder")).toEqual(["overview", "records", "info", "form", "checkin", "survey", "settings", "data-mgmt", "activity"]);
   });
 
   /** mode 는 DB 에서 제약 없는 String 이다 — 모르는 값이 오면 기존 동작으로 떨어져야 한다. */

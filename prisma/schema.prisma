@@ -451,6 +451,50 @@ model CollectSource {
   checkIns      CollectCheckIn[]
   activityLogs  ActivityLog[]
   expoSites     ExpoSite[]
+  surveys       Survey[]
+}
+
+/// 사전등록 연동 만족도 조사 — 공개 주소 /q/{token}. 문항·분기·안내·완료 문구는 config(lib/survey-config.ts).
+model Survey {
+  id          String   @id @default(cuid())
+  sourceId    String
+  projectId   String
+  workspaceId String
+  name        String
+  /// 인쇄된 QR 이 가리키는 주소 — 바꾸면 이미 뿌린 QR 이 죽는다
+  token       String   @unique
+  /// "draft" | "open" | "closed"
+  status      String   @default("draft")
+  config      Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  source    CollectSource    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  responses SurveyResponse[]
+
+  @@index([sourceId])
+}
+
+/// 만족도 조사 응답 — 등록자는 recordId 로 등록 정보와 이어진다(1인 1응답). walk-in 은 recordId 없음.
+model SurveyResponse {
+  id        String   @id @default(cuid())
+  surveyId  String
+  recordId  String?
+  /// 응답자 유형(등록 폼의 유형 값 — General/Buyer/Press)
+  audience  String   @default("")
+  answers   Json     @default("{}")
+  /// 들어온 경로(?src=qr / newsletter …)
+  channel   String   @default("")
+  locale    String   @default("")
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  survey Survey         @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  record CollectRecord? @relation(fields: [recordId], references: [id], onDelete: SetNull)
+
+  @@unique([surveyId, recordId])
+  @@index([surveyId, createdAt])
 }
 
 model FieldMapping {
@@ -537,6 +581,7 @@ model CollectRecord {
 
   /// 등록 확인이 전화번호로도 조회한다 — 없으면 5만 건 풀스캔.
   checkIns         CollectCheckIn[]
+  surveyResponses  SurveyResponse[]
   @@index([sourceId, phoneE164])
   // (sourceId, emailNormalized) 유니크는 **부분 인덱스**(WHERE emailNormalized IS NOT NULL)라
   // 여기 선언할 수 없다 — supabase/migrations/20260815_collect_builder.sql 에 raw SQL 로 있다.
