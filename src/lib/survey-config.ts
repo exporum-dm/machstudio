@@ -13,7 +13,7 @@
  *
  * DB 를 모른다 — 화면·API·테스트가 같은 규칙을 쓴다.
  */
-import { localize, toLocalized, type Localized } from "@/lib/collect-form-config";
+import { localize, toLocalized, type CollectField, type CollectFormConfig, type Localized } from "@/lib/collect-form-config";
 
 export type SurveyQuestionType = "single" | "multiple" | "scale" | "nps" | "grid" | "short" | "long";
 export const SURVEY_QUESTION_TYPES: SurveyQuestionType[] = ["single", "multiple", "scale", "nps", "grid", "short", "long"];
@@ -49,6 +49,12 @@ export interface SurveyQuestion {
   naOption: boolean;
   /** 다른 문항 답이 이 값일 때만 보인다 */
   showIf: { key: string; value: string } | null;
+  /**
+   * 등록 폼 항목과 연결(그 항목의 key). 연결된 문항은 질문·선택지·유형을 **등록 폼에서 그대로** 가져온다 —
+   * 사전등록 안 한 사람(walk-in)의 인구통계를 등록자와 같은 조건으로 받기 위해서다(2026-10-20).
+   * 저장 key 도 등록 폼 key 와 같아서 결과에서 등록자와 한 열로 합쳐 본다.
+   */
+  linkKey: string;
 }
 
 export interface SurveySection {
@@ -94,7 +100,8 @@ function normalizeQuestion(raw: unknown, locale: string): SurveyQuestion | null 
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
   const type = (SURVEY_QUESTION_TYPES as string[]).includes(o.type as string) ? (o.type as SurveyQuestionType) : "single";
-  const key = typeof o.key === "string" && KEY_RE.test(o.key) ? o.key : "";
+  const linkKey = typeof o.linkKey === "string" && KEY_RE.test(o.linkKey) ? o.linkKey : "";
+  const key = linkKey || (typeof o.key === "string" && KEY_RE.test(o.key) ? o.key : "");
   if (!key) return null;
   const loc = (v: unknown) => toLocalized(v, locale);
   const showIf = o.showIf && typeof o.showIf === "object"
@@ -115,6 +122,7 @@ function normalizeQuestion(raw: unknown, locale: string): SurveyQuestion | null 
     rows: Array.isArray(o.rows) ? o.rows.map(loc).filter((x) => Object.values(x).some((v) => v.trim())).slice(0, 30) : [],
     naOption: bool(o.naOption, true),
     showIf,
+    linkKey,
   };
 }
 
@@ -173,6 +181,53 @@ export function emptySurveyConfig(input: { title: string; audienceFieldKey: stri
     },
     defaultLocale: input.locale,
   });
+}
+
+// ── 등록 폼 연결 ──────────────────────────────────────────────────────
+
+/** 등록 폼의 항목 전부(유형 분기 그룹 항목 포함) — 연결 문항이 고를 수 있는 것. */
+export function registrationFields(form: CollectFormConfig): Array<CollectField & { group: string }> {
+  const out: Array<CollectField & { group: string }> = [];
+  const seen = new Set<string>();
+  for (const f of form.fields) if (f.enabled && !seen.has(f.key)) { seen.add(f.key); out.push({ ...f, group: "" }); }
+  for (const g of form.branch.groups) for (const f of g.fields) if (f.enabled && !seen.has(f.key)) { seen.add(f.key); out.push({ ...f, group: g.value }); }
+  return out;
+}
+
+/** 등록 폼 항목 → 조사 문항 유형. 동의 체크박스처럼 맞는 게 없으면 null. */
+export function linkedQuestionType(field: Pick<CollectField, "type">): SurveyQuestionType | null {
+  if (field.type === "radio" || field.type === "select") return "single";
+  if (field.type === "multiple") return "multiple";
+  if (field.type === "text" || field.type === "email" || field.type === "tel" || field.type === "number") return "short";
+  return null;
+}
+
+/**
+ * 연결 문항을 등록 폼 항목으로 채운다(질문·선택지·유형·필수·기타). 등록 폼에서 항목이 사라졌으면 그 문항은 뺀다.
+ * 공개 화면·검증이 이 결과를 쓴다 — 등록 폼을 고치면 조사도 따라 바뀐다.
+ */
+export function resolveLinkedQuestions(config: SurveyConfig, form: CollectFormConfig): SurveyConfig {
+  const fields = new Map(registrationFields(form).map((f) => [f.key, f]));
+  const fill = (section: SurveySection): SurveySection => ({
+    ...section,
+    questions: section.questions.flatMap((q) => {
+      if (!q.linkKey) return [q];
+      const field = fields.get(q.linkKey);
+      const type = field ? linkedQuestionType(field) : null;
+      if (!field || !type) return [];
+      return [{
+        ...q,
+        key: field.key,
+        type,
+        title: field.label,
+        description: field.placeholder && type === "short" ? field.placeholder : q.description,
+        required: field.required,
+        options: field.options,
+        allowOther: !!field.allowOther,
+      }];
+    }),
+  });
+  return { ...config, walkIn: fill(config.walkIn), sections: config.sections.map(fill) };
 }
 
 // ── 보이는 문항 · 검증 ─────────────────────────────────────────────────

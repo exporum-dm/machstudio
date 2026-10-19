@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { prisma } from "@/lib/prisma";
 import { localize, normalizeCollectForm } from "@/lib/collect-form-config";
-import { answerText, normalizeSurveyConfig, summarizeSurvey, type SurveyAnswerMap } from "@/lib/survey-config";
+import { answerText, normalizeSurveyConfig, resolveLinkedQuestions, summarizeSurvey, type SurveyAnswerMap } from "@/lib/survey-config";
 import { authorizeSurvey } from "@/lib/survey-access";
 
 export async function GET(request: Request, { params }: { params: Promise<{ surveyId: string }> }) {
@@ -18,9 +18,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ surv
   const auth = await authorizeSurvey(surveyId);
   if ("error" in auth) return auth.error;
   const { searchParams } = new URL(request.url);
-  const config = normalizeSurveyConfig(auth.survey.config);
   const source = await prisma.collectSource.findUnique({ where: { id: auth.survey.sourceId }, select: { formConfig: true, name: true } });
   const form = normalizeCollectForm(source?.formConfig);
+  const config = resolveLinkedQuestions(normalizeSurveyConfig(auth.survey.config), form);
   const locale = config.defaultLocale;
 
   const responses = await prisma.surveyResponse.findMany({
@@ -49,7 +49,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ surv
         config.audienceLabels[r.audience] ?? r.audience,
         r.recordId ? "사전등록" : "등록 없이",
         r.record?.registrationNo ?? "",
-        ...regColumns.map((f) => { const v = data[f.key]; return Array.isArray(v) ? v.join(", ") : v == null ? "" : String(v); }),
+        // 등록 없이 참여한 사람은 등록 폼과 같은 key 로 답했다 — 같은 열에 넣는다.
+        ...regColumns.map((f) => { const v = r.recordId ? data[f.key] : answers[f.key]; return Array.isArray(v) ? v.join(", ") : v == null ? "" : String(v); }),
         ...questions.map((q) => answerText(q, answers[q.key], locale)),
       ];
     });
@@ -81,8 +82,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ surv
   const scoreQuestions = questions.filter((q) => q.type === "scale" || q.type === "nps");
   const segMap = new Map<string, typeof filtered>();
   for (const r of filtered) {
-    if (!r.record) continue;
-    const raw = (r.record.data as Record<string, unknown>)?.[by];
+    // 등록자는 등록 정보, 등록 없이 참여한 사람은 같은 key 로 받은 답 — 같은 조건으로 받았으니 한 표에 합친다.
+    const raw = r.record ? (r.record.data as Record<string, unknown>)?.[by] : (r.answers as Record<string, unknown>)?.[by];
+    if (!r.record && raw === undefined) continue;
     for (const v of Array.isArray(raw) ? raw : [raw]) {
       const key = v == null || v === "" ? "(빈 값)" : String(v);
       segMap.set(key, [...(segMap.get(key) ?? []), r]);

@@ -5,7 +5,8 @@
 import { NextResponse } from "next/server";
 import type { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
-import { isSurveyStatus, normalizeSurveyConfig } from "@/lib/survey-config";
+import { localize, normalizeCollectForm } from "@/lib/collect-form-config";
+import { isSurveyStatus, linkedQuestionType, normalizeSurveyConfig, registrationFields } from "@/lib/survey-config";
 import { authorizeSurvey } from "@/lib/survey-access";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ surveyId: string }> }) {
@@ -13,7 +14,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ surveyI
   const auth = await authorizeSurvey(surveyId);
   if ("error" in auth) return auth.error;
   const { survey } = auth;
-  return NextResponse.json({ survey: { ...survey, config: normalizeSurveyConfig(survey.config) } });
+  // 설계 화면이 "등록 폼 항목 연결" 목록을 그린다 — 질문·선택지는 등록 폼이 원본이다.
+  const source = await prisma.collectSource.findUnique({ where: { id: survey.sourceId }, select: { formConfig: true } });
+  const form = normalizeCollectForm(source?.formConfig);
+  const fields = registrationFields(form)
+    .filter((f) => linkedQuestionType(f))
+    .map((f) => ({ key: f.key, label: localize(f.label, form.defaultLocale) || f.key, type: linkedQuestionType(f), group: f.group, options: f.options.length, required: f.required }));
+  return NextResponse.json({ survey: { ...survey, config: normalizeSurveyConfig(survey.config) }, registrationFields: fields });
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ surveyId: string }> }) {
