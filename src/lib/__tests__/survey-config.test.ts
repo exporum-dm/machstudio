@@ -60,3 +60,30 @@ describe("만족도 조사 — 집계", () => {
     expect(s.find((x) => x.key === "watched")!.counts).toEqual([{ label: "Yes", count: 2 }, { label: "No", count: 1 }]);
   });
 });
+
+describe("만족도 조사 — 등록 폼 연결 문항", () => {
+  it("질문·선택지·필수를 등록 폼에서 그대로 가져오고, 없어진 항목은 뺀다", async () => {
+    const { normalizeCollectForm } = await import("@/lib/collect-form-config");
+    const { resolveLinkedQuestions } = await import("@/lib/survey-config");
+    const form = normalizeCollectForm({
+      defaultLocale: "en",
+      fields: [
+        { id: "a", key: "age", type: "radio", label: { en: "Age group" }, required: true, enabled: true, options: [{ en: "16~24" }, { en: "25~34" }] },
+        { id: "i", key: "interest", type: "multiple", label: { en: "Fields of interest" }, required: true, enabled: true, options: [{ en: "K-Beauty" }, { en: "K-Food" }] },
+      ],
+    });
+    const linked = normalizeSurveyConfig({
+      defaultLocale: "en",
+      walkIn: { questions: [
+        { key: "x", linkKey: "age", type: "short", title: { en: "old" } },
+        { linkKey: "interest" },
+        { linkKey: "gone" },
+      ] },
+    });
+    const r = resolveLinkedQuestions(linked, form);
+    expect(r.walkIn.questions.map((q) => [q.key, q.type, q.title.en, q.options.map((o) => o.en)])).toEqual([
+      ["age", "single", "Age group", ["16~24", "25~34"]],
+      ["interest", "multiple", "Fields of interest", ["K-Beauty", "K-Food"]],
+    ]);
+  });
+});

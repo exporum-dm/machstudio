@@ -24,6 +24,8 @@ import {
 } from "@/lib/survey-config";
 
 interface SurveyListItem { id: string; name: string; token: string; status: string; responses: number }
+/** 등록 폼 항목 — 연결 문항이 질문·선택지를 그대로 가져온다 */
+interface RegField { key: string; label: string; type: string; group: string; options: number; required: boolean }
 type View = "design" | "share" | "results";
 const STATUS: Array<[string, string]> = [["draft", "작성 중"], ["open", "진행 중"], ["closed", "마감"]];
 
@@ -90,6 +92,7 @@ export default function SurveyTab({ sourceId }: { sourceId: string }) {
 function SurveyEditor({ surveyId, onListChange, onCreate }: { surveyId: string; onListChange: (p: Partial<SurveyListItem>) => void; onCreate?: () => void }) {
   const [meta, setMeta] = useState<{ name: string; token: string; status: string } | null>(null);
   const [config, setConfig] = useState<SurveyConfig | null>(null);
+  const [regFields, setRegFields] = useState<RegField[]>([]);
   const [view, setView] = useState<View>("design");
   const [previewKey, setPreviewKey] = useState(0);
   const origin = getPublicAppOrigin();
@@ -100,6 +103,7 @@ function SurveyEditor({ surveyId, onListChange, onCreate }: { surveyId: string; 
       if (!res.ok) { toast.error(data.error ?? "조사를 불러오지 못했어요"); return; }
       setMeta({ name: data.survey.name, token: data.survey.token, status: data.survey.status });
       setConfig(data.survey.config);
+      setRegFields(data.registrationFields ?? []);
     });
   }, [surveyId]);
 
@@ -162,7 +166,7 @@ function SurveyEditor({ surveyId, onListChange, onCreate }: { surveyId: string; 
 
       {view === "design" && (
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-          <DesignView config={config} onChange={setConfig} />
+          <DesignView config={config} onChange={setConfig} regFields={regFields} />
           <div className="hidden xl:block">
             <div className={`sticky top-4 overflow-hidden bg-background ${R.panel} ${FINISH.s1}`}>
               <div className="flex items-center justify-between border-b border-border px-3 py-2 text-xs text-muted-foreground">
@@ -187,7 +191,7 @@ const lines = (arr: Array<Record<string, string>>, l: string) => arr.map((x) => 
 const fromLines = (text: string, l: string) => text.split("\n").map((s) => s.trim()).filter(Boolean).map((s) => ({ [l]: s }));
 let qseq = 0;
 
-function DesignView({ config, onChange }: { config: SurveyConfig; onChange: (c: SurveyConfig) => void }) {
+function DesignView({ config, onChange, regFields }: { config: SurveyConfig; onChange: (c: SurveyConfig) => void; regFields: RegField[] }) {
   const l = config.defaultLocale;
   const set = (patch: Partial<SurveyConfig>) => onChange({ ...config, ...patch });
   const setSection = (i: number, s: SurveySection) => set({ sections: config.sections.map((x, j) => (j === i ? s : x)) });
@@ -236,8 +240,9 @@ function DesignView({ config, onChange }: { config: SurveyConfig; onChange: (c: 
       {config.allowWalkIn && (
         <SectionCard
           title="등록 없이 참여한 사람에게만"
-          hint="사전등록 정보가 없으니 유형·연령 같은 기본 문항을 여기서 받아요. 문항 key 를 등록 폼과 같게(예: visitor_type) 두면 유형별 문항이 이어져요."
+          hint="사전등록 정보가 없으니 등록 폼의 인구통계 문항을 여기서 받아요. ‘등록 폼 항목 연결’로 넣으면 질문·선택지가 등록 폼과 똑같고(등록 폼을 고치면 같이 바뀌어요), 결과에서 등록자와 한 열로 합쳐 봐요."
           section={config.walkIn} locale={l} audiences={audiences} allQuestions={allQuestions} fixed
+          regFields={regFields} audienceKey={config.audienceFieldKey}
           onChange={(s) => set({ walkIn: s })}
         />
       )}
@@ -262,17 +267,29 @@ function DesignView({ config, onChange }: { config: SurveyConfig; onChange: (c: 
   );
 }
 
-function SectionCard({ section, locale: l, audiences, allQuestions, onChange, onRemove, onMove, title, hint, fixed }: {
+function SectionCard({ section, locale: l, audiences, allQuestions, onChange, onRemove, onMove, title, hint, fixed, regFields = [], audienceKey = "" }: {
   section: SurveySection; locale: string; audiences: string[]; allQuestions: SurveyQuestion[];
   onChange: (s: SurveySection) => void; onRemove?: () => void; onMove?: (dir: -1 | 1) => void;
-  title?: string; hint?: string; fixed?: boolean;
+  title?: string; hint?: string; fixed?: boolean; regFields?: RegField[]; audienceKey?: string;
 }) {
+  const linked = new Set(allQuestions.map((q) => q.linkKey).filter(Boolean));
+  const addLinked = (key: string) => {
+    const field = regFields.find((f) => f.key === key);
+    if (!field) return;
+    const q: SurveyQuestion = {
+      id: `q_${Date.now().toString(36)}${++qseq}`, key, linkKey: key, type: "single", title: { [l]: field.label }, description: { [l]: "" },
+      required: field.required, options: [], allowOther: false, minLabel: {}, maxLabel: {}, scaleMax: 5, rows: [], naOption: true,
+      // 유형별(분기) 등록 항목은 그 유형을 고른 사람에게만 — 등록 폼과 같은 조건
+      showIf: field.group && audienceKey ? { key: audienceKey, value: field.group } : null,
+    };
+    onChange({ ...section, questions: [...section.questions, q] });
+  };
   const setQ = (i: number, q: SurveyQuestion) => onChange({ ...section, questions: section.questions.map((x, j) => (j === i ? q : x)) });
   const addQ = () => {
     const n = ++qseq;
     const q: SurveyQuestion = {
       id: `q_${Date.now().toString(36)}${n}`, key: `q${Date.now().toString(36).slice(-4)}${n}`, type: "scale", title: { [l]: "" }, description: { [l]: "" },
-      required: true, options: [], allowOther: false, minLabel: { [l]: "Very dissatisfied" }, maxLabel: { [l]: "Very satisfied" }, scaleMax: 5, rows: [], naOption: true, showIf: null,
+      required: true, options: [], allowOther: false, minLabel: { [l]: "Very dissatisfied" }, maxLabel: { [l]: "Very satisfied" }, scaleMax: 5, rows: [], naOption: true, showIf: null, linkKey: "",
     };
     onChange({ ...section, questions: [...section.questions, q] });
   };
@@ -312,7 +329,7 @@ function SectionCard({ section, locale: l, audiences, allQuestions, onChange, on
       )}
       <div className="divide-y divide-border rounded-lg border border-border">
         {section.questions.map((q, i) => (
-          <QuestionRow key={q.id} q={q} index={i} locale={l} allQuestions={allQuestions} onChange={(next) => setQ(i, next)}
+          <QuestionRow key={q.id} q={q} index={i} locale={l} allQuestions={allQuestions} regField={q.linkKey ? regFields.find((f) => f.key === q.linkKey) : undefined} onChange={(next) => setQ(i, next)}
             onRemove={() => onChange({ ...section, questions: section.questions.filter((_, j) => j !== i) })}
             onMove={(dir) => {
               const j = i + dir;
@@ -324,16 +341,27 @@ function SectionCard({ section, locale: l, audiences, allQuestions, onChange, on
         ))}
         {section.questions.length === 0 && <p className="px-3 py-4 text-center text-xs text-muted-foreground">문항이 없어요</p>}
       </div>
-      <button onClick={addQ} className={`flex items-center gap-1 bg-secondary px-3 py-1.5 text-xs ${R.control}`}><Plus className="h-3 w-3" />문항 추가</button>
+      <div className="flex flex-wrap items-center gap-2">
+        <button onClick={addQ} className={`flex items-center gap-1 bg-secondary px-3 py-1.5 text-xs ${R.control}`}><Plus className="h-3 w-3" />문항 추가</button>
+        {regFields.length > 0 && (
+          <select value="" onChange={(e) => { if (e.target.value) addLinked(e.target.value); }} className={`${FIELD_CLS} h-7 w-auto text-xs`} aria-label="등록 폼 항목 연결">
+            <option value="">+ 등록 폼 항목 연결…</option>
+            {regFields.filter((f) => !linked.has(f.key) && !["email", "phone", "first_name", "last_name", "name"].includes(f.key)).map((f) => (
+              <option key={f.key} value={f.key}>{f.group ? `[${f.group}] ` : ""}{f.label}</option>
+            ))}
+          </select>
+        )}
+      </div>
     </div>
   );
 }
 
-function QuestionRow({ q, index, locale: l, allQuestions, onChange, onRemove, onMove }: {
-  q: SurveyQuestion; index: number; locale: string; allQuestions: SurveyQuestion[];
+function QuestionRow({ q, index, locale: l, allQuestions, regField, onChange, onRemove, onMove }: {
+  q: SurveyQuestion; index: number; locale: string; allQuestions: SurveyQuestion[]; regField?: RegField;
   onChange: (q: SurveyQuestion) => void; onRemove: () => void; onMove: (dir: -1 | 1) => void;
 }) {
   const [open, setOpen] = useState(false);
+  if (q.linkKey) return <LinkedRow q={q} index={index} locale={l} regField={regField} onRemove={onRemove} onMove={onMove} />;
   const set = (patch: Partial<SurveyQuestion>) => onChange({ ...q, ...patch });
   const target = q.showIf ? allQuestions.find((x) => x.key === q.showIf!.key) : null;
   const needsDetail = q.type !== "short" && q.type !== "long";
@@ -404,6 +432,34 @@ function QuestionRow({ q, index, locale: l, allQuestions, onChange, onRemove, on
         </div>
       )}
       {!open && q.showIf && <p className="ml-7 text-[11px] text-violet-500">↳ &ldquo;{loc(target?.title, l) || q.showIf.key}&rdquo; = {q.showIf.value} 일 때만</p>}
+    </div>
+  );
+}
+
+/** 등록 폼 연결 문항 — 질문·선택지·필수는 등록 폼이 원본이라 여기서 고치지 않는다. */
+function LinkedRow({ q, index, locale: l, regField, onRemove, onMove }: {
+  q: SurveyQuestion; index: number; locale: string; regField?: RegField; onRemove: () => void; onMove: (dir: -1 | 1) => void;
+}) {
+  const typeLabel = regField?.type === "multiple" ? "복수 선택" : regField?.type === "single" ? "단일 선택" : "짧은 답";
+  return (
+    <div className="flex items-start gap-2 px-3 py-2">
+      <span className="mt-1 w-5 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">{index + 1}</span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm">{regField?.label || loc(q.title, l) || q.linkKey}</p>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">
+          {regField ? (
+            <>등록 폼 항목 그대로 · {typeLabel}{regField.options ? ` · 선택지 ${regField.options}개` : ""}{regField.required ? " · 필수" : ""}</>
+          ) : (
+            <span className="text-amber-600">등록 폼에서 이 항목({q.linkKey})을 찾을 수 없어 참관객에게 보이지 않아요</span>
+          )}
+          {q.showIf && <span className="text-violet-500"> · {q.showIf.key} = {q.showIf.value} 일 때만</span>}
+        </p>
+      </div>
+      <div className="flex shrink-0 items-center">
+        <button onClick={() => onMove(-1)} className="rounded p-1 text-muted-foreground hover:bg-secondary" aria-label="위로"><ArrowUp className="h-3 w-3" /></button>
+        <button onClick={() => onMove(1)} className="rounded p-1 text-muted-foreground hover:bg-secondary" aria-label="아래로"><ArrowDown className="h-3 w-3" /></button>
+        <button onClick={onRemove} className="rounded p-1 text-muted-foreground hover:text-red-500" aria-label="지우기"><Trash2 className="h-3 w-3" /></button>
+      </div>
     </div>
   );
 }
@@ -522,7 +578,7 @@ function ResultsView({ surveyId, config }: { surveyId: string; config: SurveyCon
                 <select value={data.by} onChange={(e) => setBy(e.target.value)} className={`${FIELD_CLS} h-7 w-auto text-xs`}>
                   {data.segmentable.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
                 </select>
-                <span className="text-[11px] text-muted-foreground">사전등록으로 확인된 응답만 · 30명 미만은 참고치</span>
+                <span className="text-[11px] text-muted-foreground">사전등록 응답 + 등록 없이 같은 문항으로 답한 응답 · 30명 미만은 참고치</span>
               </div>
               <table className="w-full min-w-[560px] text-xs">
                 <thead><tr className="text-left text-muted-foreground"><th className="py-1.5 pr-3 font-medium">값</th><th className="py-1.5 pr-3 font-medium">응답</th>{data.scoreQuestions.map((q) => <th key={q.key} className="py-1.5 pr-3 font-medium">{q.title}</th>)}</tr></thead>
