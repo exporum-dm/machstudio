@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  blockText, buildWeeklyReport, classifyWork, defaultReportDate, effectiveStatus, groupDateLabel, isRoutineWork, openStatus,
+  blockText, buildWeeklyReport, classifyWork, orderGroupsForReport, defaultReportDate, effectiveStatus, groupDateLabel, isRoutineWork, openStatus,
   parseBlockText, parsePastedWork, reportTable, reportWindows, resolveWorkTag, splitWorkTag, weekOf, type WorkEntryInput,
 } from "@/lib/worklog";
 
@@ -29,6 +29,25 @@ describe("보고일 · 기간", () => {
     expect(groupDateLabel("2026-10-22", "2026-10-24")).toBe("(2026. 10. 22 - 24)");
     expect(groupDateLabel("2026-09-29", "2026-10-02")).toBe("(2026. 9. 29 - 10. 2)");
     expect(groupDateLabel(null, null)).toBe("");
+  });
+});
+
+describe("행사 줄 순서", () => {
+  it("행사 날짜가 가까운 순 — 이번 기간에 끝난 행사는 위, 오래전에 끝난 행사·날짜 없는 행사는 아래", () => {
+    const g = (id: string, startDate: string | null, endDate: string | null, sortOrder: number) => ({ id, startDate, endDate, sortOrder });
+    const order = orderGroupsForReport([
+      g("bar", "2027-11-12", "2027-11-14", 1),
+      g("edu-past", "2026-09-17", "2026-09-19", 2),
+      g("la", "2026-10-22", "2026-10-24", 3),
+      g("tokyo", "2027-04-02", "2027-04-04", 4),
+      g("mint", "2027-04-15", "2027-04-16", 5),
+      g("undated", null, null, 6),
+      g("xspace", "2026-10-13", "2026-10-16", 7),
+      g("old", "2026-05-01", "2026-05-03", 8),
+    ], "2026-10-15").map((x) => x.id);
+    expect(order).toEqual(["xspace", "la", "tokyo", "mint", "bar", "undated", "edu-past", "old"]);
+    // 10/1 보고서: 9/19 에 끝난 에듀테크는 전주 달성 기간(9/25~10/1) 전이라 아래
+    expect(orderGroupsForReport([g("edu", "2026-09-17", "2026-09-19", 2), g("la", "2026-10-22", "2026-10-24", 1)], "2026-09-24").map((x) => x.id)).toEqual(["edu", "la"]);
   });
 });
 

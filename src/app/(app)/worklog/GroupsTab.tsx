@@ -11,13 +11,17 @@ import { toast } from "sonner";
 import { useWorkspace } from "@/contexts/workspace";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { FIELD_CLS, FINISH, R } from "@/components/ui/primitives";
+import { defaultReportDate, kstToday, orderGroupsForReport } from "@/lib/worklog";
 import type { WorkGroupDto } from "./types";
 
 export default function GroupsTab({ workspaceId, groups, onChange }: { workspaceId: string; groups: WorkGroupDto[]; onChange: (groups: WorkGroupDto[]) => void }) {
   const { projects } = useWorkspace();
   const confirm = useConfirm();
   const [name, setName] = useState("");
-  const sorted = [...groups].sort((a, b) => a.sortOrder - b.sortOrder);
+  // 주간 보고와 같은 순서로 보여 준다 — 행사 날짜가 가까운 순(날짜 없는 행사·지난 행사는 아래).
+  const sorted = orderGroupsForReport(groups, defaultReportDate(kstToday()));
+  // 화살표는 날짜 없는 행사끼리만 의미가 있다(날짜 있는 행사는 날짜순으로 자리가 정해진다).
+  const manual = sorted.filter((g) => !g.startDate);
 
   const call = async (method: string, body?: unknown, qs = "") => {
     const res = await fetch(`/api/worklog/groups${qs}`, {
@@ -44,9 +48,10 @@ export default function GroupsTab({ workspaceId, groups, onChange }: { workspace
     const data = await call("PATCH", { id: group.id, ...body });
     if (data) onChange(groups.map((g) => (g.id === group.id ? data.group : g)));
   };
-  const move = async (index: number, dir: -1 | 1) => {
-    const a = sorted[index];
-    const b = sorted[index + dir];
+  const move = async (group: WorkGroupDto, dir: -1 | 1) => {
+    const index = manual.findIndex((g) => g.id === group.id);
+    const a = manual[index];
+    const b = manual[index + dir];
     if (!a || !b) return;
     onChange(groups.map((g) => (g.id === a.id ? { ...g, sortOrder: b.sortOrder } : g.id === b.id ? { ...g, sortOrder: a.sortOrder } : g)));
     await Promise.all([call("PATCH", { id: a.id, sortOrder: b.sortOrder }), call("PATCH", { id: b.id, sortOrder: a.sortOrder })]);
@@ -64,7 +69,7 @@ export default function GroupsTab({ workspaceId, groups, onChange }: { workspace
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">주간 보고는 이 순서로 행사별로 묶여요. <b className="font-medium text-foreground">머리표</b>는 일지에 쓰는 줄임말이에요 — 일지에 <code className="rounded bg-secondary px-1">[코엑] 할 일</code> 로 적으면 그 행사로 들어가요. 프로젝트를 이으면 전주 사전등록·광고 숫자가 함께 붙어요.</p>
+      <p className="text-xs text-muted-foreground">주간 보고는 <b className="font-medium text-foreground">행사 날짜가 가까운 순서</b>로 자동 정렬돼요(이번 주에 끝난 행사는 위, 지난 행사·날짜 없는 행사는 아래 — 끝난 행사는 다음 회차 날짜로 바꾸거나 보관해 주세요). <b className="font-medium text-foreground">머리표</b>는 일지에 쓰는 줄임말이에요 — 일지에 <code className="rounded bg-secondary px-1">[코엑] 할 일</code> 로 적으면 그 행사로 들어가요. 프로젝트를 이으면 전주 사전등록·광고 숫자가 함께 붙어요.</p>
       {groups.length === 0 && (
         <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border py-8 text-center">
           <p className="text-sm text-muted-foreground">아직 행사가 없어요</p>
@@ -82,8 +87,14 @@ export default function GroupsTab({ workspaceId, groups, onChange }: { workspace
           {sorted.map((g, i) => (
             <div key={g.id} className={`grid grid-cols-2 gap-2 px-3 py-2 md:grid-cols-[48px_minmax(0,1.4fr)_minmax(0,1fr)_130px_130px_minmax(0,1fr)_64px_28px] md:items-center ${g.archived ? "opacity-60" : ""}`}>
               <div className="flex gap-0.5">
-                <button onClick={() => void move(i, -1)} disabled={i === 0} className="rounded p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30" aria-label="위로"><ChevronUp className="h-3.5 w-3.5" /></button>
-                <button onClick={() => void move(i, 1)} disabled={i === sorted.length - 1} className="rounded p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30" aria-label="아래로"><ChevronDown className="h-3.5 w-3.5" /></button>
+                {g.startDate ? (
+                  <span className="px-0.5 text-[11px] tabular-nums text-muted-foreground">{i + 1}</span>
+                ) : (
+                  <>
+                    <button onClick={() => void move(g, -1)} disabled={manual[0]?.id === g.id} className="rounded p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30" aria-label="위로"><ChevronUp className="h-3.5 w-3.5" /></button>
+                    <button onClick={() => void move(g, 1)} disabled={manual.at(-1)?.id === g.id} className="rounded p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30" aria-label="아래로"><ChevronDown className="h-3.5 w-3.5" /></button>
+                  </>
+                )}
               </div>
               <input defaultValue={g.name} onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== g.name) void patch(g, { name: v }); }}
                 className={`${FIELD_CLS} col-span-2 h-8 text-xs md:col-span-1`} aria-label="행사 이름" />
