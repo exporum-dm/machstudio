@@ -23,6 +23,26 @@ export async function GET(_req: Request, { params }: { params: Promise<{ surveyI
   return NextResponse.json({ survey: { ...survey, config: normalizeSurveyConfig(survey.config) }, registrationFields: fields });
 }
 
+/**
+ * 저장할 설정 — 들어온 문항에 linkKey 칸 자체가 없으면(연결 기능 전의 화면이 자동 저장한 것) 기존 연결을 지킨다.
+ * 배포 직후 열려 있던 설계 화면이 연결 표시를 지워 버려 공개 화면의 등록 폼 문항이 비었던 일(2026-10-20) 때문.
+ */
+function keepLinks(incoming: unknown, stored: unknown) {
+  const prev = new Map<string, string>();
+  const st = normalizeSurveyConfig(stored);
+  for (const q of [...st.walkIn.questions, ...st.sections.flatMap((s) => s.questions)]) if (q.linkKey) prev.set(q.key, q.linkKey);
+  const raw = (incoming && typeof incoming === "object" ? incoming : {}) as { walkIn?: { questions?: unknown[] }; sections?: Array<{ questions?: unknown[] }> };
+  const patch = (qs: unknown[] | undefined) => (qs ?? []).map((q) => {
+    const o = (q ?? {}) as Record<string, unknown>;
+    return !("linkKey" in o) && typeof o.key === "string" && prev.has(o.key) ? { ...o, linkKey: prev.get(o.key) } : o;
+  });
+  return normalizeSurveyConfig({
+    ...raw,
+    walkIn: raw.walkIn ? { ...raw.walkIn, questions: patch(raw.walkIn.questions) } : raw.walkIn,
+    sections: Array.isArray(raw.sections) ? raw.sections.map((s) => ({ ...s, questions: patch(s?.questions) })) : raw.sections,
+  });
+}
+
 export async function PATCH(request: Request, { params }: { params: Promise<{ surveyId: string }> }) {
   const { surveyId } = await params;
   const auth = await authorizeSurvey(surveyId);
@@ -38,7 +58,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ su
     if (taken) return NextResponse.json({ error: "이미 쓰는 주소예요" }, { status: 409 });
     data.token = token;
   }
-  if (body.config !== undefined) data.config = normalizeSurveyConfig(body.config) as unknown as Prisma.InputJsonValue;
+  if (body.config !== undefined) data.config = keepLinks(body.config, auth.survey.config) as unknown as Prisma.InputJsonValue;
   const survey = await prisma.survey.update({
     where: { id: surveyId },
     data,
