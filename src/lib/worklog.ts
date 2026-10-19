@@ -192,6 +192,29 @@ function buildBlock(category: string, entries: WorkEntryInput[], authorName: (id
   };
 }
 
+/**
+ * 보고서의 행사 줄 순서 — 실제 보고서처럼 행사 날짜가 가까운 순서(2026-10-19).
+ *  1) 진행 중·다가오는 행사(이번 전주 달성 기간 안에 끝난 행사 포함): 시작일 빠른 순
+ *  2) 날짜를 안 넣은 행사: 행사 관리 순서
+ *  3) 그보다 먼저 끝난 행사: 최근에 끝난 순(다음 회차 날짜로 바꾸거나 보관하면 다시 제자리로)
+ * 같은 날짜면 행사 관리 순서.
+ */
+export function orderGroupsForReport<G extends Pick<WorkGroupInput, "startDate" | "endDate" | "sortOrder">>(groups: G[], reportDate: string): G[] {
+  const { last } = reportWindows(reportDate);
+  const tier = (g: G) => {
+    const end = g.endDate ?? g.startDate;
+    if (!g.startDate || !end) return 1;
+    return end >= last.start ? 0 : 2;
+  };
+  return [...groups].sort((a, b) => {
+    const ta = tier(a), tb = tier(b);
+    if (ta !== tb) return ta - tb;
+    if (ta === 0) return a.startDate!.localeCompare(b.startDate!) || a.sortOrder - b.sortOrder;
+    if (ta === 2) return (b.endDate ?? b.startDate)!.localeCompare((a.endDate ?? a.startDate)!) || a.sortOrder - b.sortOrder;
+    return a.sortOrder - b.sortOrder;
+  });
+}
+
 export function buildWeeklyReport(input: {
   reportDate: string;
   groups: WorkGroupInput[];
@@ -228,7 +251,7 @@ export function buildWeeklyReport(input: {
 
   const rows: ReportRow[] = [];
   const slots: Array<{ id: string | null; name: string; hideWhenEmpty: boolean }> = [
-    ...groupOrder.map((g) => ({
+    ...orderGroupsForReport(groupOrder, input.reportDate).map((g) => ({
       id: g.id as string | null,
       name: [g.name, groupDateLabel(g.startDate, g.endDate)].filter(Boolean).join("\n"),
       // 보관한 행사는 그 기간에 적은 줄이 있을 때만 보인다.
