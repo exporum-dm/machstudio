@@ -187,8 +187,6 @@ function SurveyEditor({ surveyId, onListChange, onCreate }: { surveyId: string; 
 // ── 설계 ──────────────────────────────────────────────────────────────
 
 const loc = (v: Record<string, string> | undefined, l: string) => v?.[l] ?? Object.values(v ?? {})[0] ?? "";
-const lines = (arr: Array<Record<string, string>>, l: string) => arr.map((x) => loc(x, l)).join("\n");
-const fromLines = (text: string, l: string) => text.split("\n").map((s) => s.trim()).filter(Boolean).map((s) => ({ [l]: s }));
 let qseq = 0;
 
 function DesignView({ config, onChange, regFields }: { config: SurveyConfig; onChange: (c: SurveyConfig) => void; regFields: RegField[] }) {
@@ -391,7 +389,7 @@ function QuestionRow({ q, index, locale: l, allQuestions, regField, onChange, on
       {/* 선택지는 고치는 값이라 접지 않는다 — 접는 건 드물게 쓰는 설정뿐 */}
       {(q.type === "single" || q.type === "multiple") && (
         <div className="ml-7 space-y-1">
-          <AutoArea value={lines(q.options, l)} onChange={(v) => set({ options: fromLines(v, l) })} placeholder="선택지 — 한 줄에 하나" small />
+          <OptionList items={q.options} locale={l} onChange={(options) => set({ options })} placeholder="선택지" addLabel="선택지 추가" />
           <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
             <input type="checkbox" className="accent-violet-500" checked={q.allowOther} onChange={(e) => set({ allowOther: e.target.checked })} />&ldquo;기타(직접 입력)&rdquo; 넣기
           </label>
@@ -399,7 +397,8 @@ function QuestionRow({ q, index, locale: l, allQuestions, regField, onChange, on
       )}
       {q.type === "grid" && (
         <div className="ml-7">
-          <AutoArea value={lines(q.rows, l)} onChange={(v) => set({ rows: fromLines(v, l) })} placeholder="평가 항목 — 한 줄에 하나(각각 1~5점)" small />
+          <p className="mb-1 text-[11px] text-muted-foreground">평가 항목(각각 1~5점)</p>
+          <OptionList items={q.rows} locale={l} onChange={(rows) => set({ rows })} placeholder="평가 항목" addLabel="평가 항목 추가" />
         </div>
       )}
       {open && (
@@ -651,6 +650,76 @@ function Kpi({ label, value, sub }: { label: string; value: string; sub: string 
       <p className="truncate text-[11px] text-muted-foreground" title={label}>{label}</p>
       <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
       <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={sub}>{sub}</p>
+    </div>
+  );
+}
+
+/**
+ * 선택지 편집 — 사전등록 폼 빌더처럼 한 줄 = 한 선택지. Enter 로 아래에 새 선택지, 빈 칸에서 Backspace 로 지우기,
+ * 여러 줄을 붙여 넣으면 줄마다 나뉜다. (예전엔 줄바꿈 텍스트 칸이라 Enter 를 치면 빈 줄이 바로 사라졌다.)
+ * 빈 선택지는 화면에서만 잠시 남고 저장할 때 서버가 걸러 낸다.
+ */
+function OptionList({ items, locale: l, onChange, placeholder, addLabel }: {
+  items: Array<Record<string, string>>; locale: string; onChange: (items: Array<Record<string, string>>) => void; placeholder: string; addLabel: string;
+}) {
+  const refs = useRef<Array<HTMLInputElement | null>>([]);
+  // 새로 생긴 칸에 커서 — 목록이 다시 그려진 뒤에 옮긴다.
+  const pendingFocus = useRef<number | null>(null);
+  useEffect(() => {
+    if (pendingFocus.current === null) return;
+    refs.current[pendingFocus.current]?.focus();
+    pendingFocus.current = null;
+  }, [items]);
+  const setFocusIndex = (i: number) => { pendingFocus.current = i; };
+  const setAt = (i: number, text: string) => onChange(items.map((x, j) => (j === i ? { ...x, [l]: text } : x)));
+  const insertAfter = (i: number, texts: string[] = [""]) => {
+    const next = [...items];
+    next.splice(i + 1, 0, ...texts.map((t) => ({ [l]: t })));
+    onChange(next);
+    setFocusIndex(i + texts.length);
+  };
+  const removeAt = (i: number) => {
+    onChange(items.filter((_, j) => j !== i));
+    setFocusIndex(Math.max(0, i - 1));
+  };
+  return (
+    <div className="space-y-1">
+      {items.map((item, i) => (
+        <div key={i} className="flex items-center gap-1">
+          <span className="w-4 shrink-0 text-right text-[10px] tabular-nums text-muted-foreground">{i + 1}</span>
+          <input
+            ref={(el) => { refs.current[i] = el; }}
+            value={loc(item, l)}
+            onChange={(e) => setAt(i, e.target.value)}
+            onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return;
+              if (e.key === "Enter") { e.preventDefault(); insertAfter(i); }
+              else if (e.key === "Backspace" && !e.currentTarget.value && items.length > 1) { e.preventDefault(); removeAt(i); }
+            }}
+            onPaste={(e) => {
+              const text = e.clipboardData.getData("text/plain");
+              if (!text.includes("\n")) return;
+              e.preventDefault();
+              const parts = text.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+              if (!parts.length) return;
+              const [first, ...rest] = parts;
+              const next = items.map((x, j) => (j === i ? { ...x, [l]: (loc(x, l) + first).trim() } : x));
+              next.splice(i + 1, 0, ...rest.map((t) => ({ [l]: t })));
+              onChange(next);
+              setFocusIndex(i + rest.length);
+            }}
+            placeholder={`${placeholder} ${i + 1}`}
+            className={`${FIELD_CLS} h-7 min-w-0 flex-1 text-xs`}
+          />
+          <button type="button" onClick={() => removeAt(i)} className="rounded p-1 text-muted-foreground hover:text-red-500" aria-label={`${placeholder} 지우기`}>
+            <Trash2 className="h-3 w-3" />
+          </button>
+        </div>
+      ))}
+      <button type="button" onClick={() => insertAfter(items.length - 1)}
+        className="flex items-center gap-1 pl-5 text-[11px] text-violet-600 hover:underline dark:text-violet-400">
+        <Plus className="h-3 w-3" />{addLabel}
+      </button>
     </div>
   );
 }
