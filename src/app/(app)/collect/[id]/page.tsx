@@ -21,6 +21,7 @@ import ActiveToggle from "@/app/(app)/collect/_components/ActiveToggle";
 import FormBuilderTab from "./FormBuilderTab";
 import InfoTab, { type VenueInfo } from "./InfoTab";
 import CheckinTab from "./CheckinTab";
+import SurveyTab from "./SurveyTab";
 import { TABS, tabsFor, type Tab } from "./tabs";
 import SourceOverviewTab from "./SourceOverviewTab";
 import ColumnFilterButton, { summarizeFilter } from "./ColumnFilterButton";
@@ -1251,6 +1252,9 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
 
           {/* 현장 체크인 탭 (빌더형) — 권한은 서버가 본다(ADMIN 이상만 바꿀 수 있다) */}
           {tab === "checkin" && <CheckinTab sourceId={source.id} canEdit />}
+
+          {/* 만족도 조사 탭 (빌더형) — 등록자 이메일/전화로 본인 확인 → 만족도 문항만 */}
+          {tab === "survey" && <SurveyTab sourceId={source.id} />}
 
           {/* 등록자 DB 탭 */}
           {tab === "records" && (
