@@ -17,6 +17,8 @@ export interface WorkEntryDto {
   groupId: string | null;
   authorId: string;
   authorName: string;
+  /** 실제로 적은 사람 — 다른 사람 칸에 대신 적으면 칸 주인과 다르다 */
+  createdById?: string | null;
   /** null = 먼 미래 */
   date: string | null;
   /** 시트의 "공통" 열 */

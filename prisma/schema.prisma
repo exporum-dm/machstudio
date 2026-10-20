@@ -916,6 +916,8 @@ model WorkEntry {
   common      Boolean  @default(false)
   /// 한 칸 안의 줄 순서
   sortOrder   Float    @default(0)
+  /// 실제로 적은 사람 — 다른 사람 칸에 대신 적으면 authorId(칸 주인)와 다르다
+  createdById String?
   /// 운영·콘텐츠·퍼포먼스·홈페이지·제작·기획 …
   category    String   @default("")
   content     String
