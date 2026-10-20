@@ -17,7 +17,7 @@ const GROUPS: WorkGroupDto[] = [
   { id: "stk", name: "STK", projectId: null, startDate: "2027-06-02", endDate: "2027-06-04", archived: false, sortOrder: 2, aliases: [] },
 ];
 
-type Row = Omit<WorkEntryInput, "date"> & { date: string | null; common: boolean; sortOrder: number; authorName: string; createdAt: string; updatedAt: string };
+type Row = Omit<WorkEntryInput, "date"> & { createdById?: string; date: string | null; common: boolean; sortOrder: number; authorName: string; createdAt: string; updatedAt: string };
 let n = 0;
 const savedReports = new Map<string, { rows: ReturnType<typeof buildWeeklyReport>["rows"]; source: string; updatedAt: string }>();
 const store: Row[] = (() => {
@@ -56,7 +56,8 @@ if (typeof window !== "undefined" && !(window as { __wl?: boolean }).__wl) {
       }
       const body = init.body ? JSON.parse(String(init.body)) : {};
       if (init.method === "POST") {
-        const mkRow = (b: Record<string, unknown>): Row => ({ id: Math.random().toString(36).slice(2), authorId: "me", authorName: "이창환", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), groupId: (b.groupId as string) ?? null, date: (b.date as string | null) ?? null, common: !!b.common, sortOrder: Number(b.sortOrder) || 0, category: (b.category as string) ?? "", content: b.content as string, status: (b.status as Row["status"]) ?? "planned", result: (b.result as string) ?? "", note: (b.note as string) ?? "" });
+        const NAMES: Record<string, string> = { me: "이창환", u2: "소현지", u3: "김주현" };
+        const mkRow = (b: Record<string, unknown>): Row => ({ id: Math.random().toString(36).slice(2), authorId: (b.authorId as string) || "me", authorName: NAMES[(b.authorId as string) || "me"], createdById: "me", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), groupId: (b.groupId as string) ?? null, date: (b.date as string | null) ?? null, common: !!b.common, sortOrder: Number(b.sortOrder) || 0, category: (b.category as string) ?? "", content: b.content as string, status: (b.status as Row["status"]) ?? "planned", result: (b.result as string) ?? "", note: (b.note as string) ?? "" });
         if (Array.isArray(body.items)) {
           const rows = body.items.map(mkRow);
           store.push(...rows);

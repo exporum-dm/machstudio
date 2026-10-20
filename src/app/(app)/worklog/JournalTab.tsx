@@ -125,8 +125,11 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
   const colOf = (l: Line) => (l.common ? COMMON : l.authorId);
   const rowOf = (l: Line) => l.date ?? SOMEDAY;
   const cellKey = (row: string, col: string) => `${row}|${col}`;
-  const canCreateIn = (col: string) => col === COMMON || col === me;
-  const canEditLine = (l: Line) => l.common || l.authorId === me || isAdmin;
+  // 시트처럼 팀원 누구나 다른 사람 칸에도 적고 고친다(2026-10-21) — 워크스페이스를 떠난 사람 칸만 막는다.
+  const memberIds = useMemo(() => new Set(members.map((m) => m.id)), [members]);
+  const canCreateIn = (col: string) => col === COMMON || col === me || memberIds.has(col);
+  const canEditLine = (l: Line) => l.common || l.authorId === me || isAdmin || memberIds.has(l.authorId);
+  const nameOf = (id: string) => (id === me ? myName : members.find((m) => m.id === id)?.name ?? "");
 
   const byCell = useMemo(() => {
     const map = new Map<string, Line[]>();
@@ -202,6 +205,7 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
         body: JSON.stringify({
           workspaceId, date: line.date, common: line.common, sortOrder: line.sortOrder, groupId: line.groupId,
           category: line.category, content: line.content, status: line.status, result: line.result, note: line.note,
+          authorId: line.common ? undefined : line.authorId,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -211,7 +215,7 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
         return null;
       }
       // 저장되는 사이 더 고쳤으면 그 값은 update 가 따로 보낸다 — 여기선 id 만 받는다.
-      setLines((prev) => prev.map((l) => (l.ck === line.ck ? { ...l, id: data.entry.id, temp: false, authorName: data.entry.authorName, createdAt: data.entry.createdAt } : l)));
+      setLines((prev) => prev.map((l) => (l.ck === line.ck ? { ...l, id: data.entry.id, temp: false, authorName: data.entry.authorName, createdById: data.entry.createdById, createdAt: data.entry.createdAt } : l)));
       return data.entry.id as string;
     })();
     creating.current.set(line.ck, p);
@@ -272,7 +276,7 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
     const now = new Date().toISOString();
     const ck = tmpKey();
     const draft: Line = {
-      ck, id: ck, temp: true, authorId: me ?? "", authorName: myName, date, common: col === COMMON, sortOrder,
+      ck, id: ck, temp: true, authorId: col === COMMON ? me ?? "" : col, authorName: col === COMMON ? myName : nameOf(col), createdById: me, date, common: col === COMMON, sortOrder,
       groupId: tags?.groupId ?? null, category: tags?.category ?? "", content: "", status: openStatus(date, today),
       result: "", note: "", createdAt: now, updatedAt: now,
     };
@@ -332,7 +336,8 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
     const sortOrder = (byCellNow(row, col).at(-1)?.sortOrder ?? 0) + 1;
     const patch: Partial<WorkEntryDto> = { date, common: col === COMMON, sortOrder };
     if (line.status !== "done") patch.status = openStatus(date, today);
-    const local: Partial<Line> = col !== COMMON && line.common ? { authorId: me ?? line.authorId, authorName: myName } : {};
+    if (col !== COMMON && col !== line.authorId) patch.authorId = col;
+    const local: Partial<Line> = col !== COMMON ? { authorId: col, authorName: nameOf(col) } : {};
     void update(ck, patch, local);
   };
 
@@ -380,7 +385,7 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
       const tags = item.tag !== null ? resolveWorkTag(item.tag, groups) : fallback;
       const k = tmpKey();
       return {
-        ck: k, id: k, temp: true, authorId: me ?? "", authorName: myName, date, common: col === COMMON,
+        ck: k, id: k, temp: true, authorId: col === COMMON ? me ?? "" : col, authorName: col === COMMON ? myName : nameOf(col), createdById: me, date, common: col === COMMON,
         sortOrder: start + step * (n + 1), ...tags, content: item.content, status: openStatus(date, today),
         result: "", note: "", createdAt: now, updatedAt: now,
       };
@@ -392,7 +397,7 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           workspaceId,
-          items: drafts.map((d) => ({ date: d.date, common: d.common, sortOrder: d.sortOrder, groupId: d.groupId, category: d.category, content: d.content, status: d.status })),
+          items: drafts.map((d) => ({ date: d.date, common: d.common, sortOrder: d.sortOrder, groupId: d.groupId, category: d.category, content: d.content, status: d.status, authorId: d.common ? undefined : d.authorId })),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -515,7 +520,9 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
           rect={menu.rect}
           groups={groups}
           today={today}
-          canCommon={menuLine.common || menuLine.authorId === me}
+          canCommon
+          members={members.map((m) => ({ id: m.id, name: m.id === me ? `${m.name} (나)` : m.name }))}
+          onAssign={(id) => { move(menuLine.ck, rowOf(menuLine), id); setMenu(null); }}
           onClose={() => setMenu(null)}
           onPatch={(patch) => void update(menuLine.ck, patch)}
           onMove={(row, col) => { move(menuLine.ck, row, col ?? colOf(menuLine)); setMenu(null); }}
@@ -555,6 +562,7 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
               header={i === 0 && !label ? null : header}
               editable={canEditLine(l)}
               showAuthor={l.common}
+              byline={!l.common && l.createdById && l.createdById !== l.authorId ? (nameOf(l.createdById) || "다른 팀원") : null}
               focus={focus?.ck === l.ck ? focus : null}
               onFocused={() => setFocus(null)}
               onCommit={(v) => commit(l.ck, v)}
@@ -603,8 +611,9 @@ function RowHead({ day, today }: { day: string; today: string }) {
 }
 
 function LineRow({
-  line, header, editable, showAuthor, focus, onFocused, onCommit, onEnter, onToggle, onBackspaceEmpty, onArrow, onPaste, onMenu, onDragStart, onDragEnd,
+  line, header, editable, showAuthor, byline, focus, onFocused, onCommit, onEnter, onToggle, onBackspaceEmpty, onArrow, onPaste, onMenu, onDragStart, onDragEnd,
 }: {
+  byline?: string | null;
   line: Line;
   header: string | null;
   editable: boolean;
@@ -721,6 +730,7 @@ function LineRow({
           )}
         </div>
         {showAuthor && <span className="mt-[3px] shrink-0 text-[10px] text-muted-foreground">{line.authorName}</span>}
+        {byline && <span className="mt-[3px] shrink-0 rounded bg-violet-500/10 px-1 text-[10px] text-violet-600 dark:text-violet-400" title={`${byline}님이 적은 줄`}>by {byline}</span>}
         {editable && !line.temp && (
           <button
             type="button"
@@ -738,8 +748,10 @@ function LineRow({
 }
 
 function LineMenu({
-  line, rect, groups, today, canCommon, onClose, onPatch, onMove, onToggleCommon, onRemove,
+  line, rect, groups, today, canCommon, members, onAssign, onClose, onPatch, onMove, onToggleCommon, onRemove,
 }: {
+  members: Array<{ id: string; name: string }>;
+  onAssign: (memberId: string) => void;
   line: Line;
   rect: DOMRect;
   groups: WorkGroupDto[];
@@ -801,6 +813,13 @@ function LineMenu({
           ))}
           <input type="date" defaultValue={line.date ?? ""} onChange={(e) => { if (e.target.value) onMove(e.target.value); }}
             className={`${FIELD_CLS} h-7 w-[130px] text-xs`} aria-label="날짜 고르기" />
+        </div>
+        <div className="flex items-center gap-1.5 pt-1">
+          <span className="shrink-0 text-muted-foreground">담당</span>
+          <select value={line.common ? "" : line.authorId} onChange={(e) => { if (e.target.value) onAssign(e.target.value); }} className={`${FIELD_CLS} h-7 min-w-0 flex-1 text-xs`} aria-label="담당자">
+            {line.common && <option value="">공통</option>}
+            {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
         </div>
         {canCommon && (
           <button onClick={onToggleCommon} className={`bg-secondary px-2 py-1 hover:bg-secondary/70 ${R.control}`}>
