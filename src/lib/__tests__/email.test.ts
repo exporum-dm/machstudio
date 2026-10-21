@@ -51,3 +51,24 @@ describe("sendEmail", () => {
     });
   });
 });
+
+describe("sendEmail — 초당 한도(429) 재시도", () => {
+  it("429 면 기다렸다 다시 보내 성공한다", async () => {
+    process.env.RESEND_API_KEY = "re_test";
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response("rate limited", { status: 429, headers: { "retry-after": "0.01" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "email_2" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(sendEmail({ to: "guest@example.com", subject: "Hi", html: "<p>Hi</p>", idempotencyKey: "k1" })).resolves.toEqual({ sent: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("422 같은 요청 오류는 다시 보내지 않는다", async () => {
+    process.env.RESEND_API_KEY = "re_test";
+    const fetchMock = vi.fn().mockResolvedValue(new Response("bad to", { status: 422 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const r = await sendEmail({ to: "bad", subject: "Hi", html: "<p>Hi</p>" });
+    expect(r.sent).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});

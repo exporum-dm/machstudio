@@ -18,6 +18,24 @@ interface SendArgs {
 
 export type SendResult = { sent: boolean; skipped?: boolean; error?: string };
 
+/**
+ * Resend 호출 — 429(초당 한도, 기본 2건/초)·5xx 는 잠깐 기다렸다 다시 보낸다(최대 4번).
+ * 행사 당일 입구에서 여럿이 동시에 등록하면 확인 메일이 한꺼번에 몰려 429 가 난다 — 예전엔 그대로 실패로 끝났다(2026-10-21).
+ * 발송은 응답 뒤(after)에서 돌아 기다려도 등록 화면은 느려지지 않는다. Idempotency-Key 가 있으면 중복 발송도 없다.
+ */
+async function resendFetch(url: string, init: RequestInit, attempts = 4): Promise<Response> {
+  let res: Response | null = null;
+  for (let i = 0; i < attempts; i++) {
+    res = await fetch(url, init);
+    if (res.status !== 429 && res.status < 500) return res;
+    if (i === attempts - 1) break;
+    const retryAfter = Number(res.headers.get("retry-after"));
+    const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 10) * 1000 : 600 * (i + 1) + Math.floor(Math.random() * 400);
+    await new Promise((r) => setTimeout(r, wait));
+  }
+  return res!;
+}
+
 export function emailConfigured(): boolean {
   return !!process.env.RESEND_API_KEY;
 }
@@ -28,7 +46,7 @@ export async function sendEmail({ to, subject, html, from, replyTo, idempotencyK
 
   const sender = from || process.env.EMAIL_FROM || "webinar@mach.studio";
   try {
-    const res = await fetch("https://api.resend.com/emails", {
+    const res = await resendFetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${key}`,
@@ -73,7 +91,7 @@ export async function sendEmailBatch(
   for (let i = 0; i < messages.length; i += 100) {
     const chunk = messages.slice(i, i + 100);
     try {
-      const res = await fetch("https://api.resend.com/emails/batch", {
+      const res = await resendFetch("https://api.resend.com/emails/batch", {
         method: "POST",
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
         body: JSON.stringify(chunk.map((m) => ({ from: m.from || defaultSender, to: [m.to], subject: m.subject, html: m.html }))),
