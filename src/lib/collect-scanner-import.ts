@@ -12,6 +12,9 @@
  */
 import { extractRegistrationNo } from "@/lib/collect-registration-no";
 
+// 시간대 변환은 브라우저(분석 하니스)에서도 쓰여 collect-checkin 에 둔다 — 기존 import 를 위해 다시 내보낸다.
+export { zonedLocalToUtc } from "@/lib/collect-checkin";
+
 export interface ScannerLine {
   /** 현지 날짜 "2026-10-22" — CollectCheckIn.eventDate 가 된다 */
   eventDate: string;
@@ -52,22 +55,4 @@ export function parseScannerLine(line: string): ScannerLine | null {
 export function scannerRowText(row: unknown): string {
   if (Array.isArray(row)) return row.map((c) => (c == null ? "" : String(c))).join(" ").trim();
   return typeof row === "string" ? row.trim() : "";
-}
-
-/** 그 시간대의 벽시계 시각 "YYYY-MM-DDTHH:mm:ss" → UTC Date. 서머타임 경계도 맞춘다. */
-export function zonedLocalToUtc(local: string, timeZone: string): Date {
-  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$/.exec(local);
-  if (!m) return new Date(NaN);
-  const asUtc = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
-  });
-  const offsetAt = (t: number) => {
-    const p = Object.fromEntries(fmt.formatToParts(new Date(t)).map((x) => [x.type, x.value]));
-    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - t;
-  };
-  // 한 번 빼고, 그 시각의 오프셋으로 다시 맞춘다(경계 근처 보정).
-  let t = asUtc - offsetAt(asUtc);
-  t = asUtc - offsetAt(t);
-  return new Date(t);
 }

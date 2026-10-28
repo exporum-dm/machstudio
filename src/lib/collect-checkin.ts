@@ -69,6 +69,24 @@ export function dateTimeIn(timezone: string, at: Date | string): string {
   return `${md} ${timeIn(timezone, d)}`;
 }
 
+/** 그 시간대의 벽시계 시각 "YYYY-MM-DDTHH:mm:ss" → UTC Date. 서머타임 경계도 맞춘다. */
+export function zonedLocalToUtc(local: string, timeZone: string): Date {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$/.exec(local);
+  if (!m) return new Date(NaN);
+  const asUtc = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+  const offsetAt = (t: number) => {
+    const p = Object.fromEntries(fmt.formatToParts(new Date(t)).map((x) => [x.type, x.value]));
+    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - t;
+  };
+  // 한 번 빼고, 그 시각의 오프셋으로 다시 맞춘다(경계 근처 보정).
+  let t = asUtc - offsetAt(asUtc);
+  t = asUtc - offsetAt(t);
+  return new Date(t);
+}
+
 /** CSV 용 "2026-10-22 09:32:49" — 그 시간대 기준. 엑셀이 날짜로 읽는 모양. */
 export function csvDateTimeIn(timezone: string, at: Date | string): string {
   const p = Object.fromEntries(
