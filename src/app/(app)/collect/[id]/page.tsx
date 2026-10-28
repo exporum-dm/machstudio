@@ -1263,6 +1263,8 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
               sourceId={source.id}
               initial={source.venueConfig ?? {}}
               onSaved={(venueConfig) => setSource((current) => current ? { ...current, venueConfig } : current)}
+              formConfig={source.mode === "builder" ? source.formConfig : undefined}
+              onFormConfigSaved={(formConfig) => setSource((current) => (current ? { ...current, formConfig } : current))}
             />
           )}
 

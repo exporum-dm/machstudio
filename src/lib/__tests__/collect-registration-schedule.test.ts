@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  EMPTY_FORM_CONFIG,
   entryChannelAt,
+  mergeFormConfigUpdate,
   normalizeCollectForm,
   resolveRegistrationPhase,
   resolveRegistrationStatus,
@@ -80,5 +82,28 @@ describe("normalizeCollectForm schedule", () => {
     expect(n.timezone).toBe("Asia/Seoul");
     expect(n.preClosesAt).toBeNull();
     expect(n.onsite).toEqual([{ date: "2026-10-23", open: "08:00", close: "17:00" }]);
+  });
+});
+
+describe("mergeFormConfigUpdate — 등록 시간은 기본 정보 탭만 바꾼다", () => {
+  const la = { enabled: true, timezone: "America/Los_Angeles", preOpensAt: null, preClosesAt: "2026-10-21T14:00", onsite: [{ date: "2026-10-22", open: "08:00", close: "17:00" }], betweenTitle: {}, betweenBody: {} };
+  const stored = { ...EMPTY_FORM_CONFIG, statusOverride: "closed", schedule: la };
+
+  it("폼 빌더가 낡은 일정을 들고 통째로 저장해도 DB 일정을 지킨다", () => {
+    const fromBuilder = { ...EMPTY_FORM_CONFIG, statusOverride: "open", schedule: { ...la, enabled: false, onsite: [] } };
+    const next = mergeFormConfigUpdate(stored, fromBuilder, undefined)!;
+    expect(next.statusOverride).toBe("open");
+    expect(next.schedule).toEqual(normalizeCollectForm(stored).schedule);
+  });
+
+  it("일정만 오면 나머지 폼 정의는 DB 그대로 두고 일정만 바꾼다", () => {
+    const next = mergeFormConfigUpdate(stored, undefined, { ...la, preClosesAt: "2026-10-21T15:00" })!;
+    expect(next.statusOverride).toBe("closed");
+    expect(next.schedule.preClosesAt).toBe("2026-10-21T15:00");
+    expect(next.schedule.onsite).toHaveLength(1);
+  });
+
+  it("둘 다 없으면 폼 정의를 건드리지 않는다", () => {
+    expect(mergeFormConfigUpdate(stored, undefined, undefined)).toBeUndefined();
   });
 });

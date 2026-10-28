@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { collectColumnsFor } from "@/lib/collect-columns";
 import { logActivity } from "@/lib/activity";
-import { normalizeCollectForm } from "@/lib/collect-form-config";
+import { mergeFormConfigUpdate, normalizeCollectForm } from "@/lib/collect-form-config";
 import { backfillEmailNormalized } from "@/lib/collect-email-backfill";
 
 /**
@@ -187,6 +187,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
   }
 
+  /**
+   * 등록 시간(사전등록·현장등록, formConfig.schedule)은 **"기본 정보" 탭이 혼자 소유한다.**
+   *
+   * - `registrationSchedule` 이 오면 DB 의 폼 정의에 일정만 갈아 끼운다.
+   * - 폼 빌더 자동저장(`formConfig` 통째)은 DB 의 일정을 그대로 둔다 — 빌더가 열릴 때 들고 온 낡은
+   *   일정이 방금 기본 정보에서 고친 값을 되돌리지 않게.
+   */
+  if (body.registrationSchedule !== undefined && result.source.mode !== "builder") {
+    return NextResponse.json({ error: "등록 시간은 빌더형 등록에서만 쓸 수 있어요" }, { status: 400 });
+  }
+  const nextFormConfig = mergeFormConfigUpdate(result.source.formConfig, body.formConfig, body.registrationSchedule);
+
   const source = await prisma.collectSource.update({
     where: { id },
     data: {
@@ -219,7 +231,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
        * 저장된 것 자체가 항상 같은 모양이 된다 — 빌더 자동저장의 중간 상태나 손으로 고친 값이
        * DB 에 그대로 남지 않는다. 공개 폼은 매 요청 이걸 읽으므로 읽기 비용도 줄어든다.
        */
-      ...(body.formConfig !== undefined && { formConfig: normalizeCollectForm(body.formConfig) as unknown as object }),
+      ...(nextFormConfig !== undefined && { formConfig: nextFormConfig as unknown as object }),
     },
     include: { fieldMappings: { orderBy: { sortOrder: "asc" } } },
   });

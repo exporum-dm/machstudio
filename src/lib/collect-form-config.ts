@@ -825,6 +825,21 @@ export function resolveRegistrationPhase(
 }
 
 /** 새 등록의 entryChannel — 일정이 켜져 있고 현장등록 창 안이면 "onsite", 아니면 "online"(예전 그대로). */
+/**
+ * 저장할 폼 정의 — 등록 시간(schedule)은 "기본 정보" 탭이 혼자 소유한다.
+ * formConfig(폼 빌더가 통째로 보냄)가 와도 일정은 DB 값을 지키고, schedule 이 올 때만 일정을 바꾼다.
+ * 둘 다 없으면 undefined(폼 정의를 건드리지 않는다).
+ */
+export function mergeFormConfigUpdate(currentRaw: unknown, formConfig: unknown, schedule: unknown): CollectFormConfig | undefined {
+  if (formConfig === undefined && schedule === undefined) return undefined;
+  const current = normalizeCollectForm(currentRaw);
+  const base = formConfig !== undefined ? normalizeCollectForm(formConfig) : current;
+  return {
+    ...base,
+    schedule: schedule !== undefined ? normalizeCollectForm({ ...base, schedule }).schedule : current.schedule,
+  };
+}
+
 export function entryChannelAt(config: Pick<CollectFormConfig, "schedule">, now: Date): "online" | "onsite" {
   return config.schedule.enabled && resolveRegistrationPhase(config.schedule, now).phase === "onsite" ? "onsite" : "online";
 }
