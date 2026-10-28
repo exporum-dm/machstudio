@@ -17,7 +17,7 @@ export default function ErrorBoundary({ error, reset }: { error: Error & { diges
       <div>
         <h2 className="text-lg font-semibold">문제가 발생했어요</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          사전등록 데이터를 불러오는 중 오류가 났어요. 잠시 후 다시 시도해주세요.
+          등록 데이터를 불러오는 중 오류가 났어요. 잠시 후 다시 시도해주세요.
         </p>
         {error.digest && (
           <p className="mt-2 font-mono text-[11px] text-muted-foreground/60">오류 코드: {error.digest}</p>

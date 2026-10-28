@@ -39,7 +39,7 @@ export interface NavItem {
 
 export const navItems: NavItem[] = [
   { href: "/dashboard", icon: LayoutDashboard, label: "대시보드" },
-  { href: "/collect", icon: Database, label: "사전등록" },
+  { href: "/collect", icon: Database, label: "등록" },
   { href: "/analytics", icon: BarChart3, label: "광고 성과" },
   { href: "/webinar", icon: Video, label: "웨비나" },
   { href: "/competition", icon: Trophy, label: "대회" },

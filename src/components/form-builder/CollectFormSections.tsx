@@ -15,11 +15,14 @@ import { FIELD_CLS, FINISH, R, UrlField } from "@/components/ui/primitives";
 import { kstDateTimeLocalInput, kstDateTimeLocalToIso } from "@/lib/datetime";
 import { isSupportedCountry } from "@/lib/collect-phone";
 import { COUNTRY_DIALS, flagEmoji } from "@/lib/collect-country";
+import { CHECKIN_TIMEZONES } from "@/lib/collect-checkin";
 import {
   DEFAULT_EMAIL_CALLOUT,
   DEFAULT_LOCALE,
   localize,
+  resolveRegistrationPhase,
   toLocalized,
+  type RegistrationSchedule,
   type CollectFormConfig,
   type CollectBadgeRule,
   type CollectNotice,
@@ -78,6 +81,128 @@ function Row({ label, children, hint }: { label: string; children: React.ReactNo
   );
 }
 
+/** 지금 일정으로 본 상태 한 줄 — 저장 전에도 바로 바뀐다 */
+function schedulePreview(schedule: RegistrationSchedule, now: Date): { tone: "ok" | "warn" | "muted"; text: string } {
+  const p = resolveRegistrationPhase(schedule, now);
+  const fmt = (iso: string) => new Intl.DateTimeFormat("ko-KR", { timeZone: schedule.timezone, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(iso));
+  if (p.status === "open") return { tone: "ok", text: p.phase === "onsite" ? "지금: 현장등록 받는 중" : "지금: 사전등록 받는 중" };
+  if (p.status === "before") return { tone: "muted", text: `지금: 사전등록 시작 전 (${p.nextOpenAt ? fmt(p.nextOpenAt) : ""} 시작)` };
+  if (p.nextOpenAt) return { tone: "warn", text: `지금: 닫힘 — 다음 현장등록 ${fmt(p.nextOpenAt)} (현지)` };
+  return { tone: "muted", text: "지금: 모든 등록 종료" };
+}
+
+/**
+ * 등록 운영 일정 — 고치는 영역이라 값은 전부 그 자리에서 바뀐다(자동저장).
+ * 현장등록 행은 날짜·시작·마감 세 칸 — 행사일로 한 번에 채울 수 있다.
+ */
+function ScheduleBlock({ schedule, setSchedule, eventDates }: { schedule: RegistrationSchedule; setSchedule: (next: Partial<RegistrationSchedule>) => void; eventDates: string[] }) {
+  const preview = schedulePreview(schedule, new Date());
+  const badRows = schedule.onsite.filter((w) => w.open >= w.close);
+  return (
+    <Block
+      title="등록 운영 일정 (사전등록 · 현장등록)"
+      desc="정해 둔 시간에 폼이 자동으로 열리고 닫혀요. 현장등록도 같은 폼이고, 새 등록에 사전/현장 구분이 기록돼요. 위 '상태 수동 전환'은 여전히 이 일정보다 우선해요."
+      right={<Switch checked={schedule.enabled} onChange={(v) => setSchedule({ enabled: v })} label="등록 운영 일정 사용" />}
+    >
+      <div className={`space-y-3 ${schedule.enabled ? "" : "opacity-60"}`}>
+        <Row label="시간대" hint="아래 시각은 모두 이 시간대의 현지 시각이에요 — 서울에서 입력해도 LA 시간 그대로 적으면 돼요.">
+          <select value={schedule.timezone} onChange={(e) => setSchedule({ timezone: e.target.value })} className={FIELD_CLS}>
+            {CHECKIN_TIMEZONES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+        </Row>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <Row label="사전등록 시작 (현지, 선택)">
+            <input type="datetime-local" value={schedule.preOpensAt ?? ""} onChange={(e) => setSchedule({ preOpensAt: e.target.value || null })} className={FIELD_CLS} />
+          </Row>
+          <Row label="사전등록 마감 (현지)" hint="비우면 첫 현장등록 시작 전까지 받아요.">
+            <input type="datetime-local" value={schedule.preClosesAt ?? ""} onChange={(e) => setSchedule({ preClosesAt: e.target.value || null })} className={FIELD_CLS} />
+          </Row>
+        </div>
+
+        <div>
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="text-[11px] font-medium text-muted-foreground">현장등록 운영 시간 (현지)</span>
+            {eventDates.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSchedule({ onsite: eventDates.map((date) => schedule.onsite.find((w) => w.date === date) ?? { date, open: "08:00", close: "17:00" }) })}
+                className="text-[11px] text-violet-600 hover:underline dark:text-violet-300"
+              >
+                개최일로 채우기 (08:00~17:00)
+              </button>
+            )}
+          </div>
+          {schedule.onsite.length === 0 ? (
+            <p className="rounded-xl bg-secondary/40 p-3 text-center text-[11px] text-muted-foreground">현장등록을 받지 않아요 — 사전등록 마감 뒤에는 닫혀요</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {schedule.onsite.map((item, i) => {
+                const setRow = (next: Partial<RegistrationSchedule["onsite"][number]>) =>
+                  setSchedule({ onsite: schedule.onsite.map((w, j) => (j === i ? { ...w, ...next } : w)) });
+                return (
+                  <li key={i} className={`${R.surface} flex flex-wrap items-center gap-1.5 bg-secondary p-2 ${FINISH.s2}`}>
+                    <input type="date" value={item.date} onChange={(e) => setRow({ date: e.target.value })} aria-label="날짜" className="min-w-0 flex-1 rounded-lg bg-background px-2 py-1 text-[12px] outline-none" />
+                    <input type="time" value={item.open} onChange={(e) => setRow({ open: e.target.value })} aria-label="시작" className="rounded-lg bg-background px-2 py-1 text-[12px] outline-none" />
+                    <span className="text-[11px] text-muted-foreground">~</span>
+                    <input type="time" value={item.close} onChange={(e) => setRow({ close: e.target.value })} aria-label="마감" className="rounded-lg bg-background px-2 py-1 text-[12px] outline-none" />
+                    <button
+                      type="button"
+                      onClick={() => setSchedule({ onsite: schedule.onsite.filter((_, j) => j !== i) })}
+                      className="rounded-lg px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-background hover:text-destructive"
+                      aria-label={`${item.date || "이 날짜"} 현장등록 빼기`}
+                    >
+                      빼기
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              const last = schedule.onsite[schedule.onsite.length - 1];
+              const nextDate = eventDates.find((d) => !schedule.onsite.some((w) => w.date === d))
+                ?? (last?.date ? new Date(Date.parse(`${last.date}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10) : "");
+              setSchedule({ onsite: [...schedule.onsite, { date: nextDate, open: last?.open ?? "08:00", close: last?.close ?? "17:00" }] });
+            }}
+            className="mt-1.5 text-[11px] font-medium text-violet-600 hover:underline dark:text-violet-300"
+          >
+            + 날짜 추가
+          </button>
+          {badRows.length > 0 && (
+            <p className="mt-1 flex items-start gap-1.5 text-[11px] text-red-600 dark:text-red-400">
+              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+              {badRows.map((w) => w.date).join(", ")} — 마감이 시작보다 빠르거나 같아요. 이 날은 열리지 않아요.
+            </p>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 gap-2">
+          <Row label="사전등록 마감 후 안내 제목" hint="비우면: Pre-registration is closed">
+            <input value={localize(schedule.betweenTitle, DEFAULT_LOCALE)} onChange={(e) => setSchedule({ betweenTitle: toLocalized(e.target.value) })} placeholder="Pre-registration is closed" className={FIELD_CLS} />
+          </Row>
+          <Row label="사전등록 마감 후 안내 본문" hint="{next} 자리에 다음 현장등록 시작 시각이 들어가요. 비우면 기본 문구를 써요.">
+            <textarea
+              value={localize(schedule.betweenBody, DEFAULT_LOCALE)}
+              onChange={(e) => setSchedule({ betweenBody: toLocalized(e.target.value) })}
+              placeholder="On-site registration opens {next}. Please register at the venue."
+              rows={2}
+              className={`${FIELD_CLS} resize-y`}
+            />
+          </Row>
+        </div>
+
+        {schedule.enabled && (
+          <p className={`text-[11px] font-medium ${preview.tone === "ok" ? "text-emerald-700 dark:text-emerald-400" : preview.tone === "warn" ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground"}`}>
+            {preview.text}
+          </p>
+        )}
+      </div>
+    </Block>
+  );
+}
+
 export function CollectFormSections({
   config, patch, workspaceId,
 }: { config: CollectFormConfig; patch: Patch; workspaceId?: string }) {
@@ -113,6 +238,8 @@ export function CollectFormSections({
   const setEvent = (next: Partial<typeof ev>) => patch({ eventInfo: { ...ev, ...next } });
   const setWindow = (next: Partial<typeof win>) =>
     patch({ eventInfo: { ...ev, registrationWindow: { ...win, ...next } } });
+  const sch = config.schedule;
+  const setSchedule = (next: Partial<RegistrationSchedule>) => patch({ schedule: { ...sch, ...next } });
 
   return (
     <div className="space-y-3">
@@ -350,7 +477,12 @@ export function CollectFormSections({
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {sch.enabled && (
+          <p className={`${R.surface} bg-secondary/60 p-2.5 text-[11px] leading-relaxed text-muted-foreground`}>
+            <b className="text-foreground">등록 운영 일정이 켜져 있어요</b> — 아래 접수 시작·마감 대신 &lsquo;등록 운영 일정&rsquo;의 사전등록·현장등록 시간으로 열고 닫아요.
+          </p>
+        )}
+        <div className={`grid grid-cols-1 gap-2 sm:grid-cols-2 ${sch.enabled ? "opacity-50" : ""}`}>
           {/* 입력은 KST 벽시각, 저장은 오프셋이 붙은 ISO — 서버(UTC)와 브라우저가 같은 순간을
               가리켜야 접수 창 판정이 한쪽에서만 열리는 일이 없다. 웨비나 일정과 같은 헬퍼를 쓴다. */}
           <Row label="접수 시작 (KST)">
@@ -389,6 +521,9 @@ export function CollectFormSections({
           </select>
         </Row>
       </Block>
+
+      {/* ── 등록 운영 일정 ───────────────────────────────────────── */}
+      <ScheduleBlock schedule={sch} setSchedule={setSchedule} eventDates={ev.eventDates} />
 
       {/* ── 안내 블록 ─────────────────────────────────────────────── */}
       <Block title="안내 블록" desc="초상권 안내 같은 문구. 형태만 바꾸면 안내 → 동의로 승격돼요.">

@@ -98,13 +98,13 @@ export default function CollectPage() {
     const prev = source.isActive;
     await handleToggleSilent(source.id, next);
     if (prev && !next) {
-      toast("사전등록 폼이 비활성화됐어요", {
+      toast("등록 폼이 비활성화됐어요", {
         description: "새 데이터 수집이 중단됩니다",
         duration: 5000,
         action: { label: "되돌리기", onClick: () => handleToggleSilent(source.id, true) },
       });
     } else if (!prev && next) {
-      toast.success("사전등록 폼이 활성화됐어요");
+      toast.success("등록 폼이 활성화됐어요");
     }
   };
 
@@ -180,8 +180,8 @@ export default function CollectPage() {
     <div className="p-4 sm:p-6 lg:p-8 space-y-6">
       <div className="flex items-end justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold">데이터 수집</h1>
-          <p className="text-sm text-muted-foreground mt-1.5">{currentProject.name} · 외부 사이트 폼 데이터 수집</p>
+          <h1 className="text-2xl font-semibold">등록</h1>
+          <p className="text-sm text-muted-foreground mt-1.5">{currentProject.name} · 사전등록·현장등록 폼과 외부 사이트 폼 수집</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button
@@ -477,7 +477,7 @@ export default function CollectPage() {
       <ModalShell
         open={!!duplicateTarget}
         onClose={() => { if (!duplicating) setDuplicateTarget(null); }}
-        title="사전등록 폼 복제"
+        title="등록 폼 복제"
         description={duplicateTarget ? `'${duplicateTarget.name}'의 폼 항목·문구·설정을 그대로 가져와 새 폼을 만들어요.` : undefined}
         size="sm"
         footer={
