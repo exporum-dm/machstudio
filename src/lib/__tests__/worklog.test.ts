@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   blockText, buildWeeklyReport, classifyWork, orderGroupsForReport, defaultReportDate, effectiveStatus, groupDateLabel, isRoutineWork, openStatus,
-  parseBlockText, parsePastedWork, reportTable, reportWindows, resolveWorkTag, splitWorkTag, weekOf, type WorkEntryInput,
+  parseBlockText, parsePastedWork, reportTable, reportWindows, resolveWorkTag, resolveWorkTagInContext, splitWorkTag, weekOf, type WorkEntryInput,
 } from "@/lib/worklog";
 
 const entry = (patch: Partial<WorkEntryInput>): WorkEntryInput => ({
@@ -16,6 +16,14 @@ const groups = [
 // 261008 시트와 같은 보고일(목)
 const report = (entries: WorkEntryInput[], reportDate = "2026-10-08") =>
   buildWeeklyReport({ reportDate, groups, entries, authorName: (id) => names[id] ?? id });
+
+describe("일지 머리표", () => {
+  it("행사 안의 분류는 행사를 유지하고, 행사 머리표는 행사만 바꾼다", () => {
+    const current = { groupId: "la", category: "운영" };
+    expect(resolveWorkTagInContext("퍼포먼스", groups, current)).toEqual({ groupId: "la", category: "퍼포먼스" });
+    expect(resolveWorkTagInContext("STK", groups, current)).toEqual({ groupId: "stk", category: "" });
+  });
+});
 
 describe("보고일 · 기간", () => {
   it("보고일은 그 주 목요일, 전주 달성은 보고일까지 7일 · 금주 목표는 다음 7일", () => {

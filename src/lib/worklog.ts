@@ -8,8 +8,8 @@
  * 실제 보고서를 일지와 맞대 본 규칙(2026-10-18, 261001·261008 시트 ↔ DM 업무 현황):
  *  - 보고일은 목요일(금요일 주간업무회의 전날). 전주 달성 = 보고일까지 7일(d-6 ~ d),
  *    금주 목표 = 다음 7일(d+1 ~ d+7). "뉴스레터 발송(10/8)" 처럼 보고일 당일 일은 전주에 들어간다.
- *  - 일지 머리표 "[코엑]" "[교박]" "[STK]" 는 **행사**다(보고서의 줄). 보고서의 "[운영]·[콘텐츠]·
- *    [퍼포먼스]·[제작]·[기획]" 은 일지에 없다 — 쓰는 사람이 내용을 보고 나눈다. 여기서는 낱말로 나눈다.
+ *  - 일지 머리표 "[코엑]" "[교박]" "[STK]" 는 **행사**다(보고서의 줄). 각 업무에는 "운영·콘텐츠·
+ *    퍼포먼스·제작·기획" 분류를 직접 고를 수 있고, 비어 있으면 내용을 보고 자동 분류한다.
  *  - 회의·연차·전표 입력·주간업무보고 작성 같은 일상 업무는 보고서에 쓰지 않는다.
  *  - 행사 줄은 일이 없어도 다 보인다(보관한 행사는 일이 있을 때만). 맨 끝은 늘 "기타".
  *  - 같은 분류 묶음의 달성: 진행이 하나라도 있으면 진행, 전부 완료면 완료, 전부 예정이면 예정,
@@ -407,6 +407,16 @@ export function resolveWorkTag(tag: string, groups: TagGroup[]): { groupId: stri
   const g = isReportCategory(tag) ? null : matchGroup(tag, groups);
   if (g) return { groupId: g.id, category: "" };
   return { groupId: null, category: tag.trim().slice(0, 40) };
+}
+
+/** 행사 안에서 분류 머리표를 쓰면 행사는 유지하고 분류만 바꾼다. 행사 머리표면 새 행사로 바꾼다. */
+export function resolveWorkTagInContext(
+  tag: string,
+  groups: TagGroup[],
+  current: { groupId: string | null; category: string },
+): { groupId: string | null; category: string } {
+  const resolved = resolveWorkTag(tag, groups);
+  return resolved.groupId ? resolved : { ...resolved, groupId: current.groupId };
 }
 
 /** 줄 앞의 "[머리표]" 를 떼어 낸다. "[LA] - 배너 교체" → { tag: "LA", content: "배너 교체" } */

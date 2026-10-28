@@ -15,7 +15,7 @@ import { Check, ChevronDown, ChevronUp, GripVertical, Loader2, MoreHorizontal, T
 import { toast } from "sonner";
 import { FIELD_CLS, FINISH, R } from "@/components/ui/primitives";
 import {
-  WORK_CATEGORIES, kstToday, openStatus, parsePastedWork, resolveWorkTag, shiftDay, splitWorkTag, weekOf,
+  WORK_CATEGORIES, kstToday, openStatus, parsePastedWork, resolveWorkTagInContext, shiftDay, splitWorkTag, weekOf,
 } from "@/lib/worklog";
 import type { WorkEntryDto, WorkGroupDto, WorkMemberDto } from "./types";
 
@@ -79,11 +79,34 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
     setLinesState(linesRef.current);
   }, []);
   const creating = useRef(new Map<string, Promise<string | null>>());
+  const mutationTails = useRef(new Map<string, Promise<void>>());
+  const [savingKeys, setSavingKeys] = useState<Set<string>>(() => new Set());
   const dragCk = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrolledToToday = useRef(false);
 
+  const enqueueMutation = <T,>(ck: string, task: () => Promise<T>): Promise<T> => {
+    setSavingKeys((prev) => new Set(prev).add(ck));
+    const next = (mutationTails.current.get(ck) ?? Promise.resolve()).then(task, task);
+    const tail = next.then(() => undefined, () => undefined);
+    mutationTails.current.set(ck, tail);
+    void tail.finally(() => {
+      if (mutationTails.current.get(ck) !== tail) return;
+      mutationTails.current.delete(ck);
+      setSavingKeys((prev) => { const copy = new Set(prev); copy.delete(ck); return copy; });
+    });
+    return next;
+  };
+
+  useEffect(() => {
+    if (savingKeys.size === 0) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [savingKeys.size]);
+
   const groupMap = useMemo(() => new Map(groups.map((g) => [g.id, g])), [groups]);
+  const resolveLineTag = (tag: string, current: TagFields): TagFields => resolveWorkTagInContext(tag, groups, current);
   const myName = members.find((m) => m.id === me)?.name ?? "나";
 
   const fetchRange = useCallback(async (from: string, to: string, someday: boolean) => {
@@ -198,10 +221,11 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
     setLines((prev) => prev.map((l) => (l.ck === ck ? { ...entry, ck } : l)));
 
   const createOne = (line: Line) => {
-    const p = (async () => {
+    const p = enqueueMutation(line.ck, async () => {
       const res = await fetch("/api/worklog/entries", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        keepalive: true,
         body: JSON.stringify({
           workspaceId, date: line.date, common: line.common, sortOrder: line.sortOrder, groupId: line.groupId,
           category: line.category, content: line.content, status: line.status, result: line.result, note: line.note,
@@ -217,7 +241,7 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
       // 저장되는 사이 더 고쳤으면 그 값은 update 가 따로 보낸다 — 여기선 id 만 받는다.
       setLines((prev) => prev.map((l) => (l.ck === line.ck ? { ...l, id: data.entry.id, temp: false, authorName: data.entry.authorName, createdById: data.entry.createdById, createdAt: data.entry.createdAt } : l)));
       return data.entry.id as string;
-    })();
+    });
     creating.current.set(line.ck, p);
     void p.finally(() => creating.current.delete(line.ck));
     return p;
@@ -225,18 +249,21 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
 
   const update = async (ck: string, patch: Partial<WorkEntryDto>, localOnly: Partial<Line> = {}) => {
     setLines((prev) => prev.map((l) => (l.ck === ck ? { ...l, ...patch, ...localOnly } : l)));
-    const id = await idOf(ck);
-    if (!id) return;
-    const res = await fetch("/api/worklog/entries", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, ...patch }),
+    return enqueueMutation(ck, async () => {
+      const id = await idOf(ck);
+      if (!id) return;
+      const res = await fetch("/api/worklog/entries", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        keepalive: true,
+        body: JSON.stringify({ id, ...patch }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { toast.error(data.error ?? "저장하지 못했어요"); void load(); return; }
+      const current = find(ck);
+      // 그새 다시 고친 글자는 살린다 — 서버 값으로 덮는 건 글자 말고 나머지(작성자·시각).
+      if (current) replace(ck, { ...data.entry, content: current.content, status: current.status, date: current.date, common: current.common, sortOrder: current.sortOrder });
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) { toast.error(data.error ?? "저장하지 못했어요"); void load(); return; }
-    const current = find(ck);
-    // 그새 다시 고친 글자는 살린다 — 서버 값으로 덮는 건 글자 말고 나머지(작성자·시각).
-    if (current) replace(ck, { ...data.entry, content: current.content, status: current.status, date: current.date, common: current.common, sortOrder: current.sortOrder });
   };
 
   const restore = (line: Line) => {
@@ -249,14 +276,18 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
   const remove = async (ck: string, undo = true) => {
     const line = find(ck);
     if (!line) return;
+    // 화면에서 먼저 빼면 idOf()가 줄을 찾지 못한다. 지울 서버 id를 반드시 먼저 붙잡는다.
+    const savedId = line.temp ? creating.current.get(ck) ?? Promise.resolve(null) : Promise.resolve(line.id);
     setLines((prev) => prev.filter((l) => l.ck !== ck));
     const wasSaved = !line.temp || creating.current.has(ck);
     if (!wasSaved) return;
-    const id = await idOf(ck);
-    if (!id) return;
-    const res = await fetch(`/api/worklog/entries?id=${id}`, { method: "DELETE" });
-    if (!res.ok) { toast.error("지우지 못했어요"); setLines((prev) => [...prev, line]); return; }
-    if (undo) toast("줄을 지웠어요", { description: line.content, action: { label: "되돌리기", onClick: () => restore(line) } });
+    await enqueueMutation(ck, async () => {
+      const id = await savedId;
+      if (!id) return;
+      const res = await fetch(`/api/worklog/entries?id=${id}`, { method: "DELETE", keepalive: true });
+      if (!res.ok) { toast.error("지우지 못했어요"); setLines((prev) => [...prev, line]); return; }
+      if (undo) toast("줄을 지웠어요", { description: line.content, action: { label: "되돌리기", onClick: () => restore(line) } });
+    });
   };
 
   /** 칸에 빈 줄을 하나 만든다(저장은 글자가 생길 때). after 가 있으면 그 줄 바로 아래. */
@@ -295,7 +326,7 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
     const line = find(ck);
     if (!line) return;
     const { tag, content } = splitWorkTag(raw);
-    const tags = tag !== null ? resolveWorkTag(tag, groups) : null;
+    const tags = tag !== null ? resolveLineTag(tag, line) : null;
     if (!content) {
       if (line.temp && !creating.current.has(ck)) setLines((prev) => prev.filter((l) => l.ck !== ck));
       else void remove(ck);
@@ -317,7 +348,7 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
     if (!line) return;
     commit(ck, raw);
     const { tag } = splitWorkTag(raw);
-    const tags = tag !== null ? resolveWorkTag(tag, groups) : { groupId: line.groupId, category: line.category };
+    const tags = tag !== null ? resolveLineTag(tag, line) : { groupId: line.groupId, category: line.category };
     const after = find(ck);
     if (after && canCreateIn(colOf(after))) addDraft(rowOf(after), colOf(after), after, tags);
   };
@@ -382,7 +413,7 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
     const now = new Date().toISOString();
     const fallback: TagFields = { groupId: line.groupId, category: line.category };
     const drafts: Line[] = items.map((item, n) => {
-      const tags = item.tag !== null ? resolveWorkTag(item.tag, groups) : fallback;
+      const tags = item.tag !== null ? resolveLineTag(item.tag, fallback) : fallback;
       const k = tmpKey();
       return {
         ck: k, id: k, temp: true, authorId: col === COMMON ? me ?? "" : col, authorName: col === COMMON ? myName : nameOf(col), createdById: me, date, common: col === COMMON,
@@ -423,11 +454,6 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
     return true;
   };
 
-  const labelOf = (l: Line) => {
-    const g = l.groupId ? groupMap.get(l.groupId)?.name : null;
-    return [g, l.category].filter(Boolean).join(" · ");
-  };
-
   const menuLine = menu ? (lines ?? []).find((l) => l.ck === menu.ck) ?? null : null;
 
   if (lines === null) {
@@ -459,7 +485,7 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
           </div>
         </div>
         <p className="hidden text-[11px] text-muted-foreground sm:block">
-          칸을 눌러 바로 적기 · <Kbd>Enter</Kbd> 확정, 한 번 더 눌러 다음 줄 · <Kbd>Ctrl</Kbd>+<Kbd>Enter</Kbd> 또는 ● 완료(취소선) · <code className="rounded bg-secondary px-1">[LA] 할 일</code> 로 행사 지정(<button onClick={onGoGroups} className="underline">행사 관리</button>) · 줄을 끌어 다른 날로
+          {savingKeys.size ? <span className="font-medium text-violet-600 dark:text-violet-400">저장 중…</span> : "Enter로 자동 저장"} · 한 번 더 눌러 다음 줄 · <Kbd>Ctrl</Kbd>+<Kbd>Enter</Kbd> 또는 ● 완료 · <code className="rounded bg-secondary px-1">[LA] 할 일</code> 로 행사 지정(<button onClick={onGoGroups} className="underline">행사 관리</button>)
         </p>
       </div>
 
@@ -552,8 +578,8 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
           ${dropKey === key ? "bg-violet-500/10 ring-1 ring-inset ring-violet-500/40" : ""} ${creatable ? "cursor-text" : ""}`}
       >
         {list.map((l, i) => {
-          const label = labelOf(l);
-          const prevLabel = i > 0 ? labelOf(list[i - 1]) : "";
+          const label = l.groupId ? groupMap.get(l.groupId)?.name ?? "" : "";
+          const prevLabel = i > 0 && list[i - 1].groupId ? groupMap.get(list[i - 1].groupId!)?.name ?? "" : "";
           const header = label !== prevLabel ? label || "기타" : null;
           return (
             <LineRow
@@ -566,7 +592,9 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
               focus={focus?.ck === l.ck ? focus : null}
               onFocused={() => setFocus(null)}
               onCommit={(v) => commit(l.ck, v)}
+              onCategory={(category) => void update(l.ck, { category })}
               onEnter={(v) => onEnter(l.ck, v)}
+              saving={savingKeys.has(l.ck)}
               onToggle={() => toggleDone(l.ck)}
               onBackspaceEmpty={() => backspaceEmpty(l.ck)}
               onArrow={(dir) => neighbor(l.ck, dir)}
@@ -611,7 +639,7 @@ function RowHead({ day, today }: { day: string; today: string }) {
 }
 
 function LineRow({
-  line, header, editable, showAuthor, byline, focus, onFocused, onCommit, onEnter, onToggle, onBackspaceEmpty, onArrow, onPaste, onMenu, onDragStart, onDragEnd,
+  line, header, editable, showAuthor, byline, focus, saving, onFocused, onCommit, onCategory, onEnter, onToggle, onBackspaceEmpty, onArrow, onPaste, onMenu, onDragStart, onDragEnd,
 }: {
   byline?: string | null;
   line: Line;
@@ -619,8 +647,10 @@ function LineRow({
   editable: boolean;
   showAuthor: boolean;
   focus: Focus;
+  saving: boolean;
   onFocused: () => void;
   onCommit: (v: string) => void;
+  onCategory: (category: string) => void;
   onEnter: (v: string) => void;
   onToggle: () => void;
   onBackspaceEmpty: () => void;
@@ -708,27 +738,55 @@ function LineRow({
           {done && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
         </button>
         <div className="min-w-0 flex-1">
-          {editable ? (
-            <textarea
-              ref={ref}
-              rows={1}
-              value={value}
-              onFocus={() => { committedValue.current = null; setDraft(line.content); }}
-              onChange={(e) => { committedValue.current = null; setDraft(e.target.value); }}
-              onBlur={(e) => { committedValue.current = null; onCommit(e.target.value); setDraft(null); }}
-              onKeyDown={onKeyDown}
-              onPaste={(e) => {
-                const text = e.clipboardData.getData("text/plain");
-                if (onPaste(text, e.currentTarget.value)) { e.preventDefault(); setDraft(null); }
-              }}
-              placeholder="할 일"
-              className={`block w-full resize-none overflow-hidden bg-transparent text-[13px] leading-5 outline-none placeholder:text-muted-foreground/40 ${
-                done ? "text-muted-foreground line-through decoration-foreground/40" : ""
-              }`}
-            />
-          ) : (
-            <div className={`whitespace-pre-wrap break-words text-[13px] leading-5 ${done ? "text-muted-foreground line-through decoration-foreground/40" : ""}`}>{line.content}</div>
-          )}
+          <div className="flex min-w-0 items-start gap-1">
+            {editable ? (
+              <select
+                value={line.category}
+                onMouseDown={(e) => e.stopPropagation()}
+                onChange={(e) => onCategory(e.target.value)}
+                aria-label="업무 분류"
+                className="mt-px h-[19px] max-w-[82px] shrink-0 rounded-md bg-secondary/80 px-1 text-[10px] font-medium text-muted-foreground shadow-sm outline-none transition focus:ring-2 focus:ring-violet-400"
+              >
+                <option value="">분류</option>
+                {line.category && !WORK_CATEGORIES.includes(line.category as typeof WORK_CATEGORIES[number]) && <option value={line.category}>{line.category}</option>}
+                {WORK_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+              </select>
+            ) : line.category ? (
+              <span className="mt-px shrink-0 rounded-md bg-secondary/80 px-1.5 text-[10px] font-medium leading-[19px] text-muted-foreground">{line.category}</span>
+            ) : null}
+            {editable ? (
+              <textarea
+                ref={ref}
+                rows={1}
+                value={value}
+                onFocus={() => { committedValue.current = null; setDraft(line.content); }}
+                onChange={(e) => { committedValue.current = null; setDraft(e.target.value); }}
+                onBlur={(e) => { committedValue.current = null; onCommit(e.target.value); setDraft(null); }}
+                onKeyDown={onKeyDown}
+                onPaste={(e) => {
+                  const text = e.clipboardData.getData("text/plain");
+                  if (onPaste(text, e.currentTarget.value)) { e.preventDefault(); setDraft(null); }
+                }}
+                placeholder="할 일"
+                className={`block min-w-0 flex-1 resize-none overflow-hidden bg-transparent text-[13px] leading-5 outline-none placeholder:text-muted-foreground/40 ${
+                  done ? "text-muted-foreground line-through decoration-foreground/40" : ""
+                }`}
+              />
+            ) : (
+              <div className={`min-w-0 flex-1 whitespace-pre-wrap break-words text-[13px] leading-5 ${done ? "text-muted-foreground line-through decoration-foreground/40" : ""}`}>{line.content}</div>
+            )}
+            {editable && (
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => { if (ref.current) onCommit(ref.current.value); }}
+                disabled={saving || !value.trim()}
+                className="mt-px h-[19px] shrink-0 rounded-md bg-foreground px-1.5 text-[10px] font-semibold text-background shadow-sm transition hover:opacity-80 focus-visible:ring-2 focus-visible:ring-violet-400 disabled:bg-secondary disabled:text-muted-foreground"
+              >
+                {saving ? "저장 중" : "저장"}
+              </button>
+            )}
+          </div>
           {(line.result || line.note) && (
             <div className="truncate text-[11px] leading-4 text-muted-foreground">
               {line.result && <span>↳ {line.result}</span>}
