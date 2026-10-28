@@ -30,9 +30,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (source.mode !== "builder") return NextResponse.json({ error: "빌더형 등록에서만 볼 수 있어요" }, { status: 400 });
 
   const config = normalizeCollectForm(source.formConfig);
-  const { fields, companionKey, visitDateKey, regionKey } = pickAnalysisFields(collectColumnsFor(source));
+  const { fields, companionKey, visitDateKey, regionKey, textFields } = pickAnalysisFields(collectColumnsFor(source));
 
-  const keys = Array.from(new Set([...fields.map((f) => f.key), companionKey, visitDateKey, regionKey].filter((k): k is string => Boolean(k))));
+  const keys = Array.from(new Set([...fields.map((f) => f.key), ...textFields.map((t) => t.key), companionKey, visitDateKey, regionKey].filter((k): k is string => Boolean(k))));
   const [records, checkIns] = await Promise.all([
     prisma.$queryRaw<{ id: string; registrationNo: string | null; createdAt: Date; utm: string | null; d: Record<string, unknown> | null }[]>(Prisma.sql`
       SELECT id, "registrationNo", "createdAt",
@@ -47,6 +47,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const groupKeys = new Map(config.branch.enabled ? config.branch.groups.map((g) => [g.value.trim(), new Set(g.fields.map((gf) => gf.key))]) : []);
   const branchOnly = new Set([...groupKeys.values()].flatMap((set) => [...set]));
   const commonFields = fields.filter((f) => !branchOnly.has(f.key));
+  const commonText = textFields.filter((t) => !branchOnly.has(t.key));
 
   const all = records.map((r) => ({ id: r.id, registrationNo: r.registrationNo, createdAt: r.createdAt, data: r.d ?? {}, utmSource: r.utm }));
   const base: Omit<AnalysisInput, "fields" | "records" | "checkIns"> = {
@@ -57,7 +58,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     visitDateKey,
     regionKey,
   };
-  const analysis = buildRegistrationAnalysis({ ...base, fields: commonFields, records: all, checkIns });
+  const analysis = buildRegistrationAnalysis({ ...base, fields: commonFields, textFields: commonText, records: all, checkIns });
 
   let audiences: { value: string; analysis: ReturnType<typeof buildRegistrationAnalysis> }[] = [];
   if (audienceKey) {
@@ -81,6 +82,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
           ...base,
           // 유형 안에서는 유형 문항 자체는 뺀다(100% 한 값) — 그 유형의 분기 문항을 더한다
           fields: [...commonFields.filter((f) => f.key !== audienceKey), ...fields.filter((f) => own?.has(f.key))],
+          textFields: [...commonText, ...textFields.filter((t) => own?.has(t.key))],
           records: recs,
           checkIns: checkIns.filter((c) => ids.has(c.recordId)),
         }),

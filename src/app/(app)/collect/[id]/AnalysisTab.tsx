@@ -11,7 +11,7 @@
  *
  * 동반 인원은 **방문자 수에만** 더한다(인구통계는 모른다). 색: 사전등록 = series-1, 현장등록 = series-2(고정 — 순위로 바꾸지 않는다).
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Download, Info, Lightbulb, Loader2, RefreshCw } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
@@ -136,6 +136,131 @@ function AudienceCompare({ rows, colors, onPick }: { rows: AudienceRow[]; colors
 
 type SegView = "visitors" | "prePost";
 
+type QColors = { pre: string; onsite: string; reg: string; grid: string; axis: string };
+const shortLabel = (v: string, max = 26) => (v.length > max ? `${v.slice(0, max - 1)}…` : v);
+
+/** 질문 하나 = 카드 하나. 가로 막대(값마다 두 줄) + 표로 보기. 같은 축(0~최대 비중)이라 막대 길이를 바로 비교할 수 있다. */
+function QuestionCard({ seg, view, colors }: { seg: Segment; view: SegView; colors: QColors }) {
+  const visitorsPre = seg.rows.reduce((x, r) => x + r.preVisited, 0);
+  const visitorsOnsite = seg.rows.reduce((x, r) => x + r.onsiteVisited, 0);
+  const data = seg.rows.map((r) => {
+    const reg = seg.answered ? r.regs / seg.answered : 0;
+    const vis = seg.visitorsAnswered ? r.visited / seg.visitorsAnswered : 0;
+    const pre = visitorsPre ? r.preVisited / visitorsPre : 0;
+    const onsite = visitorsOnsite ? r.onsiteVisited / visitorsOnsite : 0;
+    return {
+      name: r.value,
+      a: Math.round((view === "visitors" ? reg : pre) * 1000) / 10,
+      b: Math.round((view === "visitors" ? vis : onsite) * 1000) / 10,
+      row: r,
+    };
+  });
+  const base = seg.answered ? seg.visitorsAnswered / seg.answered : 0;
+  const top = [...seg.rows].filter((r) => r.regs >= 30).sort((x, y) => y.rate - x.rate)[0];
+  const height = Math.max(120, data.length * 38 + 28);
+  return (
+    <Card>
+      <div className="mb-2 min-w-0">
+        <h4 className="line-clamp-2 text-sm font-medium leading-snug" title={seg.label}>{seg.label}</h4>
+        <p className="mt-0.5 text-[11px] text-muted-foreground tabular-nums">
+          {seg.kind === "multi" ? "복수 선택 · " : ""}응답 {n(seg.answered)}명 · 방문 {n(seg.visitorsAnswered)}명 · 평균 방문율 {pct(base)}
+          {top && view === "visitors" && <> · 방문율 최고 <b className="text-foreground">{shortLabel(top.value, 18)}</b> {pct(top.rate)}</>}
+        </p>
+      </div>
+      <div style={{ height }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} layout="vertical" margin={{ top: 0, right: 36, left: 0, bottom: 0 }} barGap={2} barCategoryGap="22%">
+            <CartesianGrid strokeDasharray="3 3" stroke={colors.grid} horizontal={false} />
+            <XAxis type="number" tick={{ fontSize: 10, fill: colors.axis }} tickLine={false} axisLine={false} unit="%" />
+            <YAxis type="category" dataKey="name" width={128} tick={{ fontSize: 11, fill: colors.axis }} tickLine={false} axisLine={false} tickFormatter={(v: string) => shortLabel(v, 20)} />
+            <Tooltip
+              cursor={{ fill: colors.grid, fillOpacity: 0.35 }}
+              content={({ active, payload }) => {
+                if (!active || !payload?.length) return null;
+                const p = payload[0].payload as (typeof data)[number];
+                return (
+                  <div className={`max-w-[280px] ${R.control} ${FINISH.overlay} bg-popover px-3 py-2 text-xs`}>
+                    <p className="mb-1 font-medium">{p.name}</p>
+                    {view === "visitors" ? (
+                      <>
+                        <p className="tabular-nums">등록자 {n(p.row.regs)}명 ({p.a}%) → 방문 {n(p.row.visited)}명 ({p.b}%)</p>
+                        <p className="tabular-nums text-muted-foreground">방문율 {pct(p.row.rate)} (평균 {pct(base)})</p>
+                      </>
+                    ) : (
+                      <p className="tabular-nums">사전 방문 {n(p.row.preVisited)}명 ({p.a}%) · 현장 방문 {n(p.row.onsiteVisited)}명 ({p.b}%)</p>
+                    )}
+                  </div>
+                );
+              }}
+            />
+            <Bar dataKey="a" name={view === "visitors" ? "등록자 비중" : "사전등록 방문자"} fill={view === "visitors" ? colors.reg : colors.pre} radius={[0, 4, 4, 0]} maxBarSize={12} />
+            <Bar dataKey="b" name={view === "visitors" ? "방문자 비중" : "현장등록 방문자"} fill={view === "visitors" ? colors.pre : colors.onsite} radius={[0, 4, 4, 0]} maxBarSize={12} label={{ position: "right", fontSize: 10, fill: colors.axis, formatter: (v: unknown) => `${v}%` }} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      <details className="mt-2">
+        <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground">표로 보기 (인원·방문율)</summary>
+        <div className="mt-2"><SegmentTable seg={seg} view={view} colors={colors} /></div>
+      </details>
+    </Card>
+  );
+}
+
+/** 동반 자녀 수 — 방문자(사람)마다. 방문자 수에만 더하는 값이라 인구통계 카드와 따로 둔다. */
+function CompanionCard({ dist, total, color, muted, grid, axis }: { dist: { bucket: string; visitors: number }[]; total: number; color: string; muted: string; grid: string; axis: string }) {
+  const answered = dist.filter((d) => d.bucket !== "미응답").reduce((x, d) => x + d.visitors, 0);
+  const withKids = dist.filter((d) => d.bucket !== "0" && d.bucket !== "미응답").reduce((x, d) => x + d.visitors, 0);
+  return (
+    <Card>
+      <div className="mb-2">
+        <h4 className="text-sm font-medium">동반 자녀 수 (방문자 기준)</h4>
+        <p className="mt-0.5 text-[11px] text-muted-foreground tabular-nums">
+          답한 방문자 {n(answered)}명 중 {n(withKids)}명({pct(answered ? withKids / answered : 0)})이 아이를 데려왔어요 · 동반 합계 {n(total)}명
+        </p>
+      </div>
+      <div className="h-48">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={dist.map((d) => ({ ...d, label: d.bucket === "미응답" ? "미응답" : `${d.bucket}명` }))} margin={{ top: 16, right: 8, left: -16, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={grid} vertical={false} />
+            <XAxis dataKey="label" tick={{ fontSize: 11, fill: axis }} tickLine={false} axisLine={false} />
+            <YAxis tick={{ fontSize: 10, fill: axis }} tickLine={false} axisLine={false} />
+            <Tooltip content={<ChartTip />} cursor={{ fill: grid, fillOpacity: 0.35 }} />
+            <Bar dataKey="visitors" name="방문자" radius={[4, 4, 0, 0]} maxBarSize={40} label={{ position: "top", fontSize: 10, fill: axis }}
+              shape={(props: unknown) => {
+                const p = props as { x: number; y: number; width: number; height: number; payload: { bucket: string } };
+                return <rect x={p.x} y={p.y} width={p.width} height={p.height} rx={4} fill={p.payload.bucket === "미응답" ? muted : color} />;
+              }}
+            />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </Card>
+  );
+}
+
+/** 주관식 — 많이 나온 답 순위. 막대는 등록자 수, 오른쪽에 방문 수·방문율. */
+function TextTopCard({ t, color }: { t: RegistrationAnalysis["textTops"][number]; color: string }) {
+  const max = Math.max(...t.rows.map((r) => r.regs), 1);
+  return (
+    <Card>
+      <h4 className="line-clamp-2 text-sm font-medium leading-snug" title={t.label}>{t.label}</h4>
+      <p className="mt-0.5 text-[11px] text-muted-foreground tabular-nums">답한 사람 {n(t.answered)}명 · 방문 {n(t.visitorsAnswered)}명</p>
+      <ol className="mt-3 space-y-1.5 text-xs">
+        {t.rows.map((r, i) => (
+          <li key={r.value} className="grid grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-2">
+            <span className="text-right tabular-nums text-muted-foreground">{i + 1}</span>
+            <div className="min-w-0">
+              <p className="truncate" title={r.value}>{r.value}</p>
+              <ShareBar value={r.regs} max={max} color={color} />
+            </div>
+            <span className="text-right tabular-nums text-muted-foreground"><b className="text-foreground">{n(r.regs)}</b> · 방문 {n(r.visited)} ({pct(r.regs ? r.visited / r.regs : 0, 0)})</span>
+          </li>
+        ))}
+      </ol>
+    </Card>
+  );
+}
+
 function SegmentTable({ seg, view, colors }: { seg: Segment; view: SegView; colors: { pre: string; onsite: string; reg: string } }) {
   const visitorsPre = seg.rows.reduce((a, r) => a + r.preVisited, 0);
   const visitorsOnsite = seg.rows.reduce((a, r) => a + r.onsiteVisited, 0);
@@ -217,7 +342,6 @@ export default function AnalysisTab({ sourceId }: { sourceId: string }) {
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [segKey, setSegKey] = useState<string>("");
   const [segView, setSegView] = useState<SegView>("visitors");
   // "" = 전체
   const [audience, setAudience] = useState("");
@@ -253,7 +377,6 @@ export default function AnalysisTab({ sourceId }: { sourceId: string }) {
   const seriesPre = colors.series[0];
   const seriesOnsite = colors.series[1];
   const dayColors = colors.series;
-  const activeSeg = useMemo(() => (a ? a.segments.find((s) => s.key === segKey) ?? a.segments[0] : undefined), [a, segKey]);
 
   // 시간대별(일자 = 선) — 한 행에 시(hour), 열에 날짜
   const hourly = useCallback((rows: { date: string; hour: number; n: number }[]) => {
@@ -554,46 +677,73 @@ export default function AnalysisTab({ sourceId }: { sourceId: string }) {
         </div>
       )}
 
-      {/* 누가 왔나 */}
-      {!noVisits && activeSeg && (
-        <Card>
-          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-            <SectionTitle title="누가 왔나 — 문항별 분포" hint="등록자 전체와 실제 방문자를 비교해요. 동반 자녀는 응답이 없어 여기 들어가지 않아요." />
-            <Segmented<SegView>
-              label="비교 방식"
-              value={segView}
-              onChange={setSegView}
-              options={[{ value: "visitors", label: "등록자 vs 방문자" }, { value: "prePost", label: "방문자: 사전 vs 현장" }]}
-            />
+      {/* 질문별 응답 — 물어본 항목마다 그래프 */}
+      {!noVisits && a.segments.length > 0 && (
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold">질문별 응답</h3>
+              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                등록 폼에서 물어본 항목마다 등록자와 실제 방문자의 분포를 비교해요. 동반 자녀는 응답이 없어 여기 들어가지 않아요.
+              </p>
+            </div>
+            <div className="flex flex-col items-end gap-1.5">
+              <Segmented<SegView>
+                label="비교 방식"
+                value={segView}
+                onChange={setSegView}
+                options={[{ value: "visitors", label: "등록자 vs 방문자" }, { value: "prePost", label: "방문자: 사전 vs 현장" }]}
+              />
+              <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+                {segView === "visitors" ? (
+                  <>
+                    <span className="flex items-center gap-1"><span className="inline-block h-2 w-3 rounded-sm" style={{ background: colors.chat }} />등록자 비중</span>
+                    <span className="flex items-center gap-1"><span className="inline-block h-2 w-3 rounded-sm" style={{ background: seriesPre }} />방문자 비중</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="flex items-center gap-1"><span className="inline-block h-2 w-3 rounded-sm" style={{ background: seriesPre }} />사전등록 방문자</span>
+                    <span className="flex items-center gap-1"><span className="inline-block h-2 w-3 rounded-sm" style={{ background: seriesOnsite }} />현장등록 방문자</span>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
-          <div className="mb-3 flex flex-wrap gap-1.5">
-            {a.segments.map((s) => (
-              <button
-                key={s.key}
-                type="button"
-                onClick={() => setSegKey(s.key)}
-                className={`max-w-[260px] truncate px-2.5 py-1 text-xs transition-colors ${R.control} ${activeSeg.key === s.key ? `bg-violet-500/10 text-violet-700 dark:text-violet-300 ${FINISH.s2Key}` : "bg-secondary text-muted-foreground hover:text-foreground"}`}
-                title={s.label}
-              >
-                {s.label}
-              </button>
+          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+            {a.segments.filter((sg) => !sg.key.startsWith("__")).map((sg) => (
+              <QuestionCard key={sg.key} seg={sg} view={segView} colors={{ pre: seriesPre, onsite: seriesOnsite, reg: colors.chat, grid: colors.grid, axis: colors.axis }} />
             ))}
-          </div>
-          <div className="mb-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
-            {segView === "visitors" ? (
-              <>
-                <span className="flex items-center gap-1"><span className="inline-block h-2 w-3 rounded-sm" style={{ background: colors.chat }} />등록자 비중</span>
-                <span className="flex items-center gap-1"><span className="inline-block h-2 w-3 rounded-sm" style={{ background: seriesPre }} />방문자 비중</span>
-              </>
-            ) : (
-              <>
-                <span className="flex items-center gap-1"><span className="inline-block h-2 w-3 rounded-sm" style={{ background: seriesPre }} />사전등록 방문자</span>
-                <span className="flex items-center gap-1"><span className="inline-block h-2 w-3 rounded-sm" style={{ background: seriesOnsite }} />현장등록 방문자</span>
-              </>
+            {a.companionDist.length > 0 && (
+              <CompanionCard dist={a.companionDist} total={k.visitors.companionsUnique} color={seriesPre} muted={colors.chat} grid={colors.grid} axis={colors.axis} />
             )}
           </div>
-          <SegmentTable seg={activeSeg} view={segView} colors={{ pre: seriesPre, onsite: seriesOnsite, reg: colors.chat }} />
-        </Card>
+
+          {a.textTops.length > 0 && (
+            <>
+              <div className="pt-2">
+                <h3 className="text-sm font-semibold">주관식 — 많이 나온 답</h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">같은 답(대소문자·띄어쓰기 차이는 묶음)이 2명 이상인 것만, 많은 순으로 10개. None·N/A 같은 빈 답은 뺐어요. 이름·연락처·링크는 보여 주지 않아요.</p>
+              </div>
+              <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+                {a.textTops.map((t) => <TextTopCard key={t.key} t={t} color={seriesPre} />)}
+              </div>
+            </>
+          )}
+
+          {a.segments.some((sg) => sg.key.startsWith("__")) && (
+            <>
+              <div className="pt-2">
+                <h3 className="text-sm font-semibold">유입 경로·지역</h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">폼 질문은 아니지만 함께 보면 좋은 것 — UTM 최초 유입 소스와 주소에서 추정한 도시예요.</p>
+              </div>
+              <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+                {a.segments.filter((sg) => sg.key.startsWith("__")).map((sg) => (
+                  <QuestionCard key={sg.key} seg={sg} view={segView} colors={{ pre: seriesPre, onsite: seriesOnsite, reg: colors.chat, grid: colors.grid, axis: colors.axis }} />
+                ))}
+              </div>
+            </>
+          )}
+        </section>
       )}
 
       {/* 용어·데이터 품질 */}

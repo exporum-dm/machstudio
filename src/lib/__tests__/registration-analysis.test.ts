@@ -155,3 +155,24 @@ describe("audienceInsights", () => {
     expect(out.some((i) => i.title.startsWith("Press는 등록의"))).toBe(true);
   });
 });
+
+describe("text answers and companion distribution", () => {
+  const recs: AnalysisRecord[] = ["Owner", "owner ", "CEO", "None", "N/A", "Owner", "ceo"].map((v, i) => ({
+    id: `t${i}`, registrationNo: null, createdAt: new Date("2026-10-01T18:00:00Z"), data: { job: v, companions: ["0", "2", "", "5", "1", "0", "x"][i] }, utmSource: null,
+  }));
+  const a = buildRegistrationAnalysis({
+    timezone: "America/Los_Angeles", eventDates: ["2026-10-22"], fields: [], companionKey: "companions", visitDateKey: null, regionKey: null,
+    textFields: [{ key: "job", label: "Job title" }, { key: "lonely", label: "Unique answers only" }],
+    records: recs,
+    checkIns: recs.slice(0, 4).map((r) => ({ recordId: r.id, eventDate: "2026-10-22", scannedAt: new Date("2026-10-22T18:00:00Z") })),
+  });
+  it("groups case/space variants, drops empty-like answers, keeps only repeated answers", () => {
+    expect(a.textTops).toHaveLength(1);
+    expect(a.textTops[0]).toMatchObject({ key: "job", answered: 5, rows: [{ value: "Owner", regs: 3, visited: 2 }, { value: "CEO", regs: 2, visited: 1 }] });
+  });
+  it("buckets visitors by companion count", () => {
+    expect(a.companionDist).toEqual([
+      { bucket: "0", visitors: 1 }, { bucket: "1", visitors: 0 }, { bucket: "2", visitors: 1 }, { bucket: "3", visitors: 0 }, { bucket: "4+", visitors: 1 }, { bucket: "미응답", visitors: 1 },
+    ]);
+  });
+});

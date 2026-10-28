@@ -39,7 +39,8 @@ function fixture() {
         gender: pick(["Female", "Male", "Other"], [78, 21, 1]),
         age: pick(["16~24", "25~34", "35~44", "45~54", "55~64", "Aged 65 and older"], [13, 32, 26, 17, 8, 4]),
         visitor_type: type,
-        ...(type === "Buyer" ? { buyer_company_type: pick(["Importer", "Distributor", "Retail", "E-commerce"]) } : {}),
+        general_company_name: pick(["None", "Student", "Amazon", "student", "Self-employed", "UCLA", "", "Kaiser Permanente"], [30, 10, 3, 4, 6, 3, 30, 2]),
+        ...(type === "Buyer" ? { buyer_company_type: pick(["Importer", "Distributor", "Retail", "E-commerce"]), buyer_job_title: pick(["Owner", "CEO", "owner", "Manager", "Buyer"]) } : {}),
         interest: ["K-Beauty", "K-Food", "K-Lifestyle", "K-Content"].filter(() => rnd() < 0.5),
         hearing: pick(["Social Media", "Recommendation from friends / colleagues", "Online Ads", "Others"], [76, 13, 5, 6]),
         companions: pick(["0", "", "1", "2", "3", "None", "14"], [50, 33, 9, 5, 1.5, 1, 0.05]),
@@ -64,13 +65,13 @@ function fixture() {
       { key: "interest", label: "Fields of interest", kind: "multi", options: ["K-Beauty", "K-Content", "K-Food", "K-Lifestyle"] },
       { key: "visitor_type", label: "Visitor type", kind: "single", options: ["General", "Buyer", "Press"] },
   ];
-  const base = { timezone: "America/Los_Angeles", eventDates: days, companionKey: "companions", visitDateKey: "visit_date", regionKey: "address" };
+  const base = { timezone: "America/Los_Angeles", eventDates: days, companionKey: "companions", visitDateKey: "visit_date", regionKey: "address", textFields: [{ key: "general_company_name", label: "Company name" }] };
   const analysis = buildRegistrationAnalysis({ ...base, fields: common, records, checkIns });
   const audiences = ["General", "Buyer", "Press"].map((value) => {
     const recs = records.filter((r) => r.data.visitor_type === value);
     const ids = new Set(recs.map((r) => r.id));
     const extra: AnalysisInput["fields"] = value === "Buyer" ? [{ key: "buyer_company_type", label: "Company type", kind: "single", options: ["Importer", "Distributor", "Retail", "E-commerce"] }] : [];
-    return { value, analysis: buildRegistrationAnalysis({ ...base, fields: [...common.filter((x) => x.key !== "visitor_type"), ...extra], records: recs, checkIns: checkIns.filter((c) => ids.has(c.recordId)) }) };
+    return { value, analysis: buildRegistrationAnalysis({ ...base, fields: [...common.filter((x) => x.key !== "visitor_type"), ...extra], textFields: value === "Buyer" ? [{ key: "buyer_job_title", label: "Job title" }] : base.textFields, records: recs, checkIns: checkIns.filter((c) => ids.has(c.recordId)) }) };
   });
   const audienceRows = summarizeAudiences(audiences);
   analysis.insights.splice(2, 0, ...audienceInsights(audienceRows, "Visitor type"));
