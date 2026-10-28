@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  checkinTimezoneLabel,
+  csvDateTimeIn,
   SAME_CODE_COOLDOWN_MS,
   checkinSlugError,
   normalizeCheckinSlug,
@@ -124,5 +126,13 @@ describe("회사 칸 찾기", () => {
   it("한국어 라벨도 알아본다", () => {
     const ko = normalizeCollectForm({ fields: [{ key: "f3", type: "text", label: { ko: "소속" } }] });
     expect(pickCompany(ko, { f3: "코리아엑스포" })).toBe("코리아엑스포");
+  });
+});
+
+describe("csvDateTimeIn", () => {
+  it("writes the scan time in the event's timezone for spreadsheets", () => {
+    expect(csvDateTimeIn("America/Los_Angeles", "2026-10-22T16:32:49Z")).toBe("2026-10-22 09:32:49");
+    expect(csvDateTimeIn("Asia/Seoul", "2026-10-22T16:32:49Z")).toBe("2026-10-23 01:32:49");
+    expect(checkinTimezoneLabel("America/Los_Angeles")).toBe("로스앤젤레스 (PT)");
   });
 });

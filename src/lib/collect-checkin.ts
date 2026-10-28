@@ -69,6 +69,22 @@ export function dateTimeIn(timezone: string, at: Date | string): string {
   return `${md} ${timeIn(timezone, d)}`;
 }
 
+/** CSV 용 "2026-10-22 09:32:49" — 그 시간대 기준. 엑셀이 날짜로 읽는 모양. */
+export function csvDateTimeIn(timezone: string, at: Date | string): string {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: normalizeCheckinTimezone(timezone),
+      hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+    }).formatToParts(new Date(at)).map((x) => [x.type, x.value]),
+  );
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}`;
+}
+
+/** CSV 머리글에 붙일 시간대 이름 — "로스앤젤레스 (PT)" */
+export function checkinTimezoneLabel(timezone: string): string {
+  return CHECKIN_TIMEZONES.find((t) => t.value === timezone)?.label ?? "서울 (KST)";
+}
+
 /**
  * 운영요원 링크 끝부분(/checkin/{slug}) — 운영자가 직접 정한다(예: "la2026").
  *

@@ -37,7 +37,7 @@ import GdprModal from "./GdprModal";
 import RetentionPolicyEditor from "./RetentionPolicyEditor";
 import DateRangeField from "@/components/DateRangeField";
 import { formatKst, formatKstDateTime } from "@/lib/datetime";
-import { dateTimeIn } from "@/lib/collect-checkin";
+import { checkinTimezoneLabel, csvDateTimeIn, dateTimeIn } from "@/lib/collect-checkin";
 import { formatCollectValue } from "@/lib/collect-columns";
 
 const spring = { type: "spring", stiffness: 420, damping: 30 } as const;
@@ -820,9 +820,11 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
       };
       // 빌더형은 전체 CSV 와 같은 등록번호·입장 열을 붙인다 — "입장" 필터로 방문자 명단을 받는 게 주 용도.
       const builderCols = source.mode === "builder";
+      const tz = source.checkinTimezone ?? "Asia/Seoul";
+      const tzLabel = checkinTimezoneLabel(tz);
       const headers = [
         "시간 (KST)",
-        ...(builderCols ? ["등록번호", "최초 입장 (KST)", "입장 스캔 횟수", "방문일 (현지)", "방문 일수"] : []),
+        ...(builderCols ? ["등록번호", `최초 입장 (${tzLabel})`, `마지막 입장 (${tzLabel})`, "입장 스캔 횟수", "방문일 (현지)", "방문 일수"] : []),
         ...source.fieldMappings.map((f) => f.label || f.key),
         "UTM 소스", "UTM 매체", "UTM 캠페인", "UTM 키워드", "UTM 콘텐츠", "Referrer",
       ];
@@ -831,7 +833,8 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
         ...(builderCols
           ? [
               r.registrationNo ?? "",
-              r.checkIn ? formatKstDateTime(r.checkIn.firstAt) : "",
+              r.checkIn ? csvDateTimeIn(tz, r.checkIn.firstAt) : "",
+              r.checkIn ? csvDateTimeIn(tz, r.checkIn.lastAt) : "",
               r.checkIn?.count ?? "",
               r.checkIn?.days?.join(", ") ?? "",
               r.checkIn?.days?.length ?? "",

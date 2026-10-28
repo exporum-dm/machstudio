@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { collectColumnsFor, formatCollectValue, isBuilderSource } from "@/lib/collect-columns";
 import { formatKstDateTime, kstDateString } from "@/lib/datetime";
 import { logActivity } from "@/lib/activity";
+import { checkinTimezoneLabel, csvDateTimeIn } from "@/lib/collect-checkin";
 
 function csvEscape(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -46,18 +47,20 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   // 현장 체크인 — 빌더형에만. 최초 입장(행사 시간대 기준 표기는 화면 몫, CSV 는 KST 로 통일)·스캔 횟수.
   const checkIns = builder
-    ? await prisma.collectCheckIn.groupBy({ by: ["recordId"], where: { sourceId: id }, _min: { scannedAt: true }, _count: { _all: true } })
+    ? await prisma.collectCheckIn.groupBy({ by: ["recordId"], where: { sourceId: id }, _min: { scannedAt: true }, _max: { scannedAt: true }, _count: { _all: true } })
     : [];
   const checkInDays = builder
     ? await prisma.collectCheckIn.groupBy({ by: ["recordId", "eventDate"], where: { sourceId: id }, orderBy: { eventDate: "asc" } })
     : [];
   const daysById = new Map<string, string[]>();
   for (const d of checkInDays) daysById.set(d.recordId, [...(daysById.get(d.recordId) ?? []), d.eventDate]);
-  const ciById = new Map(checkIns.map((c) => [c.recordId, { firstAt: c._min.scannedAt, count: c._count._all, days: daysById.get(c.recordId) ?? [] }]));
+  const ciById = new Map(checkIns.map((c) => [c.recordId, { firstAt: c._min.scannedAt, lastAt: c._max.scannedAt, count: c._count._all, days: daysById.get(c.recordId) ?? [] }]));
 
+  // 입장 시각은 체크인 시간대(행사 현지) — KST 로 찍으면 LA 오후 입장이 다음 날로 보인다.
+  const tzLabel = checkinTimezoneLabel(source.checkinTimezone);
   const headers = [
     "시간 (KST)",
-    ...(builder ? ["등록번호", "최초 입장 (KST)", "입장 스캔 횟수", "방문일 (현지)", "방문 일수"] : []),
+    ...(builder ? ["등록번호", `최초 입장 (${tzLabel})`, `마지막 입장 (${tzLabel})`, "입장 스캔 횟수", "방문일 (현지)", "방문 일수"] : []),
     ...columns.map((f) => f.label || f.key),
     "UTM 소스 (last)", "UTM 매체 (last)", "UTM 캠페인 (last)", "UTM 키워드 (last)", "UTM 콘텐츠 (last)",
     "First UTM 소스", "First UTM 매체", "First UTM 캠페인", "First UTM 키워드", "First UTM 콘텐츠",
@@ -72,7 +75,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       ...(builder
         ? [
             r.registrationNo ?? "",
-            ciById.get(r.id)?.firstAt ? formatKstDateTime(ciById.get(r.id)!.firstAt!) : "",
+            ciById.get(r.id)?.firstAt ? csvDateTimeIn(source.checkinTimezone, ciById.get(r.id)!.firstAt!) : "",
+            ciById.get(r.id)?.lastAt ? csvDateTimeIn(source.checkinTimezone, ciById.get(r.id)!.lastAt!) : "",
             ciById.get(r.id)?.count ?? "",
             ciById.get(r.id)?.days.join(", ") ?? "",
             ciById.get(r.id)?.days.length ?? "",
