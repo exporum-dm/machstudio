@@ -50,6 +50,8 @@ export interface AnalysisInput {
   companionKey: string | null;
   visitDateKey: string | null;
   regionKey: string | null;
+  /** 주관식(자유 입력) 문항 — 많이 나온 답만 보여 준다 */
+  textFields?: { key: string; label: string }[];
   records: AnalysisRecord[];
   checkIns: AnalysisCheckIn[];
 }
@@ -118,6 +120,10 @@ export interface RegistrationAnalysis {
     matchRate: number;
     visitorsWithPlan: number;
   } | null;
+  /** 주관식 문항별 많이 나온 답(2명 이상 같은 답) — 표기 차이(대소문자·공백)는 묶는다 */
+  textTops: { key: string; label: string; answered: number; visitorsAnswered: number; rows: { value: string; regs: number; visited: number }[] }[];
+  /** 방문자(사람)의 동반 자녀 수 분포 — "0" "1" "2" "3" "4+" "미응답" */
+  companionDist: { bucket: string; visitors: number }[];
   insights: Insight[];
 }
 
@@ -132,7 +138,10 @@ const FREE_TYPES = new Set(["text", "number", "textarea", "tel"]);
  * 특수 항목은 폼마다 운영자가 만든 것이라 고정 키가 없다 — **키를 먼저** 보고, 라벨은 자유 입력형에서만 본다
  * (LA 2026: 연령 문항 설명에 "accompanied by a companion" 이 있어 라벨만 보면 연령이 동반 인원으로 잡혔다).
  */
-export function pickAnalysisFields(all: AnalysisColumn[]): { fields: AnalysisField[]; companionKey: string | null; visitDateKey: string | null; regionKey: string | null } {
+/** 개인정보·연락처 항목 — 주관식 '많이 나온 답' 에도 올리지 않는다 */
+const PII_KEY = /(^|_)(first|last|full|given|family)_?name$|^name$|email|phone|mobile|tel$|birth|passport|address_detail|zip|postal|link|url|website|homepage|sns|instagram|tiktok|youtube/i;
+
+export function pickAnalysisFields(all: AnalysisColumn[]): { fields: AnalysisField[]; companionKey: string | null; visitDateKey: string | null; regionKey: string | null; textFields: { key: string; label: string }[] } {
   const columns = all.filter((c) => !c.key.startsWith("__") && !c.key.startsWith("notice_"));
   const fields: AnalysisField[] = columns
     .filter((c) => (SINGLE_TYPES.has(c.type) || MULTI_TYPES.has(c.type)) && (c.options?.length ?? 0) > 0)
@@ -142,12 +151,18 @@ export function pickAnalysisFields(all: AnalysisColumn[]): { fields: AnalysisFie
   const companionKey = byKey(/companion|accompan|kids|children/i, FREE_TYPES) ?? byLabel(/how many .*(child|kid|accompan)|동반.*(인원|수)|accompanying/i, FREE_TYPES);
   const visitDateKey = byKey(/visit_?date|visit_?day/i) ?? byLabel(/visit (date|day)|방문 ?(예정)?일/i, MULTI_TYPES) ?? byLabel(/visit (date|day)|방문 ?(예정)?일/i, SINGLE_TYPES);
   const regionKey = byKey(/^address$|^city$|region|location/i, FREE_TYPES) ?? byLabel(/^address|주소|지역|^city/i, FREE_TYPES);
-  return { fields, companionKey, visitDateKey, regionKey };
+  // 회사명·직함·부서 같은 자유 입력 — 이름·연락처는 빼고, 특수 항목(동반·주소)은 따로 보여 주니 뺀다
+  const textFields = columns
+    .filter((c) => FREE_TYPES.has(c.type) && c.type !== "tel" && !PII_KEY.test(c.key) && c.key !== companionKey && c.key !== regionKey)
+    .map((c) => ({ key: c.key, label: c.label }));
+  return { fields, companionKey, visitDateKey, regionKey, textFields };
 }
 
 // ── 동반 인원 ────────────────────────────────────────────────────────────
 const MAX_COMPANIONS = 10;
 const WORD_NUM: Record<string, number> = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+/** 주관식에서 '답 없음' 으로 치는 값 — 회사명 칸의 None·N/A 가 1위로 올라오지 않게 */
+const EMPTY_ANSWER = /^(none|no|non|nope|nothing|n\/?a|na|-+|x|nil|null|없음|없어요|해당 ?없음|not applicable|n)$/;
 const ZERO_WORDS = /^(none|no|non|nope|nothing|n\/?a|na|o|x|-|nil|nobody|없음|없어요|아니요)\b/;
 
 /**
@@ -269,12 +284,16 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
   const dayVisitors = new Map<string, { unique: number; companions: number; pre: number; onsite: number }>();
   const repeatMap = new Map<number, number>();
   const kidsById = new Map<string, number>();
+  const companionBuckets = new Map<string, number>();
+  // 주관식 — 정규화한 답 → { 대표 표기별 개수, 등록, 방문 }
+  const textFields = input.textFields ?? [];
+  const textAcc = new Map(textFields.map((t) => [t.key, { answered: 0, visitorsAnswered: 0, rows: new Map<string, { labels: Map<string, number>; regs: number; visited: number }>() }]));
   const isPreById = new Map<string, boolean>();
 
   type Acc = { regs: number; visited: number; preRegs: number; onsiteRegs: number; preVisited: number; onsiteVisited: number };
   const segAcc = new Map<string, { answered: number; visitorsAnswered: number; rows: Map<string, Acc> }>();
   const segKeys: { key: string; label: string; kind: "single" | "multi"; options: string[] }[] = [
-    ...input.fields.filter((f) => f.key !== input.visitDateKey && f.key !== input.companionKey),
+    ...input.fields.filter((f) => f.key !== input.companionKey),
     { key: "__utm", label: "유입 소스 (UTM 최초)", kind: "single", options: [] },
     ...(input.regionKey ? [{ key: "__region", label: "지역 (주소에서 추정)", kind: "single" as const, options: [] }] : []),
   ];
@@ -314,6 +333,8 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
       else if (parsed.status === "text") textAsZero++;
       else if (parsed.status === "flagged") companionFlagged.push({ registrationNo: r.registrationNo, raw: String(r.data[input.companionKey]) });
       if (kids > 0) visitorsWithKids++;
+      const bucket = parsed.status === "blank" ? "미응답" : kids >= 4 ? "4+" : String(kids);
+      companionBuckets.set(bucket, (companionBuckets.get(bucket) ?? 0) + 1);
       companionsUnique += kids;
       companionsDays += kids * (days?.size ?? 0);
     }
@@ -327,6 +348,22 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
         if (isPre) dv.pre++; else dv.onsite++;
         dayVisitors.set(d, dv);
       }
+    }
+
+    // 주관식
+    for (const t of textFields) {
+      const raw = r.data[t.key];
+      const shown = typeof raw === "string" ? raw.replace(/\s+/g, " ").trim() : typeof raw === "number" ? String(raw) : "";
+      const norm = shown.toLowerCase().replace(/[.,!]+$/, "");
+      if (!norm || EMPTY_ANSWER.test(norm)) continue;
+      const acc = textAcc.get(t.key)!;
+      acc.answered++;
+      if (visited) acc.visitorsAnswered++;
+      const row = acc.rows.get(norm) ?? { labels: new Map<string, number>(), regs: 0, visited: 0 };
+      row.labels.set(shown, (row.labels.get(shown) ?? 0) + 1);
+      row.regs++;
+      if (visited) row.visited++;
+      acc.rows.set(norm, row);
     }
 
     // 세그먼트
@@ -417,6 +454,19 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
     return { key: s.key, label: s.label, kind: s.kind, answered: acc.answered, visitorsAnswered: acc.visitorsAnswered, rows };
   }).filter((s) => s.answered > 0);
 
+  const textTops = textFields.map((t) => {
+    const acc = textAcc.get(t.key)!;
+    const rows = [...acc.rows.values()]
+      .filter((r) => r.regs >= 2)
+      .sort((a, b) => b.regs - a.regs)
+      .slice(0, 10)
+      .map((r) => ({ value: [...r.labels.entries()].sort((a, b) => b[1] - a[1])[0][0], regs: r.regs, visited: r.visited }));
+    return { key: t.key, label: t.label, answered: acc.answered, visitorsAnswered: acc.visitorsAnswered, rows };
+  }).filter((t) => t.rows.length >= 2);
+  const companionDist = input.companionKey && visitorsUnique > 0
+    ? ["0", "1", "2", "3", "4+", "미응답"].map((bucket) => ({ bucket, visitors: companionBuckets.get(bucket) ?? 0 }))
+    : [];
+
   const plannedVsActual = planned && planned.withPlan > 0
     ? { rows: eventDates.map((d) => ({ date: d, ...planned.rows.get(d)! })), matchRate: planned.matched / planned.withPlan, visitorsWithPlan: planned.withPlan }
     : null;
@@ -446,6 +496,8 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
     leadTime,
     segments,
     plannedVsActual,
+    textTops,
+    companionDist,
     insights: [],
   };
   analysis.insights = buildInsights(analysis);
