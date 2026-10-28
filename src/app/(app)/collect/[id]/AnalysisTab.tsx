@@ -24,6 +24,8 @@ interface Payload {
   sourceName: string;
   generatedAt: string;
   fields: { companionKey: string | null; visitDateKey: string | null; regionKey: string | null; audienceKey: string | null };
+  /** 행사 운영 시간(현지 시) — 시간대별 그래프 가로축 범위 */
+  hours?: { open: number | null; close: number | null };
   analysis: RegistrationAnalysis;
   audiences: { value: string; analysis: RegistrationAnalysis }[];
   audienceRows: AudienceRow[];
@@ -378,15 +380,19 @@ export default function AnalysisTab({ sourceId }: { sourceId: string }) {
   const seriesOnsite = colors.series[1];
   const dayColors = colors.series;
 
-  // 시간대별(일자 = 선) — 한 행에 시(hour), 열에 날짜
+  // 시간대별(일자 = 선) — 한 행에 시(hour), 열에 날짜. 가로축은 행사 운영 시간(개장~마감)까지 늘린다 —
+  // 데이터가 끝난 시각에서 축이 잘리면 "마감 전 한 시간은 아무도 안 왔다" 가 안 보인다.
   const hourly = useCallback((rows: { date: string; hour: number; n: number }[]) => {
     const dates = Array.from(new Set(rows.map((r) => r.date))).sort();
-    const hours = rows.length ? Array.from({ length: Math.max(...rows.map((r) => r.hour)) - Math.min(...rows.map((r) => r.hour)) + 1 }, (_, i) => Math.min(...rows.map((r) => r.hour)) + i) : [];
+    const range = data?.hours ?? { open: null, close: null };
+    const from = rows.length ? Math.min(...rows.map((r) => r.hour), range.open ?? 24) : 0;
+    const to = rows.length ? Math.max(...rows.map((r) => r.hour), range.close ?? -1) : -1;
+    const hours = Array.from({ length: Math.max(to - from + 1, 0) }, (_, i) => from + i);
     return {
       dates,
       data: hours.map((h) => ({ hour: `${h}시`, ...Object.fromEntries(dates.map((d) => [md(d), rows.find((r) => r.date === d && r.hour === h)?.n ?? 0])) })),
     };
-  }, []);
+  }, [data?.hours]);
 
   const exportXlsx = async () => {
     if (!a || !data) return;

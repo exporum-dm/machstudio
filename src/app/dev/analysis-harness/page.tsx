@@ -88,7 +88,7 @@ if (typeof window !== "undefined" && !(window as { __an?: boolean }).__an) {
       const { analysis, audiences, audienceRows } = fixture();
       if (empty) analysis.kpi.visitors.unique = 0;
       return new Response(
-        JSON.stringify({ sourceName: "2026 Korea Expo LA (하니스)", generatedAt: new Date().toISOString(), fields: { companionKey: "companions", visitDateKey: "visit_date", regionKey: "address", audienceKey: "visitor_type" }, analysis, audiences, audienceRows }),
+        JSON.stringify({ sourceName: "2026 Korea Expo LA (하니스)", generatedAt: new Date().toISOString(), fields: { companionKey: "companions", visitDateKey: "visit_date", regionKey: "address", audienceKey: "visitor_type" }, hours: { open: 10, close: 17 }, analysis, audiences, audienceRows }),
         { headers: { "Content-Type": "application/json" } },
       );
     }
