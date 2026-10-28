@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * "기본 정보" 탭 — 일자·장소·관람시간·키컬러·Official Trailer·포스터.
+ * "기본 정보" 탭 — 일자·장소·관람시간·키컬러·Official Trailer·포스터 + (빌더형) 등록 시간.
  *
  * 연동형·빌더형 공통(tabs.ts 참고). 지금 당장은 화면에 안 쓰이는 값도 있지만(예: 관람시간),
  * 한 곳에 모아 두면 나중에 요약 카드·전년 대비 비교(진행률·페이스)·공개 페이지 등에서
@@ -11,6 +11,7 @@
  * 편집 영역이므로 값은 항상 보이고 그 자리에서 고쳐진다(AGENTS.md §2) — 자동저장.
  */
 import { useCallback, useRef, useState } from "react";
+import type { AutosaveState } from "@/components/ui/use-autosave";
 import { Loader2, Upload, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { useAutosave } from "@/components/ui/use-autosave";
@@ -19,6 +20,7 @@ import { AutosaveIndicator } from "@/components/ui/autosave-indicator";
 import { FIELD_CLS, R } from "@/components/ui/primitives";
 import { ColorField, BRAND_PRESETS } from "@/components/ui/ColorField";
 import { extractDominantColor } from "@/lib/color-extract";
+import RegistrationTimesSection from "./RegistrationTimesSection";
 
 export interface VenueInfo {
   eventStart?: string;
@@ -44,10 +46,15 @@ export default function InfoTab({
   sourceId,
   initial,
   onSaved,
+  formConfig,
+  onFormConfigSaved,
 }: {
   sourceId: string;
   initial: VenueInfo;
   onSaved?: (value: VenueInfo) => void;
+  /** 빌더형만 — 주면 사전등록·현장등록 시간 영역이 붙는다 */
+  formConfig?: unknown;
+  onFormConfigSaved?: (formConfig: unknown) => void;
 }) {
   const [info, setInfo] = useState<VenueInfo>(initial);
   const [extracting, setExtracting] = useState(false);
@@ -68,8 +75,14 @@ export default function InfoTab({
     } catch { return false; }
   }, [onSaved, sourceId]);
 
-  const { state: saveState, retry } = useAutosave(info, save);
-  useReportAutosave(saveState, retry);
+  const { state: infoState, retry: infoRetry } = useAutosave(info, save);
+  useReportAutosave(infoState, infoRetry);
+  // 등록 시간 영역은 저장 경로가 따로다 — 표시만 머리의 하나로 합친다(가장 나쁜 상태가 이긴다)
+  const [times, setTimes] = useState<{ state: AutosaveState; retry?: () => void }>({ state: "idle" });
+  const onTimesState = useCallback((state: AutosaveState, retry: () => void) => setTimes({ state, retry }), []);
+  const rank: Record<AutosaveState, number> = { error: 3, saving: 2, saved: 1, idle: 0 };
+  const saveState = rank[times.state] > rank[infoState] ? times.state : infoState;
+  const retry = () => { infoRetry(); times.retry?.(); };
 
   const patch = (next: Partial<VenueInfo>) => setInfo((v) => ({ ...v, ...next }));
 
@@ -204,6 +217,19 @@ export default function InfoTab({
         onChange={(hex) => patch({ accentColor: hex })}
         presets={BRAND_PRESETS}
       />
+
+      {formConfig !== undefined && (
+        <div className="border-t border-border pt-6">
+          <RegistrationTimesSection
+            sourceId={sourceId}
+            formConfig={formConfig}
+            eventStart={info.eventStart}
+            eventEnd={info.eventEnd}
+            onSaved={onFormConfigSaved}
+            onStateChange={onTimesState}
+          />
+        </div>
+      )}
     </div>
   );
 }

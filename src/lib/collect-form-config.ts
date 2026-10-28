@@ -144,6 +144,33 @@ export interface CollectEventInfo {
   extraRows: Array<{ label: Localized; value: Localized }>;
 }
 
+/**
+ * 등록 운영 일정 — 사전등록 기간과 현장등록(행사일별 운영 시간)을 **시각으로 자동 전환**한다(2026-10-28).
+ *
+ * 왜: LA 2026 은 사전등록을 행사 전날 14:00(PT)에 닫고, 행사 사흘 동안 08:00~17:00 에만 현장등록을 열었다.
+ * 매번 사람이 폼을 손으로 열고 닫다 보니 둘째 날은 1시간 늦게 열렸다. 일정을 적어 두면 서버·공개 폼이
+ * 같은 판정으로 열고 닫는다. 현장등록도 같은 온라인 폼이다 — 구분은 시각뿐이고, 새 등록에는 entryChannel
+ * ("online" | "onsite")로 남는다.
+ *
+ * 시각은 **행사 현지 벽시계**("2026-10-21T14:00")로 저장하고 timezone 으로 해석한다 — 서울에서 입력해도
+ * LA 시간 그대로 적으면 된다. enabled 면 eventInfo.registrationWindow 대신 이 일정이 쓰인다.
+ * statusOverride(수동 고정)는 여전히 이긴다.
+ */
+export interface RegistrationSchedule {
+  enabled: boolean;
+  /** IANA 시간대 — 현장 체크인 시간대와 같은 목록 */
+  timezone: string;
+  /** 사전등록 시작(현지). null = 이미 열려 있음 */
+  preOpensAt: string | null;
+  /** 사전등록 마감(현지). null = 첫 현장등록 시작까지 */
+  preClosesAt: string | null;
+  /** 현장등록 — 날짜별 운영 시간(현지 "HH:mm") */
+  onsite: Array<{ date: string; open: string; close: string }>;
+  /** 사전등록 마감 뒤·현장등록 시작 전(또는 행사일 사이)에 보이는 안내. {next} = 다음 현장등록 시작 시각 */
+  betweenTitle: Localized;
+  betweenBody: Localized;
+}
+
 // ── 안내 블록 ─────────────────────────────────────────────────────────
 export type NoticePlacement = "top" | "above-consent" | "bottom" | "completion" | "email";
 export type NoticeMode = "notice" | "checkbox-optional" | "checkbox-required";
@@ -282,6 +309,8 @@ export interface CollectFormConfig {
   branch: CollectBranch;
   badgeRules: CollectBadgeRule[];
   eventInfo: CollectEventInfo;
+  /** 사전등록·현장등록 자동 전환 일정. 꺼져 있으면 eventInfo.registrationWindow 로 판정(예전 그대로). */
+  schedule: RegistrationSchedule;
   notices: CollectNotice[];
   validation: CollectValidation;
   consent: { privacy: CollectConsentItem; marketing: CollectConsentItem; thirdParty: CollectConsentItem };
@@ -319,6 +348,7 @@ export const EMPTY_FORM_CONFIG: CollectFormConfig = {
     registrationWindow: { opensAt: null, closesAt: null },
     extraRows: [],
   },
+  schedule: { enabled: false, timezone: "Asia/Seoul", preOpensAt: null, preClosesAt: null, onsite: [], betweenTitle: {}, betweenBody: {} },
   notices: [],
   validation: { defaultCountry: "US", onDuplicate: "block" },
   consent: {
@@ -549,6 +579,9 @@ export function normalizeCollectForm(raw: unknown): CollectFormConfig {
     : [...EMPTY_FORM_CONFIG.lookup.fields];
 
   const override = str(c.statusOverride);
+  const scheduleRaw = obj(c.schedule);
+  const localDateTime = (v: unknown) => (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(str(v)) ? str(v) : null);
+  const hhmm = (v: unknown) => (/^\d{2}:\d{2}$/.test(str(v)) ? str(v) : "");
 
   return {
     fields,
@@ -593,6 +626,19 @@ export function normalizeCollectForm(raw: unknown): CollectFormConfig {
             return { label: toLocalized(rr.label, locale), value: toLocalized(rr.value, locale) };
           })
         : [],
+    },
+    schedule: {
+      enabled: scheduleRaw.enabled === true,
+      timezone: isScheduleTimezone(scheduleRaw.timezone) ? str(scheduleRaw.timezone) : "Asia/Seoul",
+      preOpensAt: localDateTime(scheduleRaw.preOpensAt),
+      preClosesAt: localDateTime(scheduleRaw.preClosesAt),
+      onsite: Array.isArray(scheduleRaw.onsite)
+        ? scheduleRaw.onsite
+            .map((row) => { const r = obj(row); return { date: str(r.date), open: hhmm(r.open), close: hhmm(r.close) }; })
+            .filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.date) && r.open && r.close)
+        : [],
+      betweenTitle: toLocalized(scheduleRaw.betweenTitle, locale),
+      betweenBody: toLocalized(scheduleRaw.betweenBody, locale),
     },
     // id 가 겹치면 뒤엣것을 버린다 — 같은 값 키(notice_x)를 두 블록이 나눠 쓰면 하나만 체크해도
     // 둘 다 충족되거나, 한 컨트롤에 오류가 두 번 붙는다(항목 key 중복을 거르는 이유와 같다).
@@ -709,15 +755,93 @@ export const REGISTRATION_STATUSES: readonly RegistrationStatus[] = ["before", "
  * **서버에서도 반드시 부른다.** 클라이언트만 막으면 마감 후 API 로 등록이 들어온다(설계 §5.1).
  */
 export function resolveRegistrationStatus(
-  config: Pick<CollectFormConfig, "eventInfo" | "statusOverride">,
+  config: Pick<CollectFormConfig, "eventInfo" | "statusOverride"> & { schedule?: RegistrationSchedule },
   now: Date,
 ): RegistrationStatus {
   if (config.statusOverride) return config.statusOverride;
+  if (config.schedule?.enabled) return resolveRegistrationPhase(config.schedule, now).status;
   const { opensAt, closesAt } = config.eventInfo.registrationWindow;
   const t = now.getTime();
   if (opensAt && t < Date.parse(opensAt)) return "before";
   if (closesAt && t >= Date.parse(closesAt)) return "closed";
   return "open";
+}
+
+/** 일정 시간대 — 현장 체크인과 같은 목록(collect-checkin CHECKIN_TIMEZONES)이되, 런타임 번들을 가볍게 두려고 값만 본다. */
+const SCHEDULE_TIMEZONES = ["Asia/Seoul", "America/Los_Angeles", "America/New_York", "Europe/Paris", "Europe/London", "Asia/Tokyo", "Asia/Singapore", "Asia/Ho_Chi_Minh"];
+export function isScheduleTimezone(v: unknown): boolean {
+  return typeof v === "string" && SCHEDULE_TIMEZONES.includes(v);
+}
+
+/** 현지 벽시계 "YYYY-MM-DDTHH:mm(:ss)" → UTC ms. 서머타임 경계도 맞춘다(collect-checkin.zonedLocalToUtc 와 같은 식). */
+export function scheduleLocalToUtcMs(local: string, timeZone: string): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(local);
+  if (!m) return NaN;
+  const asUtc = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] ?? 0));
+  let fmt: Intl.DateTimeFormat;
+  try {
+    fmt = new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  } catch {
+    return NaN;
+  }
+  const offsetAt = (t: number) => {
+    const p: Record<string, string> = {};
+    for (const x of fmt.formatToParts(new Date(t))) p[x.type] = x.value;
+    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - t;
+  };
+  let t = asUtc - offsetAt(asUtc);
+  t = asUtc - offsetAt(t);
+  return t;
+}
+
+export type RegistrationPhase = "pre" | "onsite" | null;
+
+/**
+ * 일정으로 본 지금 상태.
+ *  · 현장등록 창 안 → open / onsite
+ *  · 사전등록 시작 전 → before
+ *  · 사전등록 기간(마감 전, 마감이 없으면 첫 현장등록 시작 전) → open / pre
+ *  · 그 밖 → closed. 앞으로 열릴 현장등록 창이 있으면 nextOpenAt(ISO)을 준다 — "현장등록은 ○○부터" 안내용
+ */
+export function resolveRegistrationPhase(
+  schedule: RegistrationSchedule,
+  now: Date,
+): { status: RegistrationStatus; phase: RegistrationPhase; nextOpenAt: string | null } {
+  const tz = schedule.timezone;
+  const t = now.getTime();
+  const windows = schedule.onsite
+    .map((w) => ({ open: scheduleLocalToUtcMs(`${w.date}T${w.open}`, tz), close: scheduleLocalToUtcMs(`${w.date}T${w.close}`, tz) }))
+    .filter((w) => Number.isFinite(w.open) && Number.isFinite(w.close) && w.close > w.open)
+    .sort((a, b) => a.open - b.open);
+  if (windows.some((w) => t >= w.open && t < w.close)) return { status: "open", phase: "onsite", nextOpenAt: null };
+
+  const preOpen = schedule.preOpensAt ? scheduleLocalToUtcMs(schedule.preOpensAt, tz) : NaN;
+  const preClose = schedule.preClosesAt ? scheduleLocalToUtcMs(schedule.preClosesAt, tz) : windows[0]?.open ?? NaN;
+  if (Number.isFinite(preOpen) && t < preOpen) return { status: "before", phase: null, nextOpenAt: new Date(preOpen).toISOString() };
+  if (!Number.isFinite(preClose) || t < preClose) return { status: "open", phase: "pre", nextOpenAt: null };
+
+  const next = windows.find((w) => w.open > t);
+  return { status: "closed", phase: null, nextOpenAt: next ? new Date(next.open).toISOString() : null };
+}
+
+/** 새 등록의 entryChannel — 일정이 켜져 있고 현장등록 창 안이면 "onsite", 아니면 "online"(예전 그대로). */
+/**
+ * 저장할 폼 정의 — 등록 시간(schedule)은 "기본 정보" 탭이 혼자 소유한다.
+ * formConfig(폼 빌더가 통째로 보냄)가 와도 일정은 DB 값을 지키고, schedule 이 올 때만 일정을 바꾼다.
+ * 둘 다 없으면 undefined(폼 정의를 건드리지 않는다).
+ */
+export function mergeFormConfigUpdate(currentRaw: unknown, formConfig: unknown, schedule: unknown): CollectFormConfig | undefined {
+  if (formConfig === undefined && schedule === undefined) return undefined;
+  const current = normalizeCollectForm(currentRaw);
+  const base = formConfig !== undefined ? normalizeCollectForm(formConfig) : current;
+  return {
+    ...base,
+    schedule: schedule !== undefined ? normalizeCollectForm({ ...base, schedule }).schedule : current.schedule,
+  };
+}
+
+export function entryChannelAt(config: Pick<CollectFormConfig, "schedule">, now: Date): "online" | "onsite" {
+  return config.schedule.enabled && resolveRegistrationPhase(config.schedule, now).phase === "onsite" ? "onsite" : "online";
 }
 
 // ── 제출 검증 ─────────────────────────────────────────────────────────

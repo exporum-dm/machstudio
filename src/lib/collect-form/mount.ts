@@ -21,6 +21,7 @@ import {
   companionTicketExtras,
   localize,
   noticeValueKey,
+  resolveRegistrationPhase,
   resolveRegistrationStatus,
   validateSubmission,
   visibleFields,
@@ -76,6 +77,8 @@ function maskedPhone(value: string): string {
 const COPY = {
   before: { title: "Registration hasn't opened yet", body: "The form will appear here once registration opens." },
   closed: { title: "Registration is closed", body: "On-site registration is available at the venue." },
+  /** 운영 일정 — 사전등록 마감 뒤, 다음 현장등록 전. {next} 자리에 현지 시각이 들어간다(운영자가 문구를 바꿀 수 있다) */
+  between: { title: "Pre-registration is closed", body: "On-site registration opens {next}. Please register at the venue." },
   submit: "Register",
   submitting: "Submitting…",
   empty: "This form has no fields yet.",
@@ -1292,7 +1295,21 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
 
     const status = currentStatus();
     if (status !== "open") {
-      const copy = status === "before" ? COPY.before : COPY.closed;
+      let copy: { title: string; body: string } = status === "before" ? COPY.before : COPY.closed;
+      // 운영 일정: 사전등록이 끝났고 현장등록이 아직이면 "현장등록은 ○○부터" — 수동 고정·미리보기 강제엔 쓰지 않는다
+      if (!opts.forceStatus && !serverStatus && !config.statusOverride && config.schedule.enabled) {
+        const phase = resolveRegistrationPhase(config.schedule, nowDate());
+        if (phase.status === "closed" && phase.nextOpenAt) {
+          let next = phase.nextOpenAt;
+          try {
+            next = new Intl.DateTimeFormat(lang || "en", { timeZone: config.schedule.timezone, month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(phase.nextOpenAt));
+          } catch { /* 모르는 로케일·시간대면 ISO 그대로 */ }
+          copy = {
+            title: t(config.schedule.betweenTitle) || COPY.between.title,
+            body: (t(config.schedule.betweenBody) || COPY.between.body).split("{next}").join(next),
+          };
+        }
+      }
       stack.appendChild(
         h("div", { class: "msf-state" },
           h("div", { class: "msf-state-title" }, copy.title),

@@ -15,6 +15,7 @@ import { isValidPhoneForCountry, toE164 } from "@/lib/collect-phone";
 import { isKnownCountry } from "@/lib/collect-country";
 import { generateRegistrationNo } from "@/lib/collect-registration-no";
 import {
+  entryChannelAt,
   resolveRegistrationStatus,
   validateSubmission,
   visibleFields,
@@ -38,7 +39,8 @@ export interface PreparedSubmission {
   /** E.164. 파싱 실패면 null(원문은 data 에 남는다). */
   phoneE164: string | null;
   locale: string;
-  entryChannel: "online";
+  /** "onsite" = 등록 운영 일정의 현장등록 시간에 들어온 등록(일정이 꺼져 있으면 늘 "online") */
+  entryChannel: "online" | "onsite";
   /** 동의 기록 — data 안에 넣지 않는다. 항목 키와 섞이면 CSV 열이 뒤죽박죽이 된다. */
   consent: { privacy: boolean; marketing: boolean; thirdParty: boolean };
 }
@@ -221,7 +223,7 @@ export function prepareBuilderSubmission(
       emailKey,
       phoneE164,
       locale,
-      entryChannel: "online",
+      entryChannel: entryChannelAt(config, now),
       consent,
     },
   };

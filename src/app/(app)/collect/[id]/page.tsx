@@ -1001,13 +1001,13 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
     const prev = source.isActive;
     await handleToggleSilent(next);
     if (prev && !next) {
-      toast("사전등록 폼이 비활성화됐어요", {
+      toast("등록 폼이 비활성화됐어요", {
         description: "새 데이터 수집이 중단됩니다",
         duration: 5000,
         action: { label: "되돌리기", onClick: () => handleToggleSilent(true) },
       });
     } else if (!prev && next) {
-      toast.success("사전등록 폼이 활성화됐어요");
+      toast.success("등록 폼이 활성화됐어요");
     }
   };
 
@@ -1195,7 +1195,7 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
       {/* 헤더 */}
       <div>
         <Link href="/collect" className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-3">
-          <ArrowLeft className="w-3.5 h-3.5" />데이터 수집 목록
+          <ArrowLeft className="w-3.5 h-3.5" />등록 목록
         </Link>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
           <div className="flex items-center gap-3 min-w-0">
@@ -1263,6 +1263,8 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
               sourceId={source.id}
               initial={source.venueConfig ?? {}}
               onSaved={(venueConfig) => setSource((current) => current ? { ...current, venueConfig } : current)}
+              formConfig={source.mode === "builder" ? source.formConfig : undefined}
+              onFormConfigSaved={(formConfig) => setSource((current) => (current ? { ...current, formConfig } : current))}
             />
           )}
 

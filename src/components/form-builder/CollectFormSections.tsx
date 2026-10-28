@@ -113,6 +113,8 @@ export function CollectFormSections({
   const setEvent = (next: Partial<typeof ev>) => patch({ eventInfo: { ...ev, ...next } });
   const setWindow = (next: Partial<typeof win>) =>
     patch({ eventInfo: { ...ev, registrationWindow: { ...win, ...next } } });
+  // 등록 시간(사전등록·현장등록)은 기본 정보 탭이 소유한다 — 여기선 켜졌는지만 알린다
+  const sch = config.schedule;
 
   return (
     <div className="space-y-3">
@@ -350,7 +352,16 @@ export function CollectFormSections({
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {sch.enabled ? (
+          <p className={`${R.surface} bg-secondary/60 p-2.5 text-[11px] leading-relaxed text-muted-foreground`}>
+            <b className="text-foreground">등록 시간이 켜져 있어요</b> — 아래 접수 시작·마감 대신 &lsquo;기본 정보&rsquo; 탭의 사전등록·현장등록 시간으로 열고 닫아요.
+          </p>
+        ) : (
+          <p className="text-[11px] leading-snug text-muted-foreground/70">
+            사전등록과 현장등록을 시간대별로 나눠 운영하려면 &lsquo;기본 정보&rsquo; 탭의 등록 시간에서 켜요.
+          </p>
+        )}
+        <div className={`grid grid-cols-1 gap-2 sm:grid-cols-2 ${sch.enabled ? "opacity-50" : ""}`}>
           {/* 입력은 KST 벽시각, 저장은 오프셋이 붙은 ISO — 서버(UTC)와 브라우저가 같은 순간을
               가리켜야 접수 창 판정이 한쪽에서만 열리는 일이 없다. 웨비나 일정과 같은 헬퍼를 쓴다. */}
           <Row label="접수 시작 (KST)">

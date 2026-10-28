@@ -156,16 +156,16 @@ export function OverviewSections({ data, onShare }: { data: ProjectOverview; onS
       {/* ── 사전등록 ── 첫 화면의 주인공: 지금까지 모인 등록(전체 기간) */}
       <Section
         icon={Database}
-        title="사전등록"
+        title="등록"
         headline={data.collect.active.length > 0 ? `누적 ${num(grandTotal)}명 · 오늘 +${num(todayTotal)}` : null}
         otherCount={data.collect.otherCount}
         otherHref="/collect"
-        emptyText="진행 중인 사전등록이 없어요"
+        emptyText="진행 중인 등록이 없어요"
         action={
           <button
             onClick={onShare}
             className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-            title="사전등록 보고서 공유 링크"
+            title="등록 보고서 공유 링크"
           >
             <Share2 className="h-3 w-3" />
             보고서 공유

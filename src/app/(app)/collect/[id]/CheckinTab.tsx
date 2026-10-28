@@ -223,7 +223,7 @@ export default function CheckinTab({ sourceId, canEdit }: { sourceId: string; ca
   if (error) return <p className="text-sm text-destructive">{error}</p>;
   if (!state) return <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> 불러오는 중</div>;
   if (!state.builder) {
-    return <p className="text-sm text-muted-foreground">현장 체크인은 등록번호·QR을 발급하는 빌더형 사전등록에서만 쓸 수 있어요.</p>;
+    return <p className="text-sm text-muted-foreground">현장 체크인은 등록번호·QR을 발급하는 빌더형 등록 폼에서만 쓸 수 있어요.</p>;
   }
 
   const todayRow = state.byDay.find((d) => d.eventDate === state.today);
