@@ -5,7 +5,7 @@
  * 이 판정은 **연동형 화면을 그대로 두는가**를 결정하므로(레코드 52,000건이 그 화면으로
  * 운영 중이다) 회귀 테스트가 붙을 수 있는 자리에 있어야 한다.
  */
-import { Activity, BarChart3, ClipboardCheck, Code2, HardDriveDownload, Info, ScanLine, Settings2, Shield, Table2, Wrench, type LucideIcon } from "lucide-react";
+import { Activity, BarChart3, ClipboardCheck, PieChart, Code2, HardDriveDownload, Info, ScanLine, Settings2, Shield, Table2, Wrench, type LucideIcon } from "lucide-react";
 
 /**
  * "현황"(통계)과 "등록자 DB"(명단)를 나눠 둔다 — 예전엔 프로젝트 대시보드가 사전등록 통계를 들고
@@ -15,6 +15,7 @@ import { Activity, BarChart3, ClipboardCheck, Code2, HardDriveDownload, Info, Sc
 export const TABS = [
   { id: "overview", label: "현황", icon: BarChart3 },
   { id: "records", label: "등록자 DB", icon: Table2 },
+  { id: "analysis", label: "결과 분석", icon: PieChart },
   { id: "info", label: "기본 정보", icon: Info },
   { id: "form", label: "등록 폼", icon: Settings2 },
   { id: "checkin", label: "현장 체크인", icon: ScanLine },
@@ -32,7 +33,7 @@ export type Tab = typeof TABS[number]["id"];
 /** 연동형에만 있는 탭 — 빌더형은 폼을 여기서 만드니 스크립트·매핑·설치가 의미를 잃는다. */
 const CAPTURE_ONLY: ReadonlySet<Tab> = new Set(["fields", "script", "install"]);
 /** 빌더형에만 있는 탭 — 현장 체크인은 등록번호·QR 이 있어야 한다(연동형 레코드에는 없다). */
-const BUILDER_ONLY: ReadonlySet<Tab> = new Set(["form", "checkin", "survey"]);
+const BUILDER_ONLY: ReadonlySet<Tab> = new Set(["analysis", "form", "checkin", "survey"]);
 
 /**
  * 안 쓰는 탭을 남겨 두면 운영자가 "여기서 뭘 해야 하나" 를 매번 다시 판단하게 된다.
