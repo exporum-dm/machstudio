@@ -35,6 +35,10 @@ import {
   type MediaKind,
 } from "@/lib/media-asset";
 import { MEDIA_BUCKET } from "@/lib/media-asset-bucket";
+import { compressForWeb } from "@/lib/web-image";
+
+/** 이보다 큰 동영상은 링크로 쓰면 전송량이 빨리 찬다 — 올리기 전에 알린다. */
+const VIDEO_WARN_BYTES = 10 * 1024 * 1024;
 
 const spring = { type: "spring", stiffness: 420, damping: 30 } as const;
 
@@ -119,6 +123,8 @@ export default function MediaPage() {
   const [projectFilter, setProjectFilter] = useState<string>(currentProject?.id ?? "");
   const [groupFilter, setGroupFilter] = useState<string>("");
   const [isDragging, setIsDragging] = useState(false);
+  // 사진은 기본으로 웹용(긴 변 2000px)으로 줄여 올린다 — 인쇄용 원본이 필요할 때만 끈다(lib/web-image.ts).
+  const [keepOriginal, setKeepOriginal] = useState(false);
   const [pending, setPending] = useState<PendingUpload[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
@@ -188,16 +194,29 @@ export default function MediaPage() {
     });
   }, []);
 
-  const uploadOne = useCallback(async (file: File) => {
+  const uploadOne = useCallback(async (original: File) => {
     const pendingId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const kind = kindForMimeType(file.type);
-    setPending((prev) => [...prev, { id: pendingId, name: file.name, kind, status: "reading" }]);
+    const kind = kindForMimeType(original.type);
+    let file = original;
+    setPending((prev) => [...prev, { id: pendingId, name: original.name, kind, status: "reading" }]);
     const setStatus = (status: PendingUpload["status"], error?: string) => {
       setPending((prev) => prev.map((p) => (p.id === pendingId ? { ...p, status, error } : p)));
     };
     const removeAfterDelay = (ms: number) => {
       setTimeout(() => setPending((prev) => prev.filter((p) => p.id !== pendingId)), ms);
     };
+
+    // 사진은 화면용 크기로 줄여서 올린다 — 원본 그대로면 페이지 한 번에 수십 MB 가 나간다.
+    if (kind === "image" && !keepOriginal) {
+      const result = await compressForWeb(original);
+      if (result.compressed) {
+        file = result.file;
+        toast.message(`${original.name}: 웹용으로 줄였어요 ${formatBytes(result.before)} → ${formatBytes(result.after)}`);
+      }
+    }
+    if (kind === "video" && original.size > VIDEO_WARN_BYTES) {
+      toast.warning(`${original.name}: 동영상이 ${formatBytes(original.size)}예요. 웹페이지에 넣을 영상은 YouTube 에 올리고 그 링크를 쓰면 전송량 걱정이 없어요.`);
+    }
 
     const clientError = validateMediaUpload({ mimeType: file.type, size: file.size });
     if (clientError) {
@@ -249,7 +268,7 @@ export default function MediaPage() {
       toast.error(`${file.name}: ${message}`);
       removeAfterDelay(5_000);
     }
-  }, [projectFilter, groupFilter, supabase]);
+  }, [projectFilter, groupFilter, supabase, keepOriginal]);
 
   const handleFiles = useCallback((files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -424,6 +443,10 @@ export default function MediaPage() {
           onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }}
         />
       </motion.label>
+      <label className="-mt-2 flex items-center justify-end gap-1.5 text-xs text-muted-foreground">
+        <input type="checkbox" checked={keepOriginal} onChange={(e) => setKeepOriginal(e.target.checked)} className="accent-violet-500" />
+        사진 원본 그대로 올리기 <span className="text-muted-foreground/70">(인쇄용일 때만 — 기본은 PC·모바일용으로 줄여서 올려요)</span>
+      </label>
 
       {/* 올라가는 중인 파일 — 끝나면 목록으로 옮겨가고 이 줄은 사라진다. */}
       <AnimatePresence initial={false}>

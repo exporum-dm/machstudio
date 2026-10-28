@@ -67,3 +67,4 @@ skills-lock.json
 #  지우려면 이력 리라이트가 필요하다.) 납품물을 버전 관리하려면 이 두 줄을 지운다.
 exports/
 tmp/
+scripts/.recompress-backup/
