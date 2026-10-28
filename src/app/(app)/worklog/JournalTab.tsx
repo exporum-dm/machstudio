@@ -594,7 +594,6 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
               onCommit={(v) => commit(l.ck, v)}
               onCategory={(category) => void update(l.ck, { category })}
               onEnter={(v) => onEnter(l.ck, v)}
-              saving={savingKeys.has(l.ck)}
               onToggle={() => toggleDone(l.ck)}
               onBackspaceEmpty={() => backspaceEmpty(l.ck)}
               onArrow={(dir) => neighbor(l.ck, dir)}
@@ -639,7 +638,7 @@ function RowHead({ day, today }: { day: string; today: string }) {
 }
 
 function LineRow({
-  line, header, editable, showAuthor, byline, focus, saving, onFocused, onCommit, onCategory, onEnter, onToggle, onBackspaceEmpty, onArrow, onPaste, onMenu, onDragStart, onDragEnd,
+  line, header, editable, showAuthor, byline, focus, onFocused, onCommit, onCategory, onEnter, onToggle, onBackspaceEmpty, onArrow, onPaste, onMenu, onDragStart, onDragEnd,
 }: {
   byline?: string | null;
   line: Line;
@@ -647,7 +646,6 @@ function LineRow({
   editable: boolean;
   showAuthor: boolean;
   focus: Focus;
-  saving: boolean;
   onFocused: () => void;
   onCommit: (v: string) => void;
   onCategory: (category: string) => void;
@@ -739,7 +737,7 @@ function LineRow({
         </button>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-start gap-1">
-            {editable ? (
+            {editable && draft !== null ? (
               <select
                 value={line.category}
                 onMouseDown={(e) => e.stopPropagation()}
@@ -774,17 +772,6 @@ function LineRow({
               />
             ) : (
               <div className={`min-w-0 flex-1 whitespace-pre-wrap break-words text-[13px] leading-5 ${done ? "text-muted-foreground line-through decoration-foreground/40" : ""}`}>{line.content}</div>
-            )}
-            {editable && (
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => { if (ref.current) onCommit(ref.current.value); }}
-                disabled={saving || !value.trim()}
-                className="mt-px h-[19px] shrink-0 rounded-md bg-foreground px-1.5 text-[10px] font-semibold text-background shadow-sm transition hover:opacity-80 focus-visible:ring-2 focus-visible:ring-violet-400 disabled:bg-secondary disabled:text-muted-foreground"
-              >
-                {saving ? "저장 중" : "저장"}
-              </button>
             )}
           </div>
           {(line.result || line.note) && (
@@ -894,9 +881,12 @@ function LineMenu({
         )}
       </div>
 
-      <div className="flex justify-end border-t border-border pt-2">
+      <div className="flex items-center justify-between border-t border-border pt-2">
         <button onClick={onRemove} className="flex items-center gap-1 rounded px-2 py-1 text-red-500 hover:bg-red-500/10">
           <Trash2 className="h-3 w-3" />지우기
+        </button>
+        <button onClick={onClose} className={`bg-foreground px-3 py-1 font-medium text-background hover:opacity-85 ${R.control} ${FINISH.s2}`}>
+          저장
         </button>
       </div>
     </div>,
