@@ -229,6 +229,9 @@ export default function CheckinTab({ sourceId, canEdit }: { sourceId: string; ca
   const todayRow = state.byDay.find((d) => d.eventDate === state.today);
   const visitors = state.visitDays.reduce((a, v) => a + v.people, 0);
   const repeatVisitors = state.visitDays.filter((v) => v.days > 1).reduce((a, v) => a + v.people, 0);
+  // 연인원 — 날마다 온 사람을 각각 센 합(이틀 온 사람은 2). 전시 결과보고의 "누적 방문객" 기준.
+  const visitorDays = state.byDay.reduce((a, d) => a + d.unique, 0);
+  const totalScans = state.byDay.reduce((a, d) => a + d.scans, 0);
   const days = Array.from(new Set([...state.eventDates, ...state.byDay.map((d) => d.eventDate)])).sort();
 
   return (
@@ -371,8 +374,19 @@ export default function CheckinTab({ sourceId, canEdit }: { sourceId: string; ca
       <section className="min-w-0 space-y-4">
         {visitors > 0 && (
           <div className={`${R.panel} ${FINISH.s1} bg-card p-5`}>
-            <p className="text-xs text-muted-foreground">실제 방문자 (사전등록자 중 입장 기록이 있는 사람)</p>
-            <p className="mt-1 text-3xl font-bold tabular-nums">{visitors.toLocaleString()}<span className="ml-1 text-base font-medium text-muted-foreground">명</span></p>
+            <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
+              <div>
+                <p className="text-xs text-muted-foreground">누적 방문객 (연인원 · 날마다 각각 셈)</p>
+                <p className="mt-1 text-3xl font-bold tabular-nums">{visitorDays.toLocaleString()}<span className="ml-1 text-base font-medium text-muted-foreground">명</span></p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">순방문자 (한 사람은 한 번)</p>
+                <p className="mt-1 text-2xl font-semibold tabular-nums">{visitors.toLocaleString()}<span className="ml-1 text-sm font-medium text-muted-foreground">명</span></p>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground tabular-nums">
+              바코드 스캔 {totalScans.toLocaleString()}회 — 같은 날 다시 찍힌 {(totalScans - visitorDays).toLocaleString()}회(재입장·입구 중복)는 그날 1명으로 세요.
+            </p>
             <p className="mt-1 text-xs text-muted-foreground tabular-nums">
               {state.visitDays.map((v) => `${v.days}일 방문 ${v.people.toLocaleString()}명`).join(" · ")}
               {repeatVisitors > 0 && <> — 2일 이상 다시 온 사람 <b className="text-foreground">{repeatVisitors.toLocaleString()}</b>명</>}
