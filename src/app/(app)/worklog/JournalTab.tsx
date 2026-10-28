@@ -4,7 +4,7 @@
  * 일지 — 시트(DM 업무 현황)처럼 쓴다(2026-10-18).
  *
  *  행 = 날짜(맨 위 "먼 미래", 미래가 위·과거가 아래 — 시트와 같은 순서), 열 = 공통 + 사람.
- *  칸을 누르면 바로 적고 Enter 로 다음 줄. 끝나면 ● 를 누르거나 Ctrl+Enter → 취소선(완료).
+ *  칸을 누르면 바로 적고 Enter 로 확정, 한 번 더 Enter 로 다음 줄. ● 를 누르거나 Ctrl+Enter → 취소선(완료).
  *  "[LA] 배너 교체" 처럼 머리표로 시작하면 행사(아니면 분류)가 붙고, Enter 로 이어 쓰는 줄도 같은 머리표.
  *  시트 칸을 통째로 붙여 넣으면 줄마다 나뉜다. 줄을 끌어 다른 날·먼 미래·공통으로 옮긴다.
  *  상태는 고르지 않는다 — 취소선이면 완료, 아니면 날짜로 진행/예정(주간 보고가 그렇게 읽는다).
@@ -459,7 +459,7 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
           </div>
         </div>
         <p className="hidden text-[11px] text-muted-foreground sm:block">
-          칸을 눌러 바로 적기 · <Kbd>Enter</Kbd> 다음 줄 · <Kbd>Ctrl</Kbd>+<Kbd>Enter</Kbd> 또는 ● 완료(취소선) · <code className="rounded bg-secondary px-1">[LA] 할 일</code> 로 행사 지정(<button onClick={onGoGroups} className="underline">행사 관리</button>) · 줄을 끌어 다른 날로
+          칸을 눌러 바로 적기 · <Kbd>Enter</Kbd> 확정, 한 번 더 눌러 다음 줄 · <Kbd>Ctrl</Kbd>+<Kbd>Enter</Kbd> 또는 ● 완료(취소선) · <code className="rounded bg-secondary px-1">[LA] 할 일</code> 로 행사 지정(<button onClick={onGoGroups} className="underline">행사 관리</button>) · 줄을 끌어 다른 날로
         </p>
       </div>
 
@@ -631,6 +631,7 @@ function LineRow({
   onDragEnd: () => void;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const committedValue = useRef<string | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const value = draft ?? line.content;
   const done = line.status === "done";
@@ -663,7 +664,14 @@ function LineRow({
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (el.value.trim()) onEnter(el.value);
+      if (!el.value.trim()) return;
+      if (committedValue.current === el.value) {
+        committedValue.current = null;
+        onEnter(el.value);
+      } else {
+        onCommit(el.value);
+        committedValue.current = el.value;
+      }
       return;
     }
     if (e.key === "Backspace" && el.value === "") { e.preventDefault(); onBackspaceEmpty(); return; }
@@ -705,9 +713,9 @@ function LineRow({
               ref={ref}
               rows={1}
               value={value}
-              onFocus={() => setDraft(line.content)}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={(e) => { onCommit(e.target.value); setDraft(null); }}
+              onFocus={() => { committedValue.current = null; setDraft(line.content); }}
+              onChange={(e) => { committedValue.current = null; setDraft(e.target.value); }}
+              onBlur={(e) => { committedValue.current = null; onCommit(e.target.value); setDraft(null); }}
               onKeyDown={onKeyDown}
               onPaste={(e) => {
                 const text = e.clipboardData.getData("text/plain");
