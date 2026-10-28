@@ -48,11 +48,16 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const checkIns = builder
     ? await prisma.collectCheckIn.groupBy({ by: ["recordId"], where: { sourceId: id }, _min: { scannedAt: true }, _count: { _all: true } })
     : [];
-  const ciById = new Map(checkIns.map((c) => [c.recordId, { firstAt: c._min.scannedAt, count: c._count._all }]));
+  const checkInDays = builder
+    ? await prisma.collectCheckIn.groupBy({ by: ["recordId", "eventDate"], where: { sourceId: id }, orderBy: { eventDate: "asc" } })
+    : [];
+  const daysById = new Map<string, string[]>();
+  for (const d of checkInDays) daysById.set(d.recordId, [...(daysById.get(d.recordId) ?? []), d.eventDate]);
+  const ciById = new Map(checkIns.map((c) => [c.recordId, { firstAt: c._min.scannedAt, count: c._count._all, days: daysById.get(c.recordId) ?? [] }]));
 
   const headers = [
     "시간 (KST)",
-    ...(builder ? ["등록번호", "최초 입장 (KST)", "입장 스캔 횟수"] : []),
+    ...(builder ? ["등록번호", "최초 입장 (KST)", "입장 스캔 횟수", "방문일 (현지)", "방문 일수"] : []),
     ...columns.map((f) => f.label || f.key),
     "UTM 소스 (last)", "UTM 매체 (last)", "UTM 캠페인 (last)", "UTM 키워드 (last)", "UTM 콘텐츠 (last)",
     "First UTM 소스", "First UTM 매체", "First UTM 캠페인", "First UTM 키워드", "First UTM 콘텐츠",
@@ -69,6 +74,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
             r.registrationNo ?? "",
             ciById.get(r.id)?.firstAt ? formatKstDateTime(ciById.get(r.id)!.firstAt!) : "",
             ciById.get(r.id)?.count ?? "",
+            ciById.get(r.id)?.days.join(", ") ?? "",
+            ciById.get(r.id)?.days.length ?? "",
           ]
         : []),
       ...columns.map((f) => formatCollectValue(data[f.key])),

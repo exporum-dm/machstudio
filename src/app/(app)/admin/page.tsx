@@ -78,6 +78,7 @@ const ACTIVITY_LABELS: Record<string, string> = {
   "records.exported": "레코드 내보내기",
   "collect.records.exported": "사전등록 내보내기",
   "collect.checkin_updated": "현장 체크인 설정",
+  "collect.checkin_imported": "스캐너 파일 가져오기",
   "workspace.member.invited": "팀원 초대",
   "workspace.member.role_changed": "팀원 권한 변경",
   "workspace.member.removed": "팀원 제거",

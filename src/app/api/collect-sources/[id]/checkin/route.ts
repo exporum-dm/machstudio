@@ -49,7 +49,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if ("error" in auth) return auth.error;
   const { source } = auth;
 
-  const [byDay, recent] = await Promise.all([
+  const [byDay, recent, visitDays] = await Promise.all([
     prisma.$queryRaw<{ eventDate: string; scans: number; unique: number }[]>`
       SELECT "eventDate", COUNT(*)::int AS scans, COUNT(DISTINCT "recordId")::int AS unique
         FROM "CollectCheckIn" WHERE "sourceId" = ${id}
@@ -60,6 +60,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       take: 30,
       select: { id: true, scannedAt: true, method: true, staffLabel: true, record: { select: { registrationNo: true, data: true } } },
     }),
+    // 며칠 왔나 — 사람(record)마다 방문한 날 수를 센 뒤 그 분포. 행사가 끝난 뒤의 헤드라인(전체 방문자)도 여기서.
+    prisma.$queryRaw<{ days: number; people: number }[]>`
+      SELECT days, COUNT(*)::int AS people FROM (
+        SELECT COUNT(DISTINCT "eventDate")::int AS days FROM "CollectCheckIn" WHERE "sourceId" = ${id} GROUP BY "recordId"
+      ) t GROUP BY days ORDER BY days`,
   ]);
 
   const config = normalizeCollectForm(source.formConfig);
@@ -74,6 +79,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     today: eventDateIn(source.checkinTimezone),
     eventDates: config.eventInfo.eventDates,
     byDay,
+    visitDays,
     recent: recent.map((r) => {
       const view = buildTicketView(config, r.record);
       return {

@@ -109,9 +109,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const total = Number(countRows[0]?.count ?? 0);
 
   // 3) 레코드 본문 조회 후 raw SQL 정렬 순서대로 재정렬 (findMany 는 순서 보장 안 함)
-  let records: Array<Awaited<ReturnType<typeof prisma.collectRecord.findMany>>[number] & { checkIn?: { firstAt: Date; lastAt: Date; count: number } }> = [];
+  let records: Array<Awaited<ReturnType<typeof prisma.collectRecord.findMany>>[number] & { checkIn?: { firstAt: Date; lastAt: Date; count: number; days: string[] } }> = [];
   if (ids.length > 0) {
-    const [fetched, checkIns] = await Promise.all([
+    const [fetched, checkIns, checkInDays] = await Promise.all([
       prisma.collectRecord.findMany({ where: { id: { in: ids } } }),
       // 현장 체크인 요약 — 이 페이지의 레코드만. 체크인을 안 쓰는 소스는 0건이라 비용이 거의 없다.
       prisma.collectCheckIn.groupBy({
@@ -121,8 +121,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         _max: { scannedAt: true },
         _count: { _all: true },
       }),
+      // 방문한 날(행사 현지 날짜) — 여러 날 온 사람을 "N회 스캔" 과 구분해 보여 준다
+      prisma.collectCheckIn.groupBy({ by: ["recordId", "eventDate"], where: { recordId: { in: ids } }, orderBy: { eventDate: "asc" } }),
     ]);
-    const ciById = new Map(checkIns.map((c) => [c.recordId, { firstAt: c._min.scannedAt!, lastAt: c._max.scannedAt!, count: c._count._all }]));
+    const daysById = new Map<string, string[]>();
+    for (const d of checkInDays) daysById.set(d.recordId, [...(daysById.get(d.recordId) ?? []), d.eventDate]);
+    const ciById = new Map(checkIns.map((c) => [c.recordId, { firstAt: c._min.scannedAt!, lastAt: c._max.scannedAt!, count: c._count._all, days: daysById.get(c.recordId) ?? [] }]));
     const byId = new Map(fetched.map((r) => [r.id, r]));
     records = ids.map((rid) => byId.get(rid)!).filter(Boolean).map((r) => (ciById.has(r.id) ? { ...r, checkIn: ciById.get(r.id) } : r));
   }
