@@ -37,7 +37,7 @@ import GdprModal from "./GdprModal";
 import RetentionPolicyEditor from "./RetentionPolicyEditor";
 import DateRangeField from "@/components/DateRangeField";
 import { formatKst, formatKstDateTime } from "@/lib/datetime";
-import { dateTimeIn } from "@/lib/collect-checkin";
+import { checkinTimezoneLabel, csvDateTimeIn, dateTimeIn } from "@/lib/collect-checkin";
 import { formatCollectValue } from "@/lib/collect-columns";
 
 const spring = { type: "spring", stiffness: 420, damping: 30 } as const;
@@ -114,7 +114,7 @@ interface CollectRecord {
   /** 빌더형에만 있다 — 현장 입장의 열쇠이므로 목록에서 대조할 수 있어야 한다(§9.1·§12). */
   registrationNo?: string | null;
   /** 현장 체크인 요약 — 한 번이라도 스캔된 레코드에만 온다. */
-  checkIn?: { firstAt: string; lastAt: string; count: number };
+  checkIn?: { firstAt: string; lastAt: string; count: number; days?: string[] };
   utmSource: string | null;
   utmMedium: string | null;
   utmCampaign: string | null;
@@ -818,13 +818,28 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
         const s = String(v);
         return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
       };
+      // 빌더형은 전체 CSV 와 같은 등록번호·입장 열을 붙인다 — "입장" 필터로 방문자 명단을 받는 게 주 용도.
+      const builderCols = source.mode === "builder";
+      const tz = source.checkinTimezone ?? "Asia/Seoul";
+      const tzLabel = checkinTimezoneLabel(tz);
       const headers = [
         "시간 (KST)",
+        ...(builderCols ? ["등록번호", `최초 입장 (${tzLabel})`, `마지막 입장 (${tzLabel})`, "입장 스캔 횟수", "방문일 (현지)", "방문 일수"] : []),
         ...source.fieldMappings.map((f) => f.label || f.key),
         "UTM 소스", "UTM 매체", "UTM 캠페인", "UTM 키워드", "UTM 콘텐츠", "Referrer",
       ];
       const rows = targetRecords.map((r) => [
         formatKstDateTime(r.createdAt),
+        ...(builderCols
+          ? [
+              r.registrationNo ?? "",
+              r.checkIn ? csvDateTimeIn(tz, r.checkIn.firstAt) : "",
+              r.checkIn ? csvDateTimeIn(tz, r.checkIn.lastAt) : "",
+              r.checkIn?.count ?? "",
+              r.checkIn?.days?.join(", ") ?? "",
+              r.checkIn?.days?.length ?? "",
+            ]
+          : []),
         ...source.fieldMappings.map((f) => r.data?.[f.key] ?? ""),
         r.utmSource ?? "", r.utmMedium ?? "", r.utmCampaign ?? "",
         r.utmTerm ?? "", r.utmContent ?? "", r.referrer ?? "",
@@ -1673,11 +1688,13 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
                             </td>
                           )}
                           {showCheckinCol && (
-                            <td className="px-4 py-3 text-xs whitespace-nowrap tabular-nums" title={record.checkIn ? `마지막 스캔 ${dateTimeIn(source.checkinTimezone ?? "Asia/Seoul", record.checkIn.lastAt)}` : undefined}>
+                            <td className="px-4 py-3 text-xs whitespace-nowrap tabular-nums" title={record.checkIn ? `방문일 ${(record.checkIn.days ?? []).join(", ")} · 스캔 ${record.checkIn.count}회 · 마지막 ${dateTimeIn(source.checkinTimezone ?? "Asia/Seoul", record.checkIn.lastAt)}` : undefined}>
                               {record.checkIn ? (
                                 <span className="text-emerald-700 dark:text-emerald-400">
                                   {dateTimeIn(source.checkinTimezone ?? "Asia/Seoul", record.checkIn.firstAt)}
-                                  {record.checkIn.count > 1 && <span className="ml-1 text-muted-foreground">· {record.checkIn.count}회</span>}
+                                  {(record.checkIn.days?.length ?? 0) > 1
+                                    ? <span className="ml-1 font-medium">· {record.checkIn.days!.length}일 방문</span>
+                                    : record.checkIn.count > 1 && <span className="ml-1 text-muted-foreground">· {record.checkIn.count}회</span>}
                                 </span>
                               ) : (
                                 <span className="text-muted-foreground">-</span>

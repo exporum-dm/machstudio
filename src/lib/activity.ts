@@ -16,6 +16,7 @@ export type ActivityAction =
   | "records.exported"
   | "collect.records.exported"
   | "collect.checkin_updated"
+  | "collect.checkin_imported"
   | "workspace.member.invited"
   | "workspace.member.role_changed"
   | "workspace.member.removed"

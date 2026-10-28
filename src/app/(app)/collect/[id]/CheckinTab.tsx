@@ -7,10 +7,13 @@
  * 아래: 읽는 영역 — 오늘 입장 인원이 헤드라인, 일자별 표, 최근 스캔. 15초마다 새로 고친다.
  *
  * 위험한 조작(링크 새로 만들기 = 운영요원 전원 링크 교체)만 작게, 확인 뒤에 둔다.
+ *
+ * 오프라인 스캐너(인터넷 없는 바코드 기계)로 찍은 행사는 끝난 뒤 그 파일을 올려 같은 기록으로 합친다
+ * (LA 2026). 등록 데이터는 바뀌지 않고 입장 기록만 더해진다.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
-import { Copy, ExternalLink, KeyRound, Link2, Loader2, RefreshCw, ScanLine } from "lucide-react";
+import { Copy, ExternalLink, FileUp, KeyRound, Link2, Loader2, RefreshCw, ScanLine } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Btn, Chip, FINISH, R } from "@/components/ui/primitives";
@@ -29,10 +32,27 @@ interface CheckinState {
   today: string;
   eventDates: string[];
   byDay: { eventDate: string; scans: number; unique: number }[];
+  /** 사람마다 방문한 날 수의 분포 — [{days: 1, people: 6174}, {days: 2, people: 145}, …] */
+  visitDays: { days: number; people: number }[];
   recent: { id: string; scannedAt: string; method: string; staffLabel: string; registrationNo: string | null; name: string; visitorType: string }[];
 }
 
 const METHOD_LABEL: Record<string, string> = { camera: "카메라", scanner: "스캐너", manual: "직접 입력" };
+
+interface ImportResult { inserted: number; duplicate: number; otherEvent: number; skipped: number; unmatchedCount: number; unmatched: string[] }
+const IMPORT_CHUNK = 2000;
+
+/** 스캐너 파일 → 줄 목록. 엑셀은 시트마다 행의 셀을 이어 붙인다(한 칸에 한 줄 전체가 든 파일도, 칸으로 나뉜 파일도). */
+async function readScannerLines(file: File): Promise<string[]> {
+  if (/\.(xlsx|xls)$/i.test(file.name)) {
+    const XLSX = await import("xlsx");
+    const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+    return wb.SheetNames.flatMap((n) =>
+      (XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: "" }) as unknown[][]).map((row) => row.map((c) => String(c ?? "")).join(" ").trim()),
+    ).filter(Boolean);
+  }
+  return (await file.text()).split(/\r?\n/).map((l) => l.replace(/[,\t;]/g, " ").trim()).filter(Boolean);
+}
 
 function Switch({ on, onChange, disabled, label }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean; label: string }) {
   return (
@@ -65,6 +85,9 @@ export default function CheckinTab({ sourceId, canEdit }: { sourceId: string; ca
   }
   const [saving, setSaving] = useState(false);
   const [qr, setQr] = useState("");
+  const [importing, setImporting] = useState("");
+  const [imported, setImported] = useState<ImportResult | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/collect-sources/${sourceId}/checkin`, { cache: "no-store" });
@@ -162,6 +185,41 @@ export default function CheckinTab({ sourceId, canEdit }: { sourceId: string; ca
     }
   };
 
+  const importFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const total: ImportResult = { inserted: 0, duplicate: 0, otherEvent: 0, skipped: 0, unmatchedCount: 0, unmatched: [] };
+    try {
+      for (const file of Array.from(files)) {
+        setImporting(`${file.name} 읽는 중`);
+        const lines = await readScannerLines(file);
+        for (let i = 0; i < lines.length; i += IMPORT_CHUNK) {
+          setImporting(`${file.name} · ${Math.min(i + IMPORT_CHUNK, lines.length).toLocaleString()} / ${lines.length.toLocaleString()}줄`);
+          const res = await fetch(`/api/collect-sources/${sourceId}/checkin/import`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lines: lines.slice(i, i + IMPORT_CHUNK) }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "가져오지 못했어요");
+          total.inserted += data.inserted;
+          total.duplicate += data.duplicate;
+          total.otherEvent += data.otherEvent;
+          total.skipped += data.skipped;
+          total.unmatchedCount += data.unmatchedCount;
+          total.unmatched.push(...data.unmatched);
+        }
+      }
+      setImported(total);
+      toast.success(`입장 기록 ${total.inserted.toLocaleString()}건을 추가했어요`);
+      setState(await load());
+    } catch (e) {
+      setImported(total.inserted ? total : null);
+      toast.error((e as Error).message);
+    } finally {
+      setImporting("");
+    }
+  };
+
   if (error) return <p className="text-sm text-destructive">{error}</p>;
   if (!state) return <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> 불러오는 중</div>;
   if (!state.builder) {
@@ -169,6 +227,11 @@ export default function CheckinTab({ sourceId, canEdit }: { sourceId: string; ca
   }
 
   const todayRow = state.byDay.find((d) => d.eventDate === state.today);
+  const visitors = state.visitDays.reduce((a, v) => a + v.people, 0);
+  const repeatVisitors = state.visitDays.filter((v) => v.days > 1).reduce((a, v) => a + v.people, 0);
+  // 연인원 — 날마다 온 사람을 각각 센 합(이틀 온 사람은 2). 전시 결과보고의 "누적 방문객" 기준.
+  const visitorDays = state.byDay.reduce((a, d) => a + d.unique, 0);
+  const totalScans = state.byDay.reduce((a, d) => a + d.scans, 0);
   const days = Array.from(new Set([...state.eventDates, ...state.byDay.map((d) => d.eventDate)])).sort();
 
   return (
@@ -309,6 +372,30 @@ export default function CheckinTab({ sourceId, canEdit }: { sourceId: string; ca
 
       {/* 현황 */}
       <section className="min-w-0 space-y-4">
+        {visitors > 0 && (
+          <div className={`${R.panel} ${FINISH.s1} bg-card p-5`}>
+            <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
+              <div>
+                <p className="text-xs text-muted-foreground">누적 방문객 (연인원 · 날마다 각각 셈)</p>
+                <p className="mt-1 text-3xl font-bold tabular-nums">{visitorDays.toLocaleString()}<span className="ml-1 text-base font-medium text-muted-foreground">명</span></p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">순방문자 (한 사람은 한 번)</p>
+                <p className="mt-1 text-2xl font-semibold tabular-nums">{visitors.toLocaleString()}<span className="ml-1 text-sm font-medium text-muted-foreground">명</span></p>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground tabular-nums">
+              바코드 스캔 {totalScans.toLocaleString()}회 — 같은 날 다시 찍힌 {(totalScans - visitorDays).toLocaleString()}회(재입장·입구 중복)는 그날 1명으로 세요.
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+              {state.visitDays.map((v) => `${v.days}일 방문 ${v.people.toLocaleString()}명`).join(" · ")}
+              {repeatVisitors > 0 && <> — 2일 이상 다시 온 사람 <b className="text-foreground">{repeatVisitors.toLocaleString()}</b>명</>}
+            </p>
+            <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+              등록자 DB 탭에서 입장 열 필터를 <b className="text-foreground">입장</b>으로 두고 CSV를 받으면 방문자 명단이 나와요(방문일·방문 일수 포함).
+            </p>
+          </div>
+        )}
         <div className={`${R.panel} ${FINISH.s1} bg-card p-5`}>
           <div className="flex items-start justify-between gap-2">
             <div>
@@ -337,6 +424,39 @@ export default function CheckinTab({ sourceId, canEdit }: { sourceId: string; ca
             </ul>
           )}
         </div>
+
+        {canEdit && (
+          <div className={`${R.panel} ${FINISH.s1} bg-card p-5`}>
+            <h3 className="flex items-center gap-2 text-sm font-semibold"><FileUp className="h-4 w-4 text-emerald-500" /> 오프라인 스캐너 파일 올리기</h3>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              인터넷 없이 찍은 바코드 기계의 저장 파일(xlsx·csv·txt)을 올리면 입장 기록으로 합쳐요. 한 줄이
+              {" "}<span className="font-mono">2026.10.22 09:32:49 … 등록번호 P044</span> 처럼 현지 날짜·시각으로 시작하면 돼요.
+              시각은 왼쪽 <b className="text-foreground">시간대</b> 기준이에요. 등록 데이터는 바뀌지 않고, 같은 파일을 다시 올려도 중복으로 쌓이지 않아요.
+            </p>
+            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.txt" multiple className="hidden" onChange={(e) => { void importFiles(e.target.files); e.target.value = ""; }} />
+            <Btn tone="key" className="mt-3" disabled={Boolean(importing)} onClick={() => fileRef.current?.click()}>
+              {importing ? <><Loader2 className="h-4 w-4 animate-spin" /> {importing}</> : "파일 고르기 (여러 개 가능)"}
+            </Btn>
+            {imported && (
+              <div className={`mt-3 ${R.control} bg-secondary/60 p-3 text-xs leading-relaxed`}>
+                <p>
+                  추가 <b className="tabular-nums">{imported.inserted.toLocaleString()}</b>건
+                  {imported.duplicate > 0 && <> · 이미 있던 기록 {imported.duplicate.toLocaleString()}건 건너뜀</>}
+                  {imported.otherEvent > 0 && <> · 다른 행사 등록번호 {imported.otherEvent.toLocaleString()}건</>}
+                  {imported.skipped > 0 && <> · 날짜로 시작하지 않는 줄 {imported.skipped.toLocaleString()}개</>}
+                </p>
+                {imported.unmatchedCount > 0 && (
+                  <details className="mt-1">
+                    <summary className="cursor-pointer text-muted-foreground">등록자와 못 맞춘 값 {imported.unmatchedCount.toLocaleString()}건</summary>
+                    <ul className="mt-1 max-h-40 overflow-auto break-all font-mono text-[11px] text-muted-foreground">
+                      {imported.unmatched.map((u, i) => <li key={i}>{u}</li>)}
+                    </ul>
+                  </details>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className={`${R.panel} ${FINISH.s1} bg-card p-5`}>
           <h3 className="text-sm font-semibold">최근 스캔</h3>
