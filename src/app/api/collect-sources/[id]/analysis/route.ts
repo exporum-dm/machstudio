@@ -8,14 +8,12 @@
  * 분기 문항(바이어 전용 등)은 그 유형 분석에만 넣는다 — 전체에 섞으면 분모가 달라 읽기 어렵다.
  */
 import { NextResponse } from "next/server";
-import { Prisma } from "@/generated/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { collectColumnsFor } from "@/lib/collect-columns";
 import { normalizeCollectForm } from "@/lib/collect-form-config";
-import { audienceInsights, buildRegistrationAnalysis, pickAnalysisFields, summarizeAudiences, type AnalysisInput } from "@/lib/registration-analysis";
+import { loadCollectAnalysis } from "@/lib/collect-registration-loader";
 import { normalizeSurveyConfig, resolveLinkedQuestions, surveyInsights } from "@/lib/survey-config";
-
+import { surveyAiAvailable } from "@/lib/survey-ai-insight";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -31,67 +29,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (source.mode !== "builder") return NextResponse.json({ error: "빌더형 등록에서만 볼 수 있어요" }, { status: 400 });
 
   const config = normalizeCollectForm(source.formConfig);
-  const { fields, companionKey, visitDateKey, regionKey, textFields } = pickAnalysisFields(collectColumnsFor(source));
-
-  const keys = Array.from(new Set([...fields.map((f) => f.key), ...textFields.map((t) => t.key), companionKey, visitDateKey, regionKey].filter((k): k is string => Boolean(k))));
-  const [records, checkIns] = await Promise.all([
-    prisma.$queryRaw<{ id: string; registrationNo: string | null; createdAt: Date; utm: string | null; d: Record<string, unknown> | null }[]>(Prisma.sql`
-      SELECT id, "registrationNo", "createdAt",
-             COALESCE(NULLIF("firstUtmSource", ''), NULLIF("utmSource", '')) AS utm,
-             (SELECT jsonb_object_agg(key, value) FROM jsonb_each(data) WHERE key = ANY(${keys})) AS d
-        FROM "CollectRecord" WHERE "sourceId" = ${id}`),
-    prisma.collectCheckIn.findMany({ where: { sourceId: id }, select: { recordId: true, eventDate: true, scannedAt: true } }),
-  ]);
-
-  // 유형(분기 기준) 항목과 그룹별 문항
-  const audienceKey = config.branch.enabled && config.branch.fieldKey ? config.branch.fieldKey : fields.find((f) => /visitor_?type|attendee_?type/i.test(f.key))?.key ?? null;
-  const groupKeys = new Map(config.branch.enabled ? config.branch.groups.map((g) => [g.value.trim(), new Set(g.fields.map((gf) => gf.key))]) : []);
-  const branchOnly = new Set([...groupKeys.values()].flatMap((set) => [...set]));
-  const commonFields = fields.filter((f) => !branchOnly.has(f.key));
-  const commonText = textFields.filter((t) => !branchOnly.has(t.key));
-
-  const all = records.map((r) => ({ id: r.id, registrationNo: r.registrationNo, createdAt: r.createdAt, data: r.d ?? {}, utmSource: r.utm }));
-  const base: Omit<AnalysisInput, "fields" | "records" | "checkIns"> = {
-    timezone: source.checkinTimezone,
-    eventDates: config.eventInfo.eventDates,
-    onsiteFrom: null,
-    companionKey,
-    visitDateKey,
-    regionKey,
-  };
-  const analysis = buildRegistrationAnalysis({ ...base, fields: commonFields, textFields: commonText, records: all, checkIns });
-
-  let audiences: { value: string; analysis: ReturnType<typeof buildRegistrationAnalysis> }[] = [];
-  if (audienceKey) {
-    const audienceField = fields.find((f) => f.key === audienceKey);
-    const byValue = new Map<string, typeof all>();
-    for (const r of all) {
-      const v = String(r.data[audienceKey] ?? "").trim() || "(미응답)";
-      const list = byValue.get(v) ?? [];
-      list.push(r);
-      byValue.set(v, list);
-    }
-    const order = audienceField?.options.map((o) => o.trim()) ?? [];
-    const values = [...byValue.keys()].sort((a, b) => (order.indexOf(a) + 1 || 999) - (order.indexOf(b) + 1 || 999) || (byValue.get(b)!.length - byValue.get(a)!.length));
-    audiences = values.map((value) => {
-      const recs = byValue.get(value)!;
-      const ids = new Set(recs.map((r) => r.id));
-      const own = groupKeys.get(value);
-      return {
-        value,
-        analysis: buildRegistrationAnalysis({
-          ...base,
-          // 유형 안에서는 유형 문항 자체는 뺀다(100% 한 값) — 그 유형의 분기 문항을 더한다
-          fields: [...commonFields.filter((f) => f.key !== audienceKey), ...fields.filter((f) => own?.has(f.key))],
-          textFields: [...commonText, ...textFields.filter((t) => own?.has(t.key))],
-          records: recs,
-          checkIns: checkIns.filter((c) => ids.has(c.recordId)),
-        }),
-      };
-    });
-    const rows = summarizeAudiences(audiences);
-    analysis.insights.splice(2, 0, ...audienceInsights(rows, audienceField?.label ?? "유형"));
-  }
+  const { analysis, audiences, audienceRows, audienceKey, companionKey, visitDateKey, regionKey } = await loadCollectAnalysis(source);
 
   /**
    * 연결된 만족도 조사 — 문항별 결과(분포·평균·NPS)는 만족도 조사 탭에 이미 있다. 여기서는
@@ -99,7 +37,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
    * (유형별 격차·사전등록자 vs 워크인·응답률 신뢰도). 한 등록 소스에 조사가 0·1·N개일 수 있다.
    */
   const audienceVisitRate = audienceKey
-    ? Object.fromEntries(summarizeAudiences(audiences).map((r) => [r.value, r.showUpPre.rate]))
+    ? Object.fromEntries(audienceRows.map((r) => [r.value, r.showUpPre.rate]))
     : undefined;
   const surveyRows = await prisma.survey.findMany({ where: { sourceId: id }, select: { id: true, name: true, config: true } });
   for (const s of surveyRows) {
@@ -128,7 +66,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       hours,
       analysis,
       audiences,
-      audienceRows: summarizeAudiences(audiences),
+      audienceRows,
+      hasSurvey: surveyRows.length > 0,
+      surveyAiAvailable: surveyAiAvailable(),
     },
     { headers: { "Cache-Control": "private, max-age=60" } },
   );

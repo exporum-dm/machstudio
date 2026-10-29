@@ -404,17 +404,18 @@ export interface SurveyInsightInput {
   audienceVisitRate?: Record<string, number>;
 }
 
-function scoreQuestions(config: SurveyConfig) {
+/** 점수형(scale·nps) 문항만 — 유형·채널 격차나 AI 해석 집계가 공유해서 쓴다. */
+export function scoreQuestions(config: SurveyConfig) {
   return [...config.walkIn.questions, ...config.sections.flatMap((s) => s.questions)].filter((q) => q.type === "scale" || q.type === "nps");
 }
 
-function scoreOf(q: SurveyQuestion, answers: unknown): number | null {
+export function scoreOf(q: SurveyQuestion, answers: unknown): number | null {
   const map = (answers && typeof answers === "object" ? answers : {}) as SurveyAnswerMap;
   const n = Number(map[q.key]);
   return Number.isFinite(n) ? n : null;
 }
 
-function avgScore(rs: SurveyInsightResponse[], q: SurveyQuestion): number | null {
+export function avgScore(rs: SurveyInsightResponse[], q: SurveyQuestion): number | null {
   const nums = rs.map((r) => scoreOf(q, r.answers)).filter((n): n is number => n !== null);
   return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
 }

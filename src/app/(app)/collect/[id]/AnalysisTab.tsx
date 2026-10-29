@@ -12,7 +12,7 @@
  * 동반 인원은 **방문자 수에만** 더한다(인구통계는 모른다). 색: 사전등록 = series-1, 현장등록 = series-2(고정 — 순위로 바꾸지 않는다).
  */
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Download, Info, Lightbulb, Loader2, RefreshCw } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, Info, Lightbulb, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 import { Btn, FINISH, R, Segmented } from "@/components/ui/primitives";
@@ -29,6 +29,15 @@ interface Payload {
   analysis: RegistrationAnalysis;
   audiences: { value: string; analysis: RegistrationAnalysis }[];
   audienceRows: AudienceRow[];
+  /** 연결된 만족도 조사가 있는지 — 있을 때만 "AI로 해석하기" 버튼을 보여준다. */
+  hasSurvey: boolean;
+  /** ANTHROPIC_API_KEY 가 설정돼 있는지 — 없으면 버튼을 비활성화하고 이유를 알린다. */
+  surveyAiAvailable: boolean;
+}
+
+interface SurveyAiResult {
+  summary: string;
+  insights: Insight[];
 }
 
 const n = (x: number) => x.toLocaleString("ko-KR");
@@ -347,6 +356,24 @@ export default function AnalysisTab({ sourceId }: { sourceId: string }) {
   const [segView, setSegView] = useState<SegView>("visitors");
   // "" = 전체
   const [audience, setAudience] = useState("");
+  const [aiResult, setAiResult] = useState<SurveyAiResult | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState("");
+
+  const runSurveyAi = useCallback(async () => {
+    setAiBusy(true);
+    setAiError("");
+    try {
+      const res = await fetch(`/api/collect-sources/${sourceId}/analysis/survey-ai`, { method: "POST" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "AI가 해석을 쓰지 못했어요");
+      setAiResult(body as SurveyAiResult);
+    } catch (e) {
+      setAiError((e as Error).message);
+    } finally {
+      setAiBusy(false);
+    }
+  }, [sourceId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -519,6 +546,41 @@ export default function AnalysisTab({ sourceId }: { sourceId: string }) {
         <Card>
           <SectionTitle title="내년에 써먹을 인사이트" hint="숫자에서 바로 읽히는 것만, 표본이 충분할 때만 뽑았어요(등록 분석은 100명·만족도 조사는 20명 이상)." />
           <ul className="divide-y divide-border">{a.insights.map((i, idx) => <InsightRow key={idx} i={i} />)}</ul>
+        </Card>
+      )}
+
+      {/* 만족도 조사 AI 해석 — 문항별 숫자는 만족도 조사 탭에 있다. 여기서는 등록 데이터·주관식 답변까지
+          같이 읽고 전체가 무엇을 뜻하는지 해석한다. 눌렀을 때만 돌고(비용) 저장하지 않는다. */}
+      {data.hasSurvey && (
+        <Card>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold">만족도 조사 해석</h3>
+              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                문항별 점수·분포는 만족도 조사 탭에 있어요. 여기서는 등록 데이터·주관식 답변까지 같이 읽고 이번 조사가 전체적으로 무엇을 뜻하는지 해석해요.
+              </p>
+            </div>
+            <Btn
+              tone="ghost"
+              onClick={() => void runSurveyAi()}
+              disabled={!data.surveyAiAvailable || aiBusy}
+              title={data.surveyAiAvailable ? "등록 데이터와 교차해서 AI가 해석해요" : "Vercel 환경 변수 ANTHROPIC_API_KEY 를 넣으면 켜져요"}
+              className="shrink-0 bg-violet-500/10 text-violet-600 hover:bg-violet-500/20 dark:text-violet-400"
+            >
+              {aiBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} AI로 해석하기
+            </Btn>
+          </div>
+          {aiError && <p className="mt-3 text-sm text-destructive">{aiError}</p>}
+          {aiResult && (
+            <div className="mt-4 space-y-3">
+              {aiResult.summary && (
+                <p className="rounded-xl bg-violet-500/5 p-3 text-sm leading-relaxed">{aiResult.summary}</p>
+              )}
+              {aiResult.insights.length > 0 && (
+                <ul className="divide-y divide-border">{aiResult.insights.map((i, idx) => <InsightRow key={idx} i={i} />)}</ul>
+              )}
+            </div>
+          )}
         </Card>
       )}
 
