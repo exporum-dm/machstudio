@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { analyzeMention, buildPressRelease, isCollectionDue } from "../model";
-import { isRelevantMention, parseNaverNews } from "../collect";
+import { extractReferenceLinks, isRelevantMention, parseNaverNews, parseSocialPage } from "../collect";
 
 describe("홍보실 조사", () => {
   it("설정한 주기가 지난 경우에만 조사한다", () => {
@@ -9,6 +9,11 @@ describe("홍보실 조사", () => {
     expect(isCollectionDue({ collectEveryDays: 3, lastCollectedAt: "2026-10-27T00:00:00Z" }, now)).toBe(false);
   });
   it("부정 이슈를 보수적으로 올린다", () => expect(analyzeMention("운영 부실 논란")).toMatchObject({ sentiment: "negative", status: "issue" }));
+});
+
+it("참고 문서의 SNS 링크와 인스타 반응 수치를 읽는다",()=>{
+  expect(extractReferenceLinks('x https://www.instagram.com/p/ABC123/ y')).toEqual(["https://www.instagram.com/p/ABC123/"]);
+  expect(parseSocialPage("https://www.instagram.com/p/ABC123/",'<meta property="og:description" content="99 likes, 3 comments - koreaexpo_global on October 25, 2026: &quot;Korea Expo LA highlights&quot;.">')).toMatchObject({author:"koreaexpo_global",metrics:{likes:99,comments:3}});
 });
 
 it("행사명이 없는 비슷한 축제 결과는 제외한다",()=>{

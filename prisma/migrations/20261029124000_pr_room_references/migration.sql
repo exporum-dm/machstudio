@@ -1,0 +1,1 @@
+ALTER TABLE "PrRoom" ADD COLUMN "referenceUrls" JSONB NOT NULL DEFAULT '[]';

@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { guardProject } from "@/lib/brief/server";
 import { collectPrRoom } from "@/lib/pr-room/collect";
 
+export const maxDuration = 60;
+
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   const projectId = typeof body?.projectId === "string" ? body.projectId : "";

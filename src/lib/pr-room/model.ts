@@ -11,6 +11,9 @@ export interface PrMention {
   responseNote: string;
   publishedAt: string | null;
   collectedAt: string;
+  author?: string;
+  metrics?: { views?:number; likes?:number; comments?:number; shares?:number; saves?:number };
+  origin?: "search" | "reference";
 }
 
 export interface PressRelease {

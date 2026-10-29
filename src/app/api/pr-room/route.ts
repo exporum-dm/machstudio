@@ -21,6 +21,7 @@ export async function PATCH(request: Request) {
   const data: Record<string, unknown> = {};
   if (typeof body?.collectEveryDays === "number") data.collectEveryDays = Math.max(1, Math.min(30, Math.trunc(body.collectEveryDays)));
   if (Array.isArray(body?.keywords)) data.keywords = body.keywords.filter((x) => typeof x === "string").slice(0, 20);
+  if (Array.isArray(body?.referenceUrls)) data.referenceUrls = body.referenceUrls.filter((x) => typeof x === "string").slice(0, 20);
   if (Array.isArray(body?.mentions)) data.mentions = body.mentions.slice(0, 500);
   if (Array.isArray(body?.pressReleases)) data.pressReleases = body.pressReleases.slice(0, 50);
   const room = await prisma.prRoom.update({ where: { id: current.id }, data });

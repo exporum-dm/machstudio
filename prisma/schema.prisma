@@ -1077,6 +1077,7 @@ model PrRoom {
   collectEveryDays  Int      @default(3)
   lastCollectedAt   DateTime?
   keywords          Json     @default("[]")
+  referenceUrls     Json     @default("[]")
   mentions          Json     @default("[]")
   pressReleases     Json     @default("[]")
   createdAt         DateTime @default(now())
