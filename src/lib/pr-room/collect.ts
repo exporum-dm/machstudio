@@ -17,6 +17,8 @@ const SOCIAL_SOURCES = [
 interface Found { title:string; url:string; source:string; channel:PrMention["channel"]; publishedAt:Date|null; excerpt:string }
 
 function cleanText(value:string){return value.replace(/<[^>]+>/g," ").replace(/&quot;/g,'"').replace(/&amp;/g,"&").replace(/\s+/g," ").replace(/새 창 열림$/," ").trim()}
+const compact=(value:string)=>value.toLowerCase().normalize("NFKC").replace(/[^a-z0-9가-힣]/g,"");
+export function isRelevantMention(title:string,queries:string[]){const haystack=compact(title);return queries.some(query=>{const needle=compact(query);return needle.length>=4&&haystack.includes(needle)})}
 
 export function parseNaverNews(html:string,query=""):Found[]{
   const rows:Found[]=[];const seen=new Set<string>();
@@ -45,9 +47,9 @@ export async function collectPrRoom(roomId: string, now = new Date()) {
     {label:"네이버 뉴스",run:async()=>{const url=`https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(query)}`;const r=await safeFetchText(url,{maxBytes:2_000_000,timeoutMs:15_000});return r?parseNaverNews(r.text,query):[]}},
     ...SOCIAL_SOURCES.map(s=>({label:s.label,run:()=>googleRows(`site:${s.domain} "${query}"`,s.channel,s.label,days)})),
   ]);
-  const settled=await Promise.all(tasks.map(async task=>{try{const found=await task.run();counts[task.label]=(counts[task.label]??0)+found.length;return found}catch(e){errors.push(`${task.label}: ${e instanceof Error?e.message:String(e)}`);return []}}));
+  const settled=await Promise.all(tasks.map(async task=>{try{const found=(await task.run()).filter(row=>isRelevantMention(row.title,queries));counts[task.label]=(counts[task.label]??0)+found.length;return found}catch(e){errors.push(`${task.label}: ${e instanceof Error?e.message:String(e)}`);return []}}));
   const rows=settled.flat();
-  const previous = Array.isArray(room.mentions) ? room.mentions as unknown as PrMention[] : [];
+  const previous = (Array.isArray(room.mentions) ? room.mentions as unknown as PrMention[] : []).filter(row=>isRelevantMention(row.title,queries));
   const known = new Set(previous.map((x) => x.url));
   const added: PrMention[] = [];
   for (const row of rows) {

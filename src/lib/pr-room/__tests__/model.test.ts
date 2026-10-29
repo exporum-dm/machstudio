@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { analyzeMention, buildPressRelease, isCollectionDue } from "../model";
-import { parseNaverNews } from "../collect";
+import { isRelevantMention, parseNaverNews } from "../collect";
 
 describe("홍보실 조사", () => {
   it("설정한 주기가 지난 경우에만 조사한다", () => {
@@ -9,6 +9,12 @@ describe("홍보실 조사", () => {
     expect(isCollectionDue({ collectEveryDays: 3, lastCollectedAt: "2026-10-27T00:00:00Z" }, now)).toBe(false);
   });
   it("부정 이슈를 보수적으로 올린다", () => expect(analyzeMention("운영 부실 논란")).toMatchObject({ sentiment: "negative", status: "issue" }));
+});
+
+it("행사명이 없는 비슷한 축제 결과는 제외한다",()=>{
+  const queries=["코리아 엑스포 LA","Korea Expo LA","Korea Expo"];
+  expect(isRelevantMention("Korea Expo LA 2026 Day 2",queries)).toBe(true);
+  expect(isRelevantMention("Food and Art Festival 2026 Suncheon",queries)).toBe(false);
 });
 
 it("질문 답변으로 보도자료 전체 원고를 만든다",()=>{
