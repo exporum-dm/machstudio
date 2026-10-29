@@ -7,6 +7,7 @@
  *  칸을 누르면 바로 적고 Enter 로 확정, 한 번 더 Enter 로 다음 줄. ● 를 누르거나 Ctrl+Enter → 취소선(완료).
  *  "[LA] 배너 교체" 처럼 머리표로 시작하면 행사(아니면 분류)가 붙고, Enter 로 이어 쓰는 줄도 같은 머리표.
  *  시트 칸을 통째로 붙여 넣으면 줄마다 나뉜다. 줄을 끌어 다른 날·먼 미래·공통으로 옮긴다.
+ *  한 칸 안에선 같은 행사 줄을 한 머리표 아래 모아 보이고, 끌어 놓거나 ⋯ · Alt+↑↓ 로 순서를 바꾼다(2026-10-29).
  *  상태는 고르지 않는다 — 취소선이면 완료, 아니면 날짜로 진행/예정(주간 보고가 그렇게 읽는다).
  */
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -15,7 +16,8 @@ import { Check, ChevronDown, ChevronUp, GripVertical, Loader2, MoreHorizontal, T
 import { toast } from "sonner";
 import { FIELD_CLS, FINISH, R } from "@/components/ui/primitives";
 import {
-  WORK_CATEGORIES, kstToday, openStatus, parsePastedWork, resolveWorkTagInContext, shiftDay, splitWorkTag, weekOf,
+  WORK_CATEGORIES, kstToday, openStatus, orderCellLines, parsePastedWork, resolveWorkTagInContext, shiftDay, shiftInCell,
+  sortOrderNeighbors, splitWorkTag, weekOf,
 } from "@/lib/worklog";
 import type { WorkEntryDto, WorkGroupDto, WorkMemberDto } from "./types";
 
@@ -160,8 +162,7 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
       const key = cellKey(rowOf(l), colOf(l));
       map.set(key, [...(map.get(key) ?? []), l]);
     }
-    for (const list of map.values()) list.sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt));
-    return map;
+    return new Map([...map].map(([key, list]) => [key, orderCellLines(list)] as const));
   }, [lines]);
 
   const allCols = useMemo(() => {
@@ -285,7 +286,8 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
       const id = await savedId;
       if (!id) return;
       const res = await fetch(`/api/worklog/entries?id=${id}`, { method: "DELETE", keepalive: true });
-      if (!res.ok) { toast.error("지우지 못했어요"); setLines((prev) => [...prev, line]); return; }
+      // 이미 지워진 줄(다른 창·팀원이 먼저 지움)은 되살리지 않는다.
+      if (!res.ok && res.status !== 404) { toast.error("지우지 못했어요"); setLines((prev) => [...prev, line]); return; }
       if (undo) toast("줄을 지웠어요", { description: line.content, action: { label: "되돌리기", onClick: () => restore(line) } });
     });
   };
@@ -297,11 +299,10 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
     if (existing && !after) { setFocus({ ck: existing.ck, caret: "end" }); return; }
     let sortOrder: number;
     if (after) {
-      const i = list.findIndex((l) => l.ck === after.ck);
-      const next = list[i + 1];
-      sortOrder = next ? (after.sortOrder + next.sortOrder) / 2 : after.sortOrder + 1;
+      const { above } = sortOrderNeighbors(list.map((l) => l.sortOrder), after.sortOrder);
+      sortOrder = above !== null ? (after.sortOrder + above) / 2 : after.sortOrder + 1;
     } else {
-      sortOrder = (list.at(-1)?.sortOrder ?? 0) + 1;
+      sortOrder = endOrder(list);
     }
     const date = row === SOMEDAY ? null : row;
     const now = new Date().toISOString();
@@ -317,9 +318,9 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
 
   /** 지금 ref 기준의 칸 줄(렌더 전 값까지). */
   const byCellNow = (row: string, col: string) =>
-    linesRef.current
-      .filter((l) => rowOf(l) === row && colOf(l) === col)
-      .sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt));
+    orderCellLines(linesRef.current.filter((l) => rowOf(l) === row && colOf(l) === col));
+  /** 칸 맨 끝 자리 — 보이는 순서와 상관없이 가장 큰 sortOrder 다음. */
+  const endOrder = (list: Line[]) => list.reduce((m, l) => Math.max(m, l.sortOrder), 0) + 1;
 
   /** 글을 확정한다(Enter·blur). 머리표 "[LA]" 는 떼어 행사/분류로. 비우면 지운다. */
   const commit = (ck: string, raw: string) => {
@@ -364,12 +365,48 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
     if (!line || !canCreateIn(col)) return;
     if (rowOf(line) === row && colOf(line) === col) return;
     const date = row === SOMEDAY ? null : row;
-    const sortOrder = (byCellNow(row, col).at(-1)?.sortOrder ?? 0) + 1;
+    const sortOrder = endOrder(byCellNow(row, col));
     const patch: Partial<WorkEntryDto> = { date, common: col === COMMON, sortOrder };
     if (line.status !== "done") patch.status = openStatus(date, today);
     if (col !== COMMON && col !== line.authorId) patch.authorId = col;
     const local: Partial<Line> = col !== COMMON ? { authorId: col, authorName: nameOf(col) } : {};
     void update(ck, patch, local);
+  };
+
+  /** 칸의 줄을 이 순서대로 1, 2, 3… 으로 다시 매긴다. 바뀐 줄만 저장. */
+  const renumber = (ordered: Line[]) => {
+    ordered.forEach((l, i) => {
+      const sortOrder = i + 1;
+      if (l.sortOrder === sortOrder) return;
+      if (l.temp && !creating.current.has(l.ck)) setLines((prev) => prev.map((x) => (x.ck === l.ck ? { ...x, sortOrder } : x)));
+      else void update(l.ck, { sortOrder });
+    });
+  };
+
+  /** 위(-1)·아래(1)로 한 칸. 행사 묶음 끝에서는 묶음째 넘어간다. */
+  const shift = (ck: string, dir: -1 | 1) => {
+    const line = find(ck);
+    if (!line || !canEditLine(line)) return;
+    const list = byCellNow(rowOf(line), colOf(line));
+    const i = list.findIndex((l) => l.ck === ck);
+    const next = shiftInCell(list, i, dir);
+    if (next !== list) renumber(next);
+  };
+
+  /** 끌어 온 줄을 다른 줄 위·아래에 놓는다(다른 칸이면 그 칸으로 옮긴 뒤). */
+  const dropOnLine = (ck: string, targetCk: string, side: "before" | "after") => {
+    const line = find(ck);
+    const target = find(targetCk);
+    if (!line || !target || ck === targetCk) return;
+    const row = rowOf(target), col = colOf(target);
+    if (!canCreateIn(col)) return;
+    if (rowOf(line) !== row || colOf(line) !== col) move(ck, row, col);
+    const moved = find(ck);
+    if (!moved || rowOf(moved) !== row || colOf(moved) !== col) return;
+    const list = byCellNow(row, col).filter((l) => l.ck !== ck);
+    const at = list.findIndex((l) => l.ck === targetCk);
+    list.splice(side === "before" ? at : at + 1, 0, moved);
+    renumber(list);
   };
 
   const neighbor = (ck: string, dir: -1 | 1) => {
@@ -399,13 +436,11 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
     if (!line) return false;
     const row = rowOf(line), col = colOf(line);
     if (!canCreateIn(col)) return false;
-    const list = byCellNow(row, col);
-    const i = list.findIndex((l) => l.ck === ck);
     const replaceCurrent = !currentValue.trim() && line.temp && !creating.current.has(ck);
-    const anchor = replaceCurrent ? list[i - 1] : line;
-    const nextLine = list[i + 1];
-    const start = anchor ? anchor.sortOrder : (nextLine ? nextLine.sortOrder - 1 : 0);
-    const end = nextLine ? nextLine.sortOrder : start + items.length + 1;
+    const others = byCellNow(row, col).filter((l) => l.ck !== ck).map((l) => l.sortOrder);
+    const { below, above } = sortOrderNeighbors(others, line.sortOrder);
+    const start = replaceCurrent ? below ?? line.sortOrder - 1 : line.sortOrder;
+    const end = above ?? start + items.length + 1;
     const step = (end - start) / (items.length + 1);
     if (replaceCurrent) setLines((p) => p.filter((l) => l.ck !== ck));
     else commit(ck, currentValue);
@@ -455,6 +490,9 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
   };
 
   const menuLine = menu ? (lines ?? []).find((l) => l.ck === menu.ck) ?? null : null;
+  const menuCell = menuLine ? byCell.get(cellKey(rowOf(menuLine), colOf(menuLine))) ?? [] : [];
+  const menuIndex = menuLine ? menuCell.findIndex((l) => l.ck === menuLine.ck) : -1;
+  const menuOrder = { canUp: menuIndex > 0, canDown: menuIndex >= 0 && menuIndex < menuCell.length - 1 };
 
   if (lines === null) {
     return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
@@ -485,7 +523,7 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
           </div>
         </div>
         <p className="hidden text-[11px] text-muted-foreground sm:block">
-          {savingKeys.size ? <span className="font-medium text-violet-600 dark:text-violet-400">저장 중…</span> : "Enter로 자동 저장"} · 한 번 더 눌러 다음 줄 · <Kbd>Ctrl</Kbd>+<Kbd>Enter</Kbd> 또는 ● 완료 · <code className="rounded bg-secondary px-1">[LA] 할 일</code> 로 행사 지정(<button onClick={onGoGroups} className="underline">행사 관리</button>)
+          {savingKeys.size ? <span className="font-medium text-violet-600 dark:text-violet-400">저장 중…</span> : "Enter로 자동 저장"} · 한 번 더 눌러 다음 줄 · <Kbd>Ctrl</Kbd>+<Kbd>Enter</Kbd> 또는 ● 완료 · <Kbd>Alt</Kbd>+<Kbd>↑↓</Kbd> 순서 · <code className="rounded bg-secondary px-1">[LA] 할 일</code> 로 행사 지정(<button onClick={onGoGroups} className="underline">행사 관리</button>)
         </p>
       </div>
 
@@ -553,6 +591,8 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
           onPatch={(patch) => void update(menuLine.ck, patch)}
           onMove={(row, col) => { move(menuLine.ck, row, col ?? colOf(menuLine)); setMenu(null); }}
           onToggleCommon={() => { move(menuLine.ck, rowOf(menuLine), menuLine.common ? (me ?? COMMON) : COMMON); setMenu(null); }}
+          order={menuOrder}
+          onShift={(dir) => shift(menuLine.ck, dir)}
           onRemove={() => { void remove(menuLine.ck); setMenu(null); }}
         />
       )}
@@ -601,6 +641,9 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
               onMenu={(rect) => setMenu({ ck: l.ck, rect })}
               onDragStart={() => { dragCk.current = l.ck; }}
               onDragEnd={() => { dragCk.current = null; setDropKey(null); }}
+              acceptsDrop={() => !!dragCk.current && dragCk.current !== l.ck && creatable}
+              onDropLine={(side) => { const from = dragCk.current; dragCk.current = null; setDropKey(null); if (from) dropOnLine(from, l.ck, side); }}
+              onShift={(dir) => { shift(l.ck, dir); setFocus({ ck: l.ck, caret: "end" }); }}
             />
           );
         })}
@@ -639,6 +682,7 @@ function RowHead({ day, today }: { day: string; today: string }) {
 
 function LineRow({
   line, header, editable, showAuthor, byline, focus, onFocused, onCommit, onCategory, onEnter, onToggle, onBackspaceEmpty, onArrow, onPaste, onMenu, onDragStart, onDragEnd,
+  acceptsDrop, onDropLine, onShift,
 }: {
   byline?: string | null;
   line: Line;
@@ -657,8 +701,16 @@ function LineRow({
   onMenu: (rect: DOMRect) => void;
   onDragStart: () => void;
   onDragEnd: () => void;
+  acceptsDrop: () => boolean;
+  onDropLine: (side: "before" | "after") => void;
+  onShift: (dir: -1 | 1) => void;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const [dropSide, setDropSide] = useState<"before" | "after" | null>(null);
+  const sideOf = (e: React.DragEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    return e.clientY < r.top + r.height / 2 ? "before" : "after";
+  };
   const committedValue = useRef<string | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const value = draft ?? line.content;
@@ -702,6 +754,13 @@ function LineRow({
       }
       return;
     }
+    if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      e.preventDefault();
+      if (!el.value.trim()) return;
+      onCommit(el.value);
+      onShift(e.key === "ArrowUp" ? -1 : 1);
+      return;
+    }
     if (e.key === "Backspace" && el.value === "") { e.preventDefault(); onBackspaceEmpty(); return; }
     if (e.key === "ArrowUp" && el.selectionStart === 0 && el.selectionEnd === 0) { e.preventDefault(); onArrow(-1); return; }
     if (e.key === "ArrowDown" && el.selectionStart === el.value.length) { e.preventDefault(); onArrow(1); return; }
@@ -709,7 +768,27 @@ function LineRow({
   };
 
   return (
-    <div className="group/line relative">
+    <div
+      className="group/line relative"
+      onDragOver={(e) => {
+        if (!acceptsDrop()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const side = sideOf(e);
+        if (side !== dropSide) setDropSide(side);
+      }}
+      onDragLeave={() => setDropSide(null)}
+      onDrop={(e) => {
+        if (!acceptsDrop()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setDropSide(null);
+        onDropLine(sideOf(e));
+      }}
+    >
+      {dropSide && (
+        <span aria-hidden className={`pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded-full bg-violet-500 ${dropSide === "before" ? "-top-px" : "-bottom-px"}`} />
+      )}
       {header && <div className="mt-1 truncate pl-5 text-[11px] font-semibold text-violet-600 dark:text-violet-400">[{header}]</div>}
       <div className="flex items-start gap-1">
         {editable ? (
@@ -801,8 +880,10 @@ function LineRow({
 }
 
 function LineMenu({
-  line, rect, groups, today, canCommon, members, onAssign, onClose, onPatch, onMove, onToggleCommon, onRemove,
+  line, rect, groups, today, canCommon, members, order, onAssign, onClose, onPatch, onMove, onToggleCommon, onShift, onRemove,
 }: {
+  order: { canUp: boolean; canDown: boolean };
+  onShift: (dir: -1 | 1) => void;
   members: Array<{ id: string; name: string }>;
   onAssign: (memberId: string) => void;
   line: Line;
@@ -859,7 +940,16 @@ function LineMenu({
       </div>
 
       <div className="space-y-1.5">
-        <div className="text-muted-foreground">옮기기</div>
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">옮기기</span>
+          <span className="flex items-center gap-1">
+            <span className="text-muted-foreground">순서</span>
+            <button onClick={() => onShift(-1)} disabled={!order.canUp} aria-label="위로"
+              className={`flex h-6 w-6 items-center justify-center bg-secondary hover:bg-secondary/70 disabled:opacity-40 ${R.control}`}><ChevronUp className="h-3.5 w-3.5" /></button>
+            <button onClick={() => onShift(1)} disabled={!order.canDown} aria-label="아래로"
+              className={`flex h-6 w-6 items-center justify-center bg-secondary hover:bg-secondary/70 disabled:opacity-40 ${R.control}`}><ChevronDown className="h-3.5 w-3.5" /></button>
+          </span>
+        </div>
         <div className="flex flex-wrap gap-1">
           {quick.map(([label, row]) => (
             <button key={label} onClick={() => onMove(row)} disabled={(line.date ?? SOMEDAY) === row}
