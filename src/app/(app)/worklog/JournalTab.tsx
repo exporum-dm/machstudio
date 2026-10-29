@@ -12,7 +12,7 @@
  */
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, ChevronUp, GripVertical, Loader2, MoreHorizontal, Trash2 } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Copy, GripVertical, Loader2, MoreHorizontal, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { FIELD_CLS, FINISH, R } from "@/components/ui/primitives";
 import {
@@ -360,6 +360,26 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
     void update(ck, { status: line.status === "done" ? openStatus(line.date, today) : "done" });
   };
 
+  /** 줄을 그대로 복사해 다른 날(또는 같은 날)에 새 줄로 만든다 — "오늘도 하고 내일도" 할 일. 원본은 그대로 둔다. */
+  const duplicate = (ck: string, row: string, col: string) => {
+    const line = find(ck);
+    if (!line || !canCreateIn(col)) return;
+    const date = row === SOMEDAY ? null : row;
+    const sortOrder = endOrder(byCellNow(row, col));
+    const now = new Date().toISOString();
+    const copyCk = tmpKey();
+    const copy: Line = {
+      ...line,
+      ck: copyCk, id: copyCk, temp: true,
+      authorId: col === COMMON ? me ?? "" : col, authorName: col === COMMON ? myName : nameOf(col),
+      createdById: me, date, common: col === COMMON, sortOrder,
+      status: openStatus(date, today),
+      createdAt: now, updatedAt: now,
+    };
+    setLines((prev) => [...prev, copy]);
+    void createOne(copy);
+  };
+
   const move = (ck: string, row: string, col: string) => {
     const line = find(ck);
     if (!line || !canCreateIn(col)) return;
@@ -590,6 +610,7 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
           onClose={() => setMenu(null)}
           onPatch={(patch) => void update(menuLine.ck, patch)}
           onMove={(row, col) => { move(menuLine.ck, row, col ?? colOf(menuLine)); setMenu(null); }}
+          onCopy={(row) => { duplicate(menuLine.ck, row, colOf(menuLine)); setMenu(null); }}
           onToggleCommon={() => { move(menuLine.ck, rowOf(menuLine), menuLine.common ? (me ?? COMMON) : COMMON); setMenu(null); }}
           order={menuOrder}
           onShift={(dir) => shift(menuLine.ck, dir)}
@@ -880,7 +901,7 @@ function LineRow({
 }
 
 function LineMenu({
-  line, rect, groups, today, canCommon, members, order, onAssign, onClose, onPatch, onMove, onToggleCommon, onShift, onRemove,
+  line, rect, groups, today, canCommon, members, order, onAssign, onClose, onPatch, onMove, onCopy, onToggleCommon, onShift, onRemove,
 }: {
   order: { canUp: boolean; canDown: boolean };
   onShift: (dir: -1 | 1) => void;
@@ -894,6 +915,8 @@ function LineMenu({
   onClose: () => void;
   onPatch: (patch: Partial<WorkEntryDto>) => void;
   onMove: (row: string, col?: string) => void;
+  /** 원본은 그대로 두고 다른(또는 같은) 날에 똑같은 줄을 하나 더 만든다. */
+  onCopy: (row: string) => void;
   onToggleCommon: () => void;
   onRemove: () => void;
 }) {
@@ -957,6 +980,15 @@ function LineMenu({
           ))}
           <input type="date" defaultValue={line.date ?? ""} onChange={(e) => { if (e.target.value) onMove(e.target.value); }}
             className={`${FIELD_CLS} h-7 w-[130px] text-xs`} aria-label="날짜 고르기" />
+        </div>
+        <div className="flex flex-wrap items-center gap-1 pt-1">
+          <span className="flex shrink-0 items-center gap-1 text-muted-foreground"><Copy className="h-3 w-3" />복사</span>
+          {quick.map(([label, row]) => (
+            <button key={label} onClick={() => onCopy(row)}
+              className={`bg-secondary px-2 py-1 hover:bg-secondary/70 ${R.control}`}>{label}</button>
+          ))}
+          <input type="date" onChange={(e) => { if (e.target.value) onCopy(e.target.value); }}
+            className={`${FIELD_CLS} h-7 w-[130px] text-xs`} aria-label="복사할 날짜 고르기" />
         </div>
         <div className="flex items-center gap-1.5 pt-1">
           <span className="shrink-0 text-muted-foreground">담당</span>
