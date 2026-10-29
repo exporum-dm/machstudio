@@ -9,6 +9,7 @@ import {
   Loader2,
   RefreshCw,
   WandSparkles,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Btn, Field, FINISH, R, Segmented } from "@/components/ui/primitives";
@@ -26,6 +27,7 @@ interface Room {
   lastCollectedAt: string | null;
   keywords: unknown;
   referenceUrls: unknown;
+  excludedMentionUrls: unknown;
   mentions: unknown;
   pressReleases: unknown;
 }
@@ -97,6 +99,12 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
   const patchMention = async (id: string, patch: Partial<PrMention>) => {
     const next = mentions.map((x) => (x.id === id ? { ...x, ...patch } : x));
     setData(await save(projectId, { mentions: next }));
+  };
+  const excludeMention = async (mention:PrMention) => {
+    if(!window.confirm("이 결과를 제거하고 다음 조사에서도 제외할까요?")) return;
+    const excluded=Array.isArray(data.room.excludedMentionUrls)?data.room.excludedMentionUrls.filter((x):x is string=>typeof x==="string"):[];
+    setData(await save(projectId,{mentions:mentions.filter(x=>x.id!==mention.id),excludedMentionUrls:[...new Set([...excluded,mention.url])]}));
+    toast.success("조사 결과에서 제외했어요");
   };
   const collect = async () => {
     setRunning(true);
@@ -185,6 +193,7 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
           mentions={mentions}
           canWrite={data.canWrite}
           patch={patchMention}
+          exclude={excludeMention}
         />
       ) : tab === "response" ? (
         <ResponseList
@@ -205,10 +214,12 @@ function MentionList({
   mentions,
   canWrite,
   patch,
+  exclude,
 }: {
   mentions: PrMention[];
   canWrite: boolean;
   patch: (id: string, p: Partial<PrMention>) => Promise<void>;
+  exclude: (mention:PrMention) => Promise<void>;
 }) {
   const [category, setCategory] = useState<"all" | "press" | "sns">("all");
   const shown = mentions
@@ -318,6 +329,7 @@ function MentionList({
                     <AlertTriangle className="h-4 w-4" />
                     {x.status === "issue" ? "해제" : "대응 필요"}
                   </Btn>
+                  <Btn tone="ghost" onClick={()=>exclude(x)} aria-label="이 조사 결과 제외"><Trash2 className="h-4 w-4"/>제외</Btn>
                 </div>
               )}
             </div>

@@ -1082,6 +1082,7 @@ model PrRoom {
   lastCollectedAt   DateTime?
   keywords          Json     @default("[]")
   referenceUrls     Json     @default("[]")
+  excludedMentionUrls Json   @default("[]")
   mentions          Json     @default("[]")
   pressReleases     Json     @default("[]")
   createdAt         DateTime @default(now())

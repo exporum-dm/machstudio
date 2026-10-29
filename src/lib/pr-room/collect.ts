@@ -204,6 +204,7 @@ export async function collectPrRoom(roomId: string, now = new Date()) {
       )
     : [];
   const queries = keywords.length ? keywords : [room.project.name];
+  const excluded = new Set(Array.isArray(room.excludedMentionUrls) ? room.excludedMentionUrls.filter((x):x is string=>typeof x==="string") : []);
   const days = Math.max(7, room.collectEveryDays + 4);
   const counts: Record<string, number> = {};
   const errors: string[] = [];
@@ -245,15 +246,12 @@ export async function collectPrRoom(roomId: string, now = new Date()) {
       }
     }),
   );
-  const rows = await enrichRows(settled.flat());
+  const rows = (await enrichRows(settled.flat())).filter(row=>!excluded.has(row.url));
   const previous = (
     Array.isArray(room.mentions)
       ? (room.mentions as unknown as PrMention[])
       : []
-  ).filter(
-    (row) =>
-      row.origin !== "reference" && isRelevantMention(`${row.title} ${row.excerpt}`, queries),
-  );
+  ).filter((row) => !excluded.has(row.url) && row.origin !== "reference" && isRelevantMention(`${row.title} ${row.excerpt}`, queries));
   const currentByUrl = new Map(rows.map((row) => [row.url, row]));
   const refreshed = previous.map((item) => {
     const row = currentByUrl.get(item.url);
