@@ -843,9 +843,11 @@ function LineMenu({
           {active.map((g) => <option key={g.id} value={g.id}>{g.name}{g.archived ? " (보관)" : ""}</option>)}
         </select>
         <span className="text-muted-foreground">분류</span>
-        <input list="worklog-categories" defaultValue={line.category} placeholder="운영·콘텐츠…"
-          onBlur={(e) => { if (e.target.value.trim() !== line.category) onPatch({ category: e.target.value.trim() }); }}
-          className={`${FIELD_CLS} h-7 text-xs`} />
+        <select value={line.category} onChange={(e) => onPatch({ category: e.target.value })} className={`${FIELD_CLS} h-7 text-xs`}>
+          <option value="">없음</option>
+          {line.category && !WORK_CATEGORIES.includes(line.category as typeof WORK_CATEGORIES[number]) && <option value={line.category}>{line.category}</option>}
+          {WORK_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
         <span className="text-muted-foreground">결과</span>
         <input defaultValue={line.result} placeholder="결과 및 산출물(링크·수치)"
           onBlur={(e) => { if (e.target.value.trim() !== line.result) onPatch({ result: e.target.value.trim() }); }}
@@ -855,7 +857,6 @@ function LineMenu({
           onBlur={(e) => { if (e.target.value.trim() !== line.note) onPatch({ note: e.target.value.trim() }); }}
           className={`${FIELD_CLS} h-7 text-xs`} />
       </div>
-      <datalist id="worklog-categories">{WORK_CATEGORIES.map((c) => <option key={c} value={c} />)}</datalist>
 
       <div className="space-y-1.5">
         <div className="text-muted-foreground">옮기기</div>
