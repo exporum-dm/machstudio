@@ -247,7 +247,7 @@ function MentionList({
               <div className="min-w-0 flex-1">
                 <span className="text-xs text-muted-foreground">
                   {x.channel === "press" ? "뉴스·보도" : "SNS"} · {x.source}
-                  {x.author ? ` · @${x.author.replace(/^@/, "")}` : ""}
+                  {x.author ? ` · ${x.channel === "press" ? "기자 " : "@"}${x.author.replace(/^@/, "")}` : ""}
                   {` · ${x.publishedAt ? "게시" : "수집"} ${new Date(x.publishedAt ?? x.collectedAt).toLocaleDateString("ko-KR")}`}
                 </span>
                 <p className="mt-2 line-clamp-4 text-sm font-medium leading-6">
@@ -271,6 +271,14 @@ function MentionList({
                       <span>저장 {x.metrics.saves.toLocaleString()}</span>
                     )}
                   </div>
+                )}
+                {!!x.comments?.length && (
+                  <details className="mt-3 rounded-lg bg-secondary/50 px-3 py-2 text-sm">
+                    <summary className="cursor-pointer font-medium">공개 댓글 {x.comments.length}개 보기</summary>
+                    <div className="mt-2 divide-y divide-border/60">
+                      {x.comments.map((comment,index)=><div key={`${comment.author}-${index}`} className="py-2"><p className="text-xs font-medium text-muted-foreground">{comment.author?`@${comment.author}`:"작성자 미확인"}{comment.likes!==undefined?` · 좋아요 ${comment.likes.toLocaleString()}`:""}</p><p className="mt-1 whitespace-pre-wrap leading-6">{comment.text}</p></div>)}
+                    </div>
+                  </details>
                 )}
                 <a
                   href={x.url}
@@ -457,13 +465,7 @@ function MentionSettings({
         .filter((x): x is string => typeof x === "string")
         .join(", ")
     : "";
-  const refs = Array.isArray(data.room.referenceUrls)
-    ? data.room.referenceUrls
-        .filter((x): x is string => typeof x === "string")
-        .join("\n")
-    : "";
   const [keywords, setKeywords] = useState(words);
-  const [referenceUrls, setReferenceUrls] = useState(refs);
   return (
     <section
       className={`${R.panel} ${FINISH.s1} max-w-2xl space-y-5 bg-card p-5`}
@@ -499,20 +501,7 @@ function MentionSettings({
         />
       </label>
       <p className="text-xs text-muted-foreground">
-        공식 행사명, 영문명, 해시태그를 쉼표로 구분하세요.
-      </p>
-      <label className="block text-sm font-medium">
-        참고 문서·아카이브 주소
-        <textarea
-          value={referenceUrls}
-          onChange={(e) => setReferenceUrls(e.target.value)}
-          className={`mt-2 min-h-28 w-full bg-background p-3 text-sm ${R.control}`}
-          placeholder="Google Docs나 공개 아카이브 주소를 한 줄에 하나씩 입력"
-        />
-      </label>
-      <p className="text-xs text-muted-foreground">
-        문서 안에 정리된 Instagram·TikTok 게시물 링크도 직접 읽어
-        좋아요·댓글·조회 수치를 가져옵니다.
+        공식 행사명, 영문명, 해시태그를 쉼표로 구분하세요. 입력한 검색어로 네이버·Google과 공개 SNS를 직접 조사합니다.
       </p>
       <Btn
         tone="key"
@@ -522,10 +511,6 @@ function MentionSettings({
             await save(projectId, {
               keywords: keywords
                 .split(",")
-                .map((x) => x.trim())
-                .filter(Boolean),
-              referenceUrls: referenceUrls
-                .split(/\r?\n/)
                 .map((x) => x.trim())
                 .filter(Boolean),
             }),

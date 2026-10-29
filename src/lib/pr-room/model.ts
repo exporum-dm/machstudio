@@ -13,6 +13,7 @@ export interface PrMention {
   collectedAt: string;
   author?: string;
   metrics?: { views?:number; likes?:number; comments?:number; shares?:number; saves?:number };
+  comments?: { author?:string; text:string; likes?:number }[];
   origin?: "search" | "reference";
 }
 

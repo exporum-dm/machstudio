@@ -23,6 +23,7 @@ interface Found {
   excerpt: string;
   author?: string;
   metrics?: PrMention["metrics"];
+  comments?: PrMention["comments"];
   origin?: PrMention["origin"];
 }
 
@@ -32,7 +33,7 @@ function cleanText(value: string) {
     .replace(/&quot;/g, '"')
     .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ")
-    .replace(/새 창 열림$/, " ")
+    .replace(/\s*새 창 열림\s*/g, " ")
     .trim();
 }
 function decodeText(value: string) {
@@ -56,18 +57,6 @@ export function isRelevantMention(title: string, queries: string[]) {
     return needle.length >= 4 && haystack.includes(needle);
   });
 }
-export function extractReferenceLinks(html: string) {
-  return [
-    ...new Set(
-      [
-        ...html.matchAll(
-          /https:\/\/(?:www\.)?(?:instagram\.com\/(?:p|reel)\/[^"'\\? <]+|tiktok\.com\/@[^"'\\ <]+|facebook\.com\/[^"'\\ <]+|linkedin\.com\/posts\/[^"'\\ <]+|threads\.net\/@[^"'\\ <]+|x\.com\/[^"'\\ <]+)/gi,
-        ),
-      ].map((x) => x[0].replace(/\\u0026/g, "&").replace(/\\\//g, "/")),
-    ),
-  ];
-}
-
 function metaDescription(html: string) {
   return (
     html.match(
@@ -79,6 +68,8 @@ function metaDescription(html: string) {
     ""
   );
 }
+function meta(html:string,key:string){return decodeText(html.match(new RegExp(`<meta[^>]+(?:property|name)=["']${key}["'][^>]+content=["']([^"']*)`,"i"))?.[1]??html.match(new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+(?:property|name)=["']${key}["']`,"i"))?.[1]??"")}
+export function publicComments(html:string){const rows:NonNullable<PrMention["comments"]>=[];const seen=new Set<string>();for(const m of html.matchAll(/"text":"((?:\\.|[^"\\]){2,500})"[\s\S]{0,500}?"(?:username|uniqueId)":"([^"\\]+)"[\s\S]{0,180}?"(?:comment_like_count|diggCount)":(\d+)/g)){let text=m[1];try{text=JSON.parse(`"${text}"`)}catch{}text=cleanText(text);if(text&&!seen.has(text)){seen.add(text);rows.push({text,author:m[2],likes:Number(m[3])})}if(rows.length===20)break}return rows}
 export function parseSocialPage(url: string, html: string): Found | null {
   const host = new URL(url).hostname;
   const raw = decodeText(metaDescription(html));
@@ -102,6 +93,7 @@ export function parseSocialPage(url: string, html: string): Found | null {
             comments: Number(m[2].replace(/,/g, "")),
           }
         : undefined,
+      comments: publicComments(html),
     };
   }
   if (host.includes("tiktok.com")) {
@@ -126,6 +118,7 @@ export function parseSocialPage(url: string, html: string): Found | null {
         comments: number("commentCount"),
         shares: number("shareCount"),
       },
+      comments: publicComments(html),
     };
   }
   return {
@@ -138,41 +131,7 @@ export function parseSocialPage(url: string, html: string): Found | null {
   };
 }
 
-async function referenceRows(urls: string[]): Promise<Found[]> {
-  const links: string[] = [];
-  for (const url of urls) {
-    const r = await safeFetchText(url, {
-      maxBytes: 4_000_000,
-      timeoutMs: 25_000,
-    });
-    if (r) links.push(...extractReferenceLinks(r.text));
-  }
-  const unique = [...new Set(links)];
-  const rows: Found[] = [];
-  for (let i = 0; i < unique.length; i += 30) {
-    const batch = await Promise.all(
-      unique.slice(i, i + 30).map(async (url) => {
-        const r = await safeFetchText(url, {
-          maxBytes: 900_000,
-          timeoutMs: 8_000,
-        });
-        const host = new URL(url).hostname.replace(/^www\./, "");
-        return r
-          ? parseSocialPage(url, r.text)
-          : {
-              title: `${host} 게시물`,
-              url,
-              source: host,
-              channel: "sns" as const,
-              publishedAt: null,
-              excerpt: "",
-            };
-      }),
-    );
-    rows.push(...batch.filter((x): x is Found => Boolean(x)));
-  }
-  return rows;
-}
+async function enrichRows(rows:Found[]){const enriched:Found[]=[];for(let i=0;i<rows.length;i+=24){const batch=await Promise.all(rows.slice(i,i+24).map(async row=>{const r=await safeFetchText(row.url,{maxBytes:1_200_000,timeoutMs:8_000});if(!r)return row;const social=parseSocialPage(r.finalUrl,r.text);if(/instagram\.com|tiktok\.com/i.test(r.finalUrl)&&social)return{...row,...social,publishedAt:social.publishedAt??row.publishedAt};const source=meta(r.text,"og:site_name")||row.source;const author=meta(r.text,"author")||meta(r.text,"article:author")||decodeText(r.text.match(/"author"\s*:\s*\{[^}]*"name"\s*:\s*"([^"]+)"/i)?.[1]??"");return{...row,url:r.finalUrl,source,author:author||row.author,excerpt:metaDescription(r.text)||row.excerpt}}));enriched.push(...batch)}return enriched}
 
 export function parseNaverNews(html: string, query = ""): Found[] {
   const rows: Found[] = [];
@@ -245,11 +204,6 @@ export async function collectPrRoom(roomId: string, now = new Date()) {
       )
     : [];
   const queries = keywords.length ? keywords : [room.project.name];
-  const referenceUrls = Array.isArray(room.referenceUrls)
-    ? room.referenceUrls.filter(
-        (x): x is string => typeof x === "string" && /^https?:\/\//.test(x),
-      )
-    : [];
   const days = Math.max(7, room.collectEveryDays + 4);
   const counts: Record<string, number> = {};
   const errors: string[] = [];
@@ -291,20 +245,14 @@ export async function collectPrRoom(roomId: string, now = new Date()) {
       }
     }),
   );
-  const fromReferences = (await referenceRows(referenceUrls)).map((row) => ({
-    ...row,
-    origin: "reference" as const,
-  }));
-  counts["참고 문서"] = fromReferences.length;
-  const rows = [...fromReferences, ...settled.flat()];
+  const rows = await enrichRows(settled.flat());
   const previous = (
     Array.isArray(room.mentions)
       ? (room.mentions as unknown as PrMention[])
       : []
   ).filter(
     (row) =>
-      row.origin === "reference" ||
-      isRelevantMention(`${row.title} ${row.excerpt}`, queries),
+      row.origin !== "reference" && isRelevantMention(`${row.title} ${row.excerpt}`, queries),
   );
   const currentByUrl = new Map(rows.map((row) => [row.url, row]));
   const refreshed = previous.map((item) => {
@@ -317,9 +265,10 @@ export async function collectPrRoom(roomId: string, now = new Date()) {
           source: row.source,
           author: row.author ?? item.author,
           metrics: row.metrics ?? item.metrics,
+          comments: row.comments?.length ? row.comments : item.comments,
           publishedAt: row.publishedAt?.toISOString() ?? item.publishedAt,
         }
-      : item;
+      : { ...item, title: cleanText(item.title) };
   });
   const known = new Set(previous.map((x) => x.url));
   const added: PrMention[] = [];
@@ -336,6 +285,7 @@ export async function collectPrRoom(roomId: string, now = new Date()) {
       excerpt: row.excerpt,
       author: row.author,
       metrics: row.metrics,
+      comments: row.comments,
       origin: row.origin ?? "search",
       responseNote: "",
       publishedAt: row.publishedAt?.toISOString() ?? null,

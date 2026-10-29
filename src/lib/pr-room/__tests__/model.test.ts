@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { analyzeMention, buildPressRelease, isCollectionDue } from "../model";
-import { extractReferenceLinks, isRelevantMention, parseNaverNews, parseSocialPage } from "../collect";
+import { isRelevantMention, parseNaverNews, parseSocialPage, publicComments } from "../collect";
 
 describe("홍보실 조사", () => {
   it("설정한 주기가 지난 경우에만 조사한다", () => {
@@ -11,9 +11,12 @@ describe("홍보실 조사", () => {
   it("부정 이슈를 보수적으로 올린다", () => expect(analyzeMention("운영 부실 논란")).toMatchObject({ sentiment: "negative", status: "issue" }));
 });
 
-it("참고 문서의 SNS 링크와 인스타 반응 수치를 읽는다",()=>{
-  expect(extractReferenceLinks('x https://www.instagram.com/p/ABC123/ y')).toEqual(["https://www.instagram.com/p/ABC123/"]);
+it("인스타 반응 수치를 읽는다",()=>{
   expect(parseSocialPage("https://www.instagram.com/p/ABC123/",'<meta property="og:description" content="99 likes, 3 comments - koreaexpo_global on October 25, 2026: &quot;Korea Expo LA highlights&quot;.">')).toMatchObject({author:"koreaexpo_global",metrics:{likes:99,comments:3}});
+});
+
+it("공개 댓글을 작성자와 좋아요 수까지 읽는다",()=>{
+  expect(publicComments('{"text":"Great event!","username":"visitor","comment_like_count":4}')).toEqual([{text:"Great event!",author:"visitor",likes:4}]);
 });
 
 it("행사명이 없는 비슷한 축제 결과는 제외한다",()=>{
