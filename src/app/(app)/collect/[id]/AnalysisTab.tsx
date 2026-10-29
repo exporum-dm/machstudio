@@ -20,12 +20,6 @@ import { useChartColors } from "@/components/ui/use-chart-colors";
 import { checkinTimezoneLabel, csvDateTimeIn } from "@/lib/collect-checkin";
 import type { AudienceRow, Insight, RegistrationAnalysis, Segment } from "@/lib/registration-analysis";
 
-interface SurveyAiResult {
-  summary: string;
-  insights: Insight[];
-  generatedAt: string;
-}
-
 interface Payload {
   sourceName: string;
   generatedAt: string;
@@ -35,12 +29,6 @@ interface Payload {
   analysis: RegistrationAnalysis;
   audiences: { value: string; analysis: RegistrationAnalysis }[];
   audienceRows: AudienceRow[];
-  /** 연결된 만족도 조사가 있는지 — 있어야 아래 AI 해석 자리가 보인다. */
-  hasSurvey: boolean;
-  /** ANTHROPIC_API_KEY 가 설정돼 있는지 — 없으면 "만족도 조사 탭에서 해석하라"는 안내 대신 꺼져 있다고 알린다. */
-  surveyAiAvailable: boolean;
-  /** 만족도 조사 탭 "AI로 해석하기"로 저장된 결과 — 여기서는 다시 해석하지 않고 그대로 보여준다. */
-  surveyAi: SurveyAiResult | null;
 }
 
 const n = (x: number) => x.toLocaleString("ko-KR");
@@ -531,42 +519,6 @@ export default function AnalysisTab({ sourceId }: { sourceId: string }) {
         <Card>
           <SectionTitle title="내년에 써먹을 인사이트" hint="숫자에서 바로 읽히는 것만, 표본이 충분할 때만 뽑았어요(등록 분석은 100명·만족도 조사는 20명 이상)." />
           <ul className="divide-y divide-border">{a.insights.map((i, idx) => <InsightRow key={idx} i={i} />)}</ul>
-        </Card>
-      )}
-
-      {/* 만족도 조사 AI 해석 — 만족도 조사 탭 "AI로 해석하기"에서 쓴 글을 그대로 보여준다. 여기서 다시
-          해석하지 않는다(같은 글이 두 곳에서 따로 생기면 서로 어긋날 수 있다). */}
-      {data.hasSurvey && (
-        <Card>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h3 className="text-sm font-semibold">만족도 조사 해석</h3>
-              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                만족도 조사 탭에서 &ldquo;AI로 해석하기&rdquo;를 누르면 등록 데이터·주관식 답변까지 같이 읽은 해석이 여기에도 그대로 보여요.
-              </p>
-            </div>
-            {data.surveyAi && (
-              <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
-                {new Date(data.surveyAi.generatedAt).toLocaleString("ko-KR")} 해석
-              </span>
-            )}
-          </div>
-          {data.surveyAi ? (
-            <div className="mt-4 space-y-3">
-              {data.surveyAi.summary && (
-                <p className="rounded-xl bg-violet-500/5 p-3 text-sm leading-relaxed">{data.surveyAi.summary}</p>
-              )}
-              {data.surveyAi.insights.length > 0 && (
-                <ul className="divide-y divide-border">{data.surveyAi.insights.map((i, idx) => <InsightRow key={idx} i={i} />)}</ul>
-              )}
-            </div>
-          ) : (
-            <p className="mt-3 text-sm text-muted-foreground">
-              {data.surveyAiAvailable
-                ? "아직 해석한 적이 없어요 — 만족도 조사 탭에서 \"AI로 해석하기\"를 눌러주세요."
-                : "AI 해석 기능이 꺼져 있어요(Vercel 환경 변수 ANTHROPIC_API_KEY 를 넣으면 켜져요)."}
-            </p>
-          )}
         </Card>
       )}
 

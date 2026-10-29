@@ -11,35 +11,17 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import {
-  AlertTriangle, ArrowDown, ArrowUp, BarChart3, Check, CheckCircle2, ChevronDown, ChevronRight, Copy, Download,
-  ExternalLink, Lightbulb, Loader2, PenLine, Plus, QrCode, RefreshCw, Sparkles, Trash2,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, BarChart3, Check, ChevronDown, ChevronRight, Copy, Download, ExternalLink, Loader2, PenLine, Plus, QrCode, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { FIELD_CLS, FINISH, R } from "@/components/ui/primitives";
 import { useAutosave } from "@/components/ui/use-autosave";
 import { AutosaveIndicator } from "@/components/ui/autosave-indicator";
 import { getPublicAppOrigin } from "@/lib/app-url";
 import { downloadQr } from "@/lib/qr-download";
-import type { Insight } from "@/lib/registration-analysis";
 import {
   SURVEY_QUESTION_TYPES, SURVEY_QUESTION_TYPE_LABEL,
   type QuestionSummary, type SurveyConfig, type SurveyQuestion, type SurveyQuestionType, type SurveySection,
 } from "@/lib/survey-config";
-
-function InsightRow({ i }: { i: Insight }) {
-  const Icon = i.tone === "good" ? CheckCircle2 : i.tone === "warn" ? AlertTriangle : Lightbulb;
-  const color = i.tone === "good" ? "text-emerald-600 dark:text-emerald-400" : i.tone === "warn" ? "text-amber-600 dark:text-amber-400" : "text-violet-600 dark:text-violet-300";
-  return (
-    <li className="flex gap-3 py-2.5">
-      <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${color}`} aria-hidden />
-      <div className="min-w-0">
-        <p className="text-sm font-medium leading-snug">{i.title}</p>
-        <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{i.detail}</p>
-      </div>
-    </li>
-  );
-}
 
 interface SurveyListItem { id: string; name: string; token: string; status: string; responses: number }
 /** 등록 폼 항목 — 연결 문항이 질문·선택지를 그대로 가져온다 */
@@ -545,38 +527,18 @@ interface Results {
   scoreQuestions: Array<{ key: string; type: string; title: string }>;
   segments: Array<{ value: string; count: number; scores: Array<{ key: string; average: number | null; nps: number | null }> }>;
   lastAt: string | null;
-  /** 저장된 AI 해석 — 한 번도 안 돌렸으면 null. 결과 분석 탭도 이 값을 그대로 보여준다. */
-  ai: { summary: string; insights: Insight[]; generatedAt: string } | null;
-  aiAvailable: boolean;
 }
 
 function ResultsView({ surveyId, config }: { surveyId: string; config: SurveyConfig }) {
   const [audience, setAudience] = useState("");
   const [by, setBy] = useState("");
   const [data, setData] = useState<Results | null>(null);
-  const [aiBusy, setAiBusy] = useState(false);
-  const [aiError, setAiError] = useState("");
   const load = useCallback(async () => {
     const res = await fetch(`/api/surveys/${surveyId}/results?audience=${encodeURIComponent(audience)}${by ? `&by=${encodeURIComponent(by)}` : ""}`);
     const json = await res.json().catch(() => null);
     if (res.ok) setData(json);
   }, [surveyId, audience, by]);
   useEffect(() => { void Promise.resolve().then(load); }, [load]);
-
-  const runAi = useCallback(async () => {
-    setAiBusy(true);
-    setAiError("");
-    try {
-      const res = await fetch(`/api/surveys/${surveyId}/ai-insight`, { method: "POST" });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || "AI가 해석을 쓰지 못했어요");
-      setData((d) => (d ? { ...d, ai: { summary: body.summary, insights: body.insights, generatedAt: body.generatedAt } } : d));
-    } catch (e) {
-      setAiError((e as Error).message);
-    } finally {
-      setAiBusy(false);
-    }
-  }, [surveyId]);
   if (!data) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
   const label = (a: string) => config.audienceLabels[a] ?? a;
   // 대표 지표 — 추천 점수(NPS) 먼저, 그다음 점수 문항 순서대로(보통 전반 만족도가 첫 점수 문항이다).
@@ -603,42 +565,6 @@ function ResultsView({ surveyId, config }: { surveyId: string; config: SurveyCon
           <Kpi key={s.key} label={s.title} value={s.type === "nps" ? (s.nps ?? "-").toString() : (s.average ?? "-").toString()} sub={s.type === "nps" ? `NPS · 평균 ${s.average ?? "-"}점 · ${s.answered}명` : `평균 · ${s.answered}명`} />
         ))}
       </div>
-
-      {/* AI 해석 — 문항별 숫자는 아래 카드에 있다. 여기서는 등록 데이터·주관식 답변까지 같이 읽고
-          전체적으로 무엇을 뜻하는지 해석한다. 결과 분석 탭도 이걸 그대로 보여준다(저장해서 공유). */}
-      {data.total > 0 && (
-        <div className={`bg-background p-4 ${R.panel} ${FINISH.s1}`}>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h3 className="flex items-center gap-1.5 text-sm font-semibold"><Sparkles className="h-4 w-4 text-violet-500" />AI 해석</h3>
-              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                등록 데이터·주관식 답변까지 같이 읽고 전체적으로 무엇을 뜻하는지 해석해요. 결과 분석 탭에도 그대로 보여요.
-              </p>
-            </div>
-            <button
-              onClick={() => void runAi()}
-              disabled={!data.aiAvailable || aiBusy}
-              title={data.aiAvailable ? "등록 데이터와 교차해서 AI가 해석해요" : "Vercel 환경 변수 ANTHROPIC_API_KEY 를 넣으면 켜져요"}
-              className={`flex shrink-0 items-center gap-1.5 bg-violet-500/10 px-3 py-1.5 text-xs font-medium text-violet-600 hover:bg-violet-500/20 disabled:cursor-not-allowed disabled:opacity-40 dark:text-violet-400 ${R.control}`}
-            >
-              {aiBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-              {data.ai ? "다시 해석하기" : "AI로 해석하기"}
-            </button>
-          </div>
-          {aiError && <p className="mt-3 text-sm text-destructive">{aiError}</p>}
-          {data.ai ? (
-            <div className="mt-4 space-y-3">
-              <p className="text-[11px] text-muted-foreground tabular-nums">{new Date(data.ai.generatedAt).toLocaleString("ko-KR")} 해석</p>
-              {data.ai.summary && <p className="rounded-xl bg-violet-500/5 p-3 text-sm leading-relaxed">{data.ai.summary}</p>}
-              {data.ai.insights.length > 0 && (
-                <ul className="divide-y divide-border">{data.ai.insights.map((i, idx) => <InsightRow key={idx} i={i} />)}</ul>
-              )}
-            </div>
-          ) : (
-            !aiError && <p className="mt-3 text-sm text-muted-foreground">아직 해석한 적이 없어요.</p>
-          )}
-        </div>
-      )}
 
       {data.total === 0 ? (
         <p className="rounded-2xl border border-dashed border-border py-10 text-center text-sm text-muted-foreground">아직 응답이 없어요</p>
