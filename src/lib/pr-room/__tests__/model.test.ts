@@ -32,7 +32,7 @@ it("질문 답변으로 보도자료 전체 원고를 만든다",()=>{
 
 describe("네이버 뉴스 검색",()=>{
   it("검색 결과 링크와 제목을 읽는다",()=>{
-    const rows=parseNaverNews('<a href="https://news.example.com/1"><b>코리아 엑스포 LA</b> 성료 보도자료 새 창 열림</a>');
-    expect(rows[0]).toMatchObject({title:"코리아 엑스포 LA 성료 보도자료",source:"네이버 뉴스"});
+    const rows=parseNaverNews('<a href="https://news.example.com/1" data-heatmap-target=".tit"><span class="sds-comps-text sds-comps-text-type-headline1"><mark>코리아 엑스포 LA</mark> &#039;성료&#039;</span><span>새 창 열림</span></a><a href="https://news.example.com/1" data-heatmap-target=".body"><span>본문 요약</span></a>');
+    expect(rows).toHaveLength(1);expect(rows[0]).toMatchObject({title:"코리아 엑스포 LA '성료'",source:"네이버 뉴스"});
   });
 });

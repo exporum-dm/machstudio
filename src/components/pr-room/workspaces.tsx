@@ -261,9 +261,8 @@ function MentionList({
                   {x.author ? ` · ${x.channel === "press" ? "기자 " : "@"}${x.author.replace(/^@/, "")}` : ""}
                   {` · ${x.publishedAt ? "게시" : "수집"} ${new Date(x.publishedAt ?? x.collectedAt).toLocaleDateString("ko-KR")}`}
                 </span>
-                <p className="mt-2 line-clamp-4 text-sm font-medium leading-6">
-                  {x.excerpt || x.title}
-                </p>
+                <h3 className="mt-2 text-sm font-semibold leading-6">{x.title}</h3>
+                {x.excerpt && x.excerpt !== x.title && <p className="mt-1 line-clamp-3 text-sm leading-6 text-muted-foreground">{x.excerpt}</p>}
                 {x.metrics && (
                   <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
                     {x.metrics.views !== undefined && (

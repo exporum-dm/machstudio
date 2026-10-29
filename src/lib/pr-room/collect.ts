@@ -29,8 +29,13 @@ interface Found {
 
 function cleanText(value: string) {
   return value
+    .replace(/<\/?(?:mark|b|strong|em)[^>]*>/gi, "")
     .replace(/<[^>]+>/g, " ")
+    .replace(/&(?:amp;)?#x([0-9a-f]+);/gi, (_, x) => String.fromCodePoint(parseInt(x, 16)))
+    .replace(/&(?:amp;)?#(\d+);/g, (_, x) => String.fromCodePoint(Number(x)))
     .replace(/&quot;/g, '"')
+    .replace(/&apos;|&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ")
     .replace(/\s*새 창 열림\s*/g, " ")
@@ -131,16 +136,17 @@ export function parseSocialPage(url: string, html: string): Found | null {
   };
 }
 
-async function enrichRows(rows:Found[]){const enriched:Found[]=[];for(let i=0;i<rows.length;i+=24){const batch=await Promise.all(rows.slice(i,i+24).map(async row=>{const r=await safeFetchText(row.url,{maxBytes:1_200_000,timeoutMs:8_000});if(!r)return row;const social=parseSocialPage(r.finalUrl,r.text);if(/instagram\.com|tiktok\.com/i.test(r.finalUrl)&&social)return{...row,...social,publishedAt:social.publishedAt??row.publishedAt};const source=meta(r.text,"og:site_name")||row.source;const author=meta(r.text,"author")||meta(r.text,"article:author")||decodeText(r.text.match(/"author"\s*:\s*\{[^}]*"name"\s*:\s*"([^"]+)"/i)?.[1]??"");return{...row,url:r.finalUrl,source,author:author||row.author,excerpt:metaDescription(r.text)||row.excerpt}}));enriched.push(...batch)}return enriched}
+async function enrichRows(rows:Found[]){const enriched:Found[]=[];for(let i=0;i<rows.length;i+=24){const batch=await Promise.all(rows.slice(i,i+24).map(async row=>{const r=await safeFetchText(row.url,{maxBytes:1_200_000,timeoutMs:8_000});if(!r)return row;const social=parseSocialPage(r.finalUrl,r.text);if(/instagram\.com|tiktok\.com/i.test(r.finalUrl)&&social)return{...row,...social,publishedAt:social.publishedAt??row.publishedAt};const source=meta(r.text,"og:site_name")||row.source;const author=meta(r.text,"author")||meta(r.text,"article:author")||decodeText(r.text.match(/"author"\s*:\s*\{[^}]*"name"\s*:\s*"([^"]+)"/i)?.[1]??"");const title=meta(r.text,"og:title")||meta(r.text,"twitter:title")||row.title;return{...row,title:cleanText(title),url:r.finalUrl,source,author:author||row.author,excerpt:metaDescription(r.text)||row.excerpt}}));enriched.push(...batch)}return enriched}
 
 export function parseNaverNews(html: string, query = ""): Found[] {
   const rows: Found[] = [];
   const seen = new Set<string>();
-  for (const match of html.matchAll(
-    /<a[^>]+href="(https?:\/\/[^"#]+)"[^>]*>([\s\S]*?)<\/a>/gi,
-  )) {
-    const url = match[1];
-    const title = cleanText(match[2]);
+  for (const match of html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
+    const attrs = match[1], inner = match[2];
+    const url = attrs.match(/href="(https?:\/\/[^"#]+)"/i)?.[1];
+    const headline = inner.match(/<span[^>]+class="[^"]*(?:sds-comps-text-type-headline1|news_tit|n_title)[^"]*"[^>]*>([\s\S]*?)<\/span>/i)?.[1] ?? (/data-heatmap-target="\.tit"/i.test(attrs) ? inner : "");
+    if (!url || !headline) continue;
+    const title = cleanText(headline);
     const terms = query
       .toLowerCase()
       .split(/\s+/)
