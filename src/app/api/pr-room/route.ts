@@ -24,6 +24,7 @@ export async function PATCH(request: Request) {
   if (Array.isArray(body?.referenceUrls)) data.referenceUrls = body.referenceUrls.filter((x) => typeof x === "string").slice(0, 20);
   if (Array.isArray(body?.mentions)) data.mentions = body.mentions.slice(0, 5000);
   if (Array.isArray(body?.excludedMentionUrls)) data.excludedMentionUrls = body.excludedMentionUrls.filter((x) => typeof x === "string").slice(0, 5000);
+  if (Array.isArray(body?.excludedMentionRules)) data.excludedMentionRules = body.excludedMentionRules.filter((x) => x && typeof x === "object").slice(0, 5000);
   if (Array.isArray(body?.pressReleases)) data.pressReleases = body.pressReleases.slice(0, 50);
   const room = await prisma.prRoom.update({ where: { id: current.id }, data });
   return NextResponse.json({ room, canWrite: true });

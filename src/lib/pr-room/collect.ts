@@ -3,7 +3,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { safeFetchText } from "@/lib/brief/link-preview";
 import { googleNewsUrl, parseFeed } from "@/lib/brief/sources";
-import { analyzeMention, isCollectionDue, type PrMention } from "./model";
+import { analyzeMention, isCollectionDue, type ExcludedMentionRule, type PrMention } from "./model";
 
 const SOCIAL_SOURCES = [
   { domain: "instagram.com", channel: "sns" as const, label: "Instagram" },
@@ -62,6 +62,9 @@ export function isRelevantMention(title: string, queries: string[]) {
     return needle.length >= 4 && haystack.includes(needle);
   });
 }
+const stopWords=new Set(["그리고","대한","관련","이번","행사","개최","뉴스","기자","에서","으로","the","and","for","with"]);
+function topicTokens(value:string,queries:string[]){const ignored=new Set(queries.flatMap(q=>q.toLowerCase().normalize("NFKC").match(/[a-z0-9가-힣]+/g)??[]));return new Set((value.toLowerCase().normalize("NFKC").match(/[a-z0-9가-힣]+/g)??[]).filter(x=>x.length>1&&!/^20\d\d$/.test(x)&&!ignored.has(x)&&!stopWords.has(x)))}
+export function isSimilarToExcluded(row:Pick<Found,"title"|"excerpt"|"channel">,rules:ExcludedMentionRule[],queries:string[]){const a=topicTokens(`${row.title} ${row.excerpt}`,queries);if(a.size<2)return false;return rules.some(rule=>{if(rule.channel!==row.channel)return false;const b=topicTokens(`${rule.title} ${rule.excerpt}`,queries);const common=[...a].filter(x=>b.has(x)).length,ratio=common/Math.min(a.size,b.size);return common>=3&&ratio>=.4||common>=2&&ratio>=.65})}
 function metaDescription(html: string) {
   return (
     html.match(
@@ -211,6 +214,7 @@ export async function collectPrRoom(roomId: string, now = new Date()) {
     : [];
   const queries = keywords.length ? keywords : [room.project.name];
   const excluded = new Set(Array.isArray(room.excludedMentionUrls) ? room.excludedMentionUrls.filter((x):x is string=>typeof x==="string") : []);
+  const excludedRules=Array.isArray(room.excludedMentionRules)?room.excludedMentionRules.filter((x):x is ExcludedMentionRule=>Boolean(x)&&typeof x==="object"&&typeof (x as ExcludedMentionRule).title==="string"):[];
   const days = Math.max(7, room.collectEveryDays + 4);
   const counts: Record<string, number> = {};
   const errors: string[] = [];
@@ -252,12 +256,12 @@ export async function collectPrRoom(roomId: string, now = new Date()) {
       }
     }),
   );
-  const rows = (await enrichRows(settled.flat())).filter(row=>!excluded.has(row.url));
+  const rows = (await enrichRows(settled.flat())).filter(row=>!excluded.has(row.url)&&!isSimilarToExcluded(row,excludedRules,queries));
   const previous = (
     Array.isArray(room.mentions)
       ? (room.mentions as unknown as PrMention[])
       : []
-  ).filter((row) => !excluded.has(row.url) && row.origin !== "reference" && isRelevantMention(`${row.title} ${row.excerpt}`, queries));
+  ).filter((row) => !excluded.has(row.url) && !isSimilarToExcluded(row,excludedRules,queries) && row.origin !== "reference" && isRelevantMention(`${row.title} ${row.excerpt}`, queries));
   const currentByUrl = new Map(rows.map((row) => [row.url, row]));
   const refreshed = previous.map((item) => {
     const row = currentByUrl.get(item.url);

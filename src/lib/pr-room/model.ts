@@ -17,6 +17,8 @@ export interface PrMention {
   origin?: "search" | "reference";
 }
 
+export interface ExcludedMentionRule { title:string; excerpt:string; source:string; channel:PrMention["channel"] }
+
 export interface PressRelease {
   id: string;
   type: "advance" | "opening" | "closing" | "statement";

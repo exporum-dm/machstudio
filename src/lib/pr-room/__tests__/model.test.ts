@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { analyzeMention, buildPressRelease, isCollectionDue } from "../model";
-import { isRelevantMention, parseNaverNews, parseSocialPage, publicComments } from "../collect";
+import { isRelevantMention, isSimilarToExcluded, parseNaverNews, parseSocialPage, publicComments } from "../collect";
 
 describe("홍보실 조사", () => {
   it("설정한 주기가 지난 경우에만 조사한다", () => {
@@ -23,6 +23,12 @@ it("행사명이 없는 비슷한 축제 결과는 제외한다",()=>{
   const queries=["코리아 엑스포 LA","Korea Expo LA","Korea Expo"];
   expect(isRelevantMention("Korea Expo LA 2026 Day 2",queries)).toBe(true);
   expect(isRelevantMention("Food and Art Festival 2026 Suncheon",queries)).toBe(false);
+});
+
+it("제외한 오탐과 주제가 비슷한 새 결과도 제외한다",()=>{
+  const rules=[{title:"순천 푸드앤아트 페스티벌 무료 체험",excerpt:"순천만 국가정원 축제",source:"TikTok",channel:"sns" as const}];
+  expect(isSimilarToExcluded({title:"순천 푸드앤아트 페스티벌 프로그램 안내",excerpt:"순천만 국가정원에서 진행",channel:"sns"},rules,["코리아 엑스포 LA"])).toBe(true);
+  expect(isSimilarToExcluded({title:"코리아 엑스포 LA K뷰티 개막",excerpt:"미국 바이어 상담",channel:"sns"},rules,["코리아 엑스포 LA"])).toBe(false);
 });
 
 it("질문 답변으로 보도자료 전체 원고를 만든다",()=>{

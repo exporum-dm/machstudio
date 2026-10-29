@@ -19,6 +19,7 @@ import {
   type PressAnswers,
   type PressRelease,
   type PrMention,
+  type ExcludedMentionRule,
 } from "@/lib/pr-room/model";
 
 interface Room {
@@ -28,6 +29,7 @@ interface Room {
   keywords: unknown;
   referenceUrls: unknown;
   excludedMentionUrls: unknown;
+  excludedMentionRules: unknown;
   mentions: unknown;
   pressReleases: unknown;
 }
@@ -104,8 +106,10 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
   const excludeMention = async (mention:PrMention) => {
     if(!window.confirm("이 결과를 제거하고 다음 조사에서도 제외할까요?")) return;
     const excluded=Array.isArray(data.room.excludedMentionUrls)?data.room.excludedMentionUrls.filter((x):x is string=>typeof x==="string"):[];
-    setData(await save(projectId,{mentions:mentions.filter(x=>x.id!==mention.id),excludedMentionUrls:[...new Set([...excluded,mention.url])]}));
-    toast.success("조사 결과에서 제외했어요");
+    const rules=Array.isArray(data.room.excludedMentionRules)?data.room.excludedMentionRules as ExcludedMentionRule[]:[];
+    const rule:ExcludedMentionRule={title:mention.title,excerpt:mention.excerpt,source:mention.source,channel:mention.channel};
+    setData(await save(projectId,{mentions:mentions.filter(x=>x.id!==mention.id),excludedMentionUrls:[...new Set([...excluded,mention.url])],excludedMentionRules:[rule,...rules]}));
+    toast.success("비슷한 조사 결과도 함께 제외하도록 기억했어요");
   };
   const collect = async () => {
     setRunning(true);
