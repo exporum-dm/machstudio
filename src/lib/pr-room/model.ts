@@ -14,7 +14,7 @@ export interface PrMention {
   author?: string;
   metrics?: { views?:number; likes?:number; comments?:number; shares?:number; saves?:number };
   comments?: { author?:string; text:string; likes?:number }[];
-  origin?: "search" | "reference";
+  origin?: "search" | "reference" | "naver-api";
 }
 
 export interface ExcludedMentionRule { title:string; excerpt:string; source:string; channel:PrMention["channel"] }

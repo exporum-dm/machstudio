@@ -177,6 +177,53 @@ export function parseNaverNews(html: string, query = ""): Found[] {
   return rows.slice(0, 50);
 }
 
+interface NaverNewsResponse {
+  items?: Array<{
+    title?: string;
+    originallink?: string;
+    link?: string;
+    description?: string;
+    pubDate?: string;
+  }>;
+}
+
+export function parseNaverApiNews(data: NaverNewsResponse): Found[] {
+  return (data.items ?? []).flatMap((item) => {
+    const url = item.originallink || item.link;
+    if (!url) return [];
+    let source = "NAVER 뉴스";
+    try { source = new URL(url).hostname.replace(/^www\./, ""); } catch {}
+    const publishedAt = item.pubDate ? new Date(item.pubDate) : null;
+    return [{
+      title: cleanText(item.title ?? ""),
+      url,
+      source,
+      channel: "press" as const,
+      publishedAt: publishedAt && !Number.isNaN(publishedAt.getTime()) ? publishedAt : null,
+      excerpt: cleanText(item.description ?? ""),
+      origin: "naver-api" as const,
+    }];
+  });
+}
+
+async function naverApiNews(query: string): Promise<Found[]> {
+  const clientId = process.env.NAVER_API_HUB_CLIENT_ID?.trim();
+  const clientSecret = process.env.NAVER_API_HUB_CLIENT_SECRET?.trim();
+  if (!clientId || !clientSecret) throw new Error("NAVER API HUB 인증정보가 설정되지 않았습니다.");
+  const url = new URL("https://naverapihub.apigw.ntruss.com/search/v1/news");
+  url.search = new URLSearchParams({ query, display: "100", start: "1", sort: "date", format: "json" }).toString();
+  const response = await fetch(url, {
+    headers: {
+      "X-NCP-APIGW-API-KEY-ID": clientId,
+      "X-NCP-APIGW-API-KEY": clientSecret,
+    },
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) throw new Error(`NAVER API HUB ${response.status}`);
+  return parseNaverApiNews(await response.json() as NaverNewsResponse);
+}
+
 async function googleRows(
   query: string,
   channel: PrMention["channel"],
@@ -214,7 +261,7 @@ export async function collectPrRoom(roomId: string, now = new Date()) {
     : [];
   const queries = keywords.length ? keywords : [room.project.name];
   const excluded = new Set(Array.isArray(room.excludedMentionUrls) ? room.excludedMentionUrls.filter((x):x is string=>typeof x==="string") : []);
-  const excludedRules=Array.isArray(room.excludedMentionRules)?room.excludedMentionRules.filter((x):x is ExcludedMentionRule=>Boolean(x)&&typeof x==="object"&&typeof (x as ExcludedMentionRule).title==="string"):[];
+  const excludedRules=(Array.isArray(room.excludedMentionRules)?room.excludedMentionRules.filter((x)=>Boolean(x)&&typeof x==="object"&&typeof (x as unknown as ExcludedMentionRule).title==="string"):[]) as unknown as ExcludedMentionRule[];
   const days = Math.max(7, room.collectEveryDays + 4);
   const counts: Record<string, number> = {};
   const errors: string[] = [];
@@ -226,6 +273,8 @@ export async function collectPrRoom(roomId: string, now = new Date()) {
     {
       label: "네이버 뉴스",
       run: async () => {
+        if (process.env.NAVER_API_HUB_CLIENT_ID && process.env.NAVER_API_HUB_CLIENT_SECRET)
+          return naverApiNews(query);
         const url = `https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(query)}`;
         const r = await safeFetchText(url, {
           maxBytes: 2_000_000,
@@ -257,11 +306,12 @@ export async function collectPrRoom(roomId: string, now = new Date()) {
     }),
   );
   const rows = (await enrichRows(settled.flat())).filter(row=>!excluded.has(row.url)&&!isSimilarToExcluded(row,excludedRules,queries));
+  const naverRetentionCutoff = now.getTime() - 21 * 86_400_000;
   const previous = (
     Array.isArray(room.mentions)
       ? (room.mentions as unknown as PrMention[])
       : []
-  ).filter((row) => !excluded.has(row.url) && !isSimilarToExcluded(row,excludedRules,queries) && row.origin !== "reference" && isRelevantMention(`${row.title} ${row.excerpt}`, queries));
+  ).filter((row) => !excluded.has(row.url) && !isSimilarToExcluded(row,excludedRules,queries) && row.origin !== "reference" && (row.origin !== "naver-api" || new Date(row.collectedAt).getTime() >= naverRetentionCutoff) && isRelevantMention(`${row.title} ${row.excerpt}`, queries));
   const currentByUrl = new Map(rows.map((row) => [row.url, row]));
   const refreshed = previous.map((item) => {
     const row = currentByUrl.get(item.url);
