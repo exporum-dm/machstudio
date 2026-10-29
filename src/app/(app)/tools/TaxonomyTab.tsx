@@ -1,17 +1,17 @@
 "use client";
 
 /**
- * 도구 → 이벤트 택소노미 — 이름 짓는 규칙을 한 곳에.
+ * 도구 → 이벤트 택소노미 — GA4/GTM 이벤트 이름 짓는 규칙을 한 곳에.
  *
- *  1) UTM 값: UTM 빌더의 프리셋(UTMPreset)을 그대로 편집한다. 여기 있는 값이 곧 UTM 빌더의 선택지라,
- *     시트에서 따로 관리하던 "허용 값" 이 빌더와 어긋날 일이 없다.
+ *  1) 설계 안내: 이벤트를 어떻게 정할지 짧은 원칙. 처음 쓰는 사람도 표를 채우기 전에 읽고 시작하게.
  *  2) 이벤트: GA4/GTM 이벤트 이름·발생 시점·파라미터. 이름은 GA4 규칙대로만 저장된다.
  *  3) machstudio 가 자동으로 보내는 이벤트: 등록 폼이 dataLayer 로 보내는 것 — 읽기 전용.
  *
+ * UTM 값(source·medium·campaign 선택지)은 UTM 빌더의 "선택지 관리"로 옮겼다(2026-10-29).
  * 고치는 화면이다(AGENTS §2): 값은 표에서 바로 고치고 칸을 벗어나면 저장된다.
  */
 import { useCallback, useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useWorkspace } from "@/contexts/workspace";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -25,70 +25,33 @@ import {
   type TaxonomyParameter,
 } from "@/lib/event-taxonomy";
 
-interface Preset { id: string; field: string; value: string; label: string | null }
 interface EventRow {
   id: string; name: string; category: string; description: string; trigger: string;
   parameters: TaxonomyParameter[]; platforms: string[]; status: "active" | "deprecated";
 }
 
-const UTM_FIELDS = [
-  { field: "source", title: "utm_source", note: "어디서 왔나 — 매체·사이트 (예: meta, naver, stibee)" },
-  { field: "medium", title: "utm_medium", note: "어떤 방식으로 — 광고·메일·QR (예: cpc, email, qr)" },
-  { field: "campaign", title: "utm_campaign", note: "무엇을 위해 — 목적 (예: registration, visitor)" },
+// 이벤트를 정하기 전에 읽는 원칙 — 길게 쓰지 않는다. 다섯 줄이면 표를 채울 수 있게.
+const DESIGN_STEPS = [
+  { title: "질문부터 정해요", body: "\"사전등록 전환율은?\" \"어느 버튼에서 문의가 오나?\"처럼 보고서에서 답하고 싶은 질문을 먼저 적고, 그 답에 필요한 행동만 이벤트로 만들어요." },
+  { title: "이름은 대상_동작", body: "booth_inquiry_click, brochure_download처럼 영문 소문자와 밑줄로 써요. 동작은 view · click · submit · download처럼 몇 개로 정해 두면 이름이 흩어지지 않아요." },
+  { title: "세부는 파라미터로", body: "버튼마다 이벤트를 만들지 말고 cta_click 하나에 button_location 같은 파라미터로 나눠요. 보고서에서 보려면 GA4 맞춤 측정기준으로 등록해야 해요." },
+  { title: "GA4 기본 이름을 먼저", body: "sign_up, generate_lead처럼 GA4가 정해 둔 이벤트가 있으면 그 이름을 그대로 써요. 전환 설정과 기본 보고서가 바로 맞물려요." },
+  { title: "바꾸지 말고 멈추기", body: "이름을 바꾸면 이전 데이터와 끊겨요. 안 쓰게 된 이벤트는 지우지 말고 '사용 안 함'으로 바꿔 기록을 남겨요." },
 ] as const;
 
-export default function TaxonomyTab() {
+export default function TaxonomyTab({ onOpenUtm }: { onOpenUtm?: () => void }) {
   const { workspace } = useWorkspace();
   const confirm = useConfirm();
-  const [presets, setPresets] = useState<Preset[] | null>(null);
   const [events, setEvents] = useState<EventRow[] | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [newEventName, setNewEventName] = useState("");
 
   const load = useCallback(async () => {
     if (!workspace) return;
-    const [p, e] = await Promise.all([
-      fetch(`/api/utm-presets?workspaceId=${workspace.id}`).then((r) => r.json()).catch(() => ({ presets: [] })),
-      fetch(`/api/event-taxonomy?workspaceId=${workspace.id}`).then((r) => r.json()).catch(() => ({ events: [] })),
-    ]);
-    setPresets(p.presets ?? []);
+    const e = await fetch(`/api/event-taxonomy?workspaceId=${workspace.id}`).then((r) => r.json()).catch(() => ({ events: [] }));
     setEvents(e.events ?? []);
   }, [workspace]);
   useEffect(() => { void Promise.resolve().then(load); }, [load]);
-
-  // ── UTM 값 ────────────────────────────────────────────────
-  const addPreset = async (field: string, value: string, label: string) => {
-    if (!workspace || !value.trim()) return false;
-    const res = await fetch("/api/utm-presets", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ workspaceId: workspace.id, field, value, label }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) { toast.error(data.error ?? "추가하지 못했어요"); return false; }
-    setPresets((prev) => {
-      const list = (prev ?? []).filter((x) => x.id !== data.preset.id);
-      return [...list, data.preset];
-    });
-    return true;
-  };
-  const patchPreset = async (preset: Preset, patch: { value?: string; label?: string }) => {
-    const res = await fetch("/api/utm-presets", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: preset.id, value: patch.value ?? preset.value, label: patch.label ?? preset.label ?? "" }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) { toast.error(data.error ?? "저장하지 못했어요"); return; }
-    setPresets((prev) => (prev ?? []).map((x) => (x.id === preset.id ? data.preset : x)));
-  };
-  const removePreset = async (preset: Preset) => {
-    const ok = await confirm({ title: `'${preset.value}' 값을 지울까요?`, description: "UTM 빌더의 선택지에서도 사라져요. 이미 만든 링크는 그대로예요.", confirmLabel: "지우기", tone: "danger" });
-    if (!ok) return;
-    const res = await fetch("/api/utm-presets", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: preset.id }) });
-    if (!res.ok) { toast.error("지우지 못했어요"); return; }
-    setPresets((prev) => (prev ?? []).filter((x) => x.id !== preset.id));
-  };
 
   // ── 이벤트 ────────────────────────────────────────────────
   const addEvent = async () => {
@@ -125,31 +88,42 @@ export default function TaxonomyTab() {
     setEvents((prev) => (prev ?? []).filter((x) => x.id !== row.id));
   };
 
-  if (!presets || !events) {
+  if (!events) {
     return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
   }
 
   return (
     <div className="space-y-6">
-      {/* ── UTM 값 ── */}
+      {/* ── 설계 안내 ── */}
       <section className="space-y-3">
         <div>
-          <h2 className="text-sm font-semibold">UTM 값</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">여기 적은 값이 <b>UTM 빌더의 선택지</b>예요. 값은 소문자로 저장돼요.</p>
+          <h2 className="text-sm font-semibold">이벤트 택소노미 설계하기</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            사이트에서 일어나는 행동에 팀 모두가 같은 이름을 붙이는 약속이에요. 한 번 정해 두면 GA4 보고서가 행사마다 흩어지지 않아요.
+          </p>
         </div>
-        <div className="grid gap-3 lg:grid-cols-3">
-          {UTM_FIELDS.map(({ field, title, note }) => (
-            <UtmColumn
-              key={field}
-              title={title}
-              note={note}
-              presets={presets.filter((p) => p.field === field)}
-              onAdd={(value, label) => addPreset(field, value, label)}
-              onPatch={patchPreset}
-              onRemove={removePreset}
-            />
+        <ol className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          {DESIGN_STEPS.map((step, i) => (
+            <li key={step.title} className={`min-w-0 bg-background p-3 ${R.panel} ${FINISH.s1}`}>
+              <div className="flex items-center gap-1.5 text-xs font-semibold">
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-violet-500/10 text-[10px] text-violet-600 dark:text-violet-400">{i + 1}</span>
+                {step.title}
+              </div>
+              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{step.body}</p>
+            </li>
           ))}
-        </div>
+        </ol>
+        <p className="text-[11px] text-muted-foreground">
+          유입 경로(utm_source·medium·campaign) 값은 이벤트가 아니라 링크에 붙는 꼬리표라{" "}
+          {onOpenUtm ? (
+            <button onClick={onOpenUtm} className="inline-flex items-center gap-0.5 text-violet-500 hover:underline">
+              UTM 빌더 → 선택지 관리<ArrowRight className="h-3 w-3" />
+            </button>
+          ) : (
+            <b>UTM 빌더 → 선택지 관리</b>
+          )}
+          에서 정해요.
+        </p>
       </section>
 
       {/* ── 이벤트 ── */}
@@ -213,60 +187,6 @@ export default function TaxonomyTab() {
           </table>
         </div>
       </section>
-    </div>
-  );
-}
-
-function UtmColumn({
-  title, note, presets, onAdd, onPatch, onRemove,
-}: {
-  title: string;
-  note: string;
-  presets: Preset[];
-  onAdd: (value: string, label: string) => Promise<boolean>;
-  onPatch: (preset: Preset, patch: { value?: string; label?: string }) => void;
-  onRemove: (preset: Preset) => void;
-}) {
-  const [value, setValue] = useState("");
-  const [label, setLabel] = useState("");
-  const submit = async () => {
-    if (await onAdd(value, label)) { setValue(""); setLabel(""); }
-  };
-  return (
-    <div className={`min-w-0 bg-background p-4 ${R.panel} ${FINISH.s1}`}>
-      <div className="font-mono text-xs font-semibold">{title}</div>
-      <p className="mt-0.5 text-[11px] text-muted-foreground">{note}</p>
-      <div className="mt-3 space-y-1">
-        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_24px] gap-1.5 text-[10px] font-medium text-muted-foreground">
-          <span>값</span><span>표시 이름</span><span />
-        </div>
-        {presets.map((p) => (
-          <div key={p.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_24px] items-center gap-1.5">
-            <input
-              defaultValue={p.value}
-              onBlur={(e) => { const v = e.target.value.trim().toLowerCase(); if (v && v !== p.value) onPatch(p, { value: v }); }}
-              className={`${FIELD_CLS} h-7 font-mono text-xs`}
-            />
-            <input
-              defaultValue={p.label ?? ""}
-              onBlur={(e) => { if (e.target.value.trim() !== (p.label ?? "")) onPatch(p, { label: e.target.value.trim() }); }}
-              className={`${FIELD_CLS} h-7 text-xs`}
-            />
-            <button onClick={() => onRemove(p)} className="rounded p-1 text-muted-foreground hover:text-red-500" aria-label={`${p.value} 지우기`}>
-              <Trash2 className="h-3 w-3" />
-            </button>
-          </div>
-        ))}
-        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_24px] items-center gap-1.5 pt-1">
-          <input value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) void submit(); }}
-            placeholder="새 값" className={`${FIELD_CLS} h-7 font-mono text-xs`} />
-          <input value={label} onChange={(e) => setLabel(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) void submit(); }}
-            placeholder="표시 이름" className={`${FIELD_CLS} h-7 text-xs`} />
-          <button onClick={() => void submit()} className="rounded p-1 text-violet-500 hover:bg-violet-500/10" aria-label="추가">
-            <Plus className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
