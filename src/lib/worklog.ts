@@ -443,3 +443,64 @@ export function parsePastedWork(text: string): Array<{ tag: string | null; conte
   }
   return out;
 }
+
+// ── 칸 안의 줄 순서(2026-10-29) ───────────────────────────────────────────
+// 한 칸(날짜×사람)에 여러 행사 일이 섞여 적혀도 같은 행사는 한 머리표 아래 모아 보인다.
+// 행사 묶음의 자리는 그 행사의 가장 위 줄(sortOrder 가 가장 작은 줄) 자리, 묶음 안은 sortOrder 순.
+
+type CellLine = { groupId: string | null; sortOrder: number; createdAt: string };
+
+/** 칸 안 줄을 보이는 순서로. 아직 글이 없는 새 줄도 같은 행사 묶음에 둔다 — 다 적고 나서 옮겨 가지 않게. */
+export function orderCellLines<T extends CellLine>(list: T[]): T[] {
+  const raw = [...list].sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt));
+  const clusters = new Map<string, T[]>();
+  for (const l of raw) {
+    const key = l.groupId ?? "";
+    const run = clusters.get(key);
+    if (run) run.push(l);
+    else clusters.set(key, [l]);
+  }
+  return [...clusters.values()].flat();
+}
+
+/** v 보다 바로 위(작은 쪽 가장 가까운)·아래(큰 쪽 가장 가까운) sortOrder. 없으면 null. */
+export function sortOrderNeighbors(orders: number[], v: number): { below: number | null; above: number | null } {
+  let below: number | null = null;
+  let above: number | null = null;
+  for (const s of orders) {
+    if (s < v && (below === null || s > below)) below = s;
+    if (s > v && (above === null || s < above)) above = s;
+  }
+  return { below, above };
+}
+
+/**
+ * 보이는 순서에서 한 줄을 위(-1)·아래(1)로. 같은 행사 안에선 이웃 줄과 자리를 바꾸고,
+ * 행사 묶음 끝에서 더 가면 묶음째 이웃 묶음과 자리를 바꾼다(묶음은 다시 모이므로 한 줄만 넘기면 제자리로 돌아온다).
+ */
+export function shiftInCell<T extends { groupId: string | null }>(ordered: T[], index: number, dir: -1 | 1): T[] {
+  const item = ordered[index];
+  const neighbor = ordered[index + dir];
+  if (!item || !neighbor) return ordered;
+  if (neighbor.groupId === item.groupId) {
+    const out = [...ordered];
+    out[index] = neighbor;
+    out[index + dir] = item;
+    return out;
+  }
+  const runOf = (i: number): [number, number] => {
+    let s = i, e = i;
+    while (s > 0 && ordered[s - 1].groupId === ordered[i].groupId) s--;
+    while (e < ordered.length - 1 && ordered[e + 1].groupId === ordered[i].groupId) e++;
+    return [s, e];
+  };
+  const mine = runOf(index);
+  const theirs = runOf(index + dir);
+  const [first, second] = dir < 0 ? [theirs, mine] : [mine, theirs];
+  return [
+    ...ordered.slice(0, first[0]),
+    ...ordered.slice(second[0], second[1] + 1),
+    ...ordered.slice(first[0], first[1] + 1),
+    ...ordered.slice(second[1] + 1),
+  ];
+}

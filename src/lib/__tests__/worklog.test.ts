@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  blockText, buildWeeklyReport, classifyWork, orderGroupsForReport, defaultReportDate, effectiveStatus, groupDateLabel, isRoutineWork, openStatus,
+  blockText, buildWeeklyReport, orderCellLines, shiftInCell, sortOrderNeighbors, classifyWork, orderGroupsForReport, defaultReportDate, effectiveStatus, groupDateLabel, isRoutineWork, openStatus,
   parseBlockText, parsePastedWork, reportTable, reportWindows, resolveWorkTag, resolveWorkTagInContext, splitWorkTag, weekOf, type WorkEntryInput,
 } from "@/lib/worklog";
 
@@ -177,5 +177,34 @@ describe("시트처럼 적기", () => {
     expect(effectiveStatus("planned", "2026-10-12", "2026-10-18")).toBe("doing");
     expect(effectiveStatus("doing", "2026-10-30", "2026-10-18")).toBe("planned");
     expect(openStatus(null, "2026-10-18")).toBe("planned");
+  });
+});
+
+describe("칸 안의 줄 순서", () => {
+  const line = (id: string, groupId: string | null, sortOrder: number, content = id, temp = false) =>
+    ({ id, groupId, sortOrder, content, temp, createdAt: "2026-10-20T00:00:" + String(sortOrder).padStart(2, "0") + "Z" });
+  const ids = (list: Array<{ id: string }>) => list.map((l) => l.id);
+
+  it("같은 행사는 첫 줄 자리에 모은다", () => {
+    expect(ids(orderCellLines([line("a", "la", 1), line("x", "stk", 2), line("b", "la", 3), line("n", null, 4)]))).toEqual(["a", "b", "x", "n"]);
+  });
+
+  it("아직 글이 없는 새 줄은 적던 자리에 — 바로 위 줄 다음, 맨 끝이면 맨 끝", () => {
+    const list = [line("a", "la", 1), line("x", "stk", 2), line("b", "la", 3)];
+    expect(ids(orderCellLines([...list, line("d", "la", 3.5, "", true)]))).toEqual(["a", "b", "d", "x"]);
+    expect(ids(orderCellLines([...list, line("e", null, 4, "", true)]))).toEqual(["a", "b", "x", "e"]);
+  });
+
+  it("위·아래 — 같은 행사 안에선 한 줄, 묶음 끝에선 묶음째", () => {
+    const ordered = [line("a", "la", 1), line("b", "la", 3), line("x", "stk", 2)];
+    expect(ids(shiftInCell(ordered, 1, -1))).toEqual(["b", "a", "x"]);
+    expect(ids(shiftInCell(ordered, 1, 1))).toEqual(["x", "a", "b"]);
+    expect(ids(shiftInCell(ordered, 2, -1))).toEqual(["x", "a", "b"]);
+    expect(shiftInCell(ordered, 0, -1)).toBe(ordered);
+  });
+
+  it("sortOrder 이웃 — 같은 값은 건너뛴다", () => {
+    expect(sortOrderNeighbors([1, 1, 2, 5], 2)).toEqual({ below: 1, above: 5 });
+    expect(sortOrderNeighbors([3], 3)).toEqual({ below: null, above: null });
   });
 });
