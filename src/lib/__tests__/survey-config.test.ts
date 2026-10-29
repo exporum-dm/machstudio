@@ -61,27 +61,47 @@ describe("만족도 조사 — 집계", () => {
   });
 });
 
-describe("만족도 조사 — 결과 분석 탭에 붙는 인사이트", () => {
-  it("문항 응답·등록자 수가 모자라면 아무것도 내지 않는다", () => {
-    const fewSummaries = summarizeSurvey(config, Array.from({ length: 5 }, () => ({ answers: { overall: 5, nps: 10 } })));
-    expect(surveyInsights({ surveyName: "kela2026", total: 5, registered: 3, registrantsTotal: 10, summaries: fewSummaries })).toEqual([]);
-  });
-
-  it("응답률과 점수형 문항 레벨을 낸다", () => {
-    const summaries = summarizeSurvey(config, Array.from({ length: 25 }, (_, i) => ({
-      answers: { overall: i % 5 === 0 ? 2 : 5, nps: i % 5 === 0 ? 3 : 10 },
-    })));
-    const out = surveyInsights({ surveyName: "kela2026", total: 25, registered: 20, registrantsTotal: 1000, summaries });
-    const rate = out.find((i) => i.title.includes("응답"));
-    expect(rate?.detail).toContain("1,000명 중 20명");
-    const nps = out.find((i) => i.title.includes("NPS"));
-    expect(nps?.title).toContain("NPS 60"); // 추천(≥9) 20명 − 비추천(≤6) 5명, 25명 중 60%
-    const overall = out.find((i) => i.title.includes("평균"));
-    expect(overall?.title).toContain("4.4/5"); // (5*20 + 2*5)/25
-  });
-
+describe("만족도 조사 — 결과 분석 탭에 붙는 인사이트(등록 분석과 교차하는 것만)", () => {
   it("응답이 하나도 없으면 빈 배열", () => {
-    expect(surveyInsights({ surveyName: "kela2026", total: 0, registered: 0, registrantsTotal: 1000, summaries: [] })).toEqual([]);
+    expect(surveyInsights({ surveyName: "kela2026", registrantsTotal: 1000, config, responses: [] })).toEqual([]);
+  });
+
+  it("표본이 모자라면(등록자·그룹 모두) 아무것도 내지 않는다", () => {
+    const responses = Array.from({ length: 5 }, () => ({ recordId: "r", audience: "General", answers: { overall: 5, nps: 10 } }));
+    expect(surveyInsights({ surveyName: "kela2026", registrantsTotal: 10, config, responses })).toEqual([]);
+  });
+
+  it("응답률이 낮으면 경고 + 개선 제안을 낸다", () => {
+    const responses = Array.from({ length: 20 }, () => ({ recordId: "r", audience: "General", answers: { overall: 5, nps: 10 } }));
+    const out = surveyInsights({ surveyName: "kela2026", registrantsTotal: 1000, config, responses });
+    expect(out).toHaveLength(1);
+    expect(out[0].tone).toBe("warn");
+    expect(out[0].title).toContain("응답률");
+    expect(out[0].detail).toContain("리마인드");
+  });
+
+  it("등록 없이 온 사람과 사전등록자의 만족도 차이를 낸다", () => {
+    const pre = Array.from({ length: 20 }, () => ({ recordId: "r", audience: "General", answers: { overall: 3, nps: 5 } }));
+    const walkIn = Array.from({ length: 20 }, () => ({ recordId: null, audience: "General", answers: { overall: 5, nps: 10 } }));
+    const out = surveyInsights({ surveyName: "kela2026", registrantsTotal: 20, config, responses: [...pre, ...walkIn] });
+    const overall = out.find((i) => i.title.includes("Overall"));
+    expect(overall?.title).toContain("사전등록자(3.0) < 등록 없이 온 사람(5.0)");
+    expect(overall?.tone).toBe("info");
+  });
+
+  it("유형별 만족도 격차를 내고, 방문율도 낮으면 같이 짚어준다", () => {
+    const general = Array.from({ length: 20 }, () => ({ recordId: "r", audience: "General", answers: { overall: 5, nps: 10 } }));
+    const buyer = Array.from({ length: 20 }, () => ({ recordId: "r", audience: "Buyer", answers: { overall: 3, nps: 4 } }));
+    const out = surveyInsights({
+      surveyName: "kela2026",
+      registrantsTotal: 40,
+      config,
+      responses: [...general, ...buyer],
+      audienceVisitRate: { Buyer: 0.3, General: 0.8 },
+    });
+    const buyerOverall = out.find((i) => i.title.startsWith("Buyer") && i.title.includes("Overall"));
+    expect(buyerOverall?.tone).toBe("warn");
+    expect(buyerOverall?.detail).toContain("30%");
   });
 });
 

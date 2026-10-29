@@ -14,7 +14,7 @@ import { prisma } from "@/lib/prisma";
 import { collectColumnsFor } from "@/lib/collect-columns";
 import { normalizeCollectForm } from "@/lib/collect-form-config";
 import { audienceInsights, buildRegistrationAnalysis, pickAnalysisFields, summarizeAudiences, type AnalysisInput } from "@/lib/registration-analysis";
-import { normalizeSurveyConfig, resolveLinkedQuestions, summarizeSurvey, surveyInsights, type QuestionSummary } from "@/lib/survey-config";
+import { normalizeSurveyConfig, resolveLinkedQuestions, surveyInsights } from "@/lib/survey-config";
 
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -93,25 +93,24 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     analysis.insights.splice(2, 0, ...audienceInsights(rows, audienceField?.label ?? "유형"));
   }
 
-  // 연결된 만족도 조사 — 등록 분석과 같은 탭에 같이 보여준다(별도 집계이므로 등록자 수와는 절대 안 섞는다).
-  // 한 등록 소스에 조사가 0·1·N개일 수 있다 — 전부 낸다.
-  const surveyRows = await prisma.survey.findMany({ where: { sourceId: id }, orderBy: { createdAt: "asc" } });
-  const surveys = surveyRows.length
-    ? await Promise.all(surveyRows.map(async (s) => {
-        const surveyConfig = resolveLinkedQuestions(normalizeSurveyConfig(s.config), config);
-        const responses = await prisma.surveyResponse.findMany({ where: { surveyId: s.id }, select: { answers: true, recordId: true } });
-        const registered = responses.filter((r) => r.recordId).length;
-        const summaries: QuestionSummary[] = summarizeSurvey(surveyConfig, responses).filter((q) => q.answered > 0);
-        return { id: s.id, name: s.name, status: s.status, total: responses.length, registered, summaries };
-      }))
-    : [];
-  for (const s of surveys) {
+  /**
+   * 연결된 만족도 조사 — 문항별 결과(분포·평균·NPS)는 만족도 조사 탭에 이미 있다. 여기서는
+   * 그 숫자를 다시 보여주지 않는다 — **등록 분석과 교차해야만 나오는 해석**만 insights 에 더한다
+   * (유형별 격차·사전등록자 vs 워크인·응답률 신뢰도). 한 등록 소스에 조사가 0·1·N개일 수 있다.
+   */
+  const audienceVisitRate = audienceKey
+    ? Object.fromEntries(summarizeAudiences(audiences).map((r) => [r.value, r.showUpPre.rate]))
+    : undefined;
+  const surveyRows = await prisma.survey.findMany({ where: { sourceId: id }, select: { id: true, name: true, config: true } });
+  for (const s of surveyRows) {
+    const surveyConfig = resolveLinkedQuestions(normalizeSurveyConfig(s.config), config);
+    const responses = await prisma.surveyResponse.findMany({ where: { surveyId: s.id }, select: { answers: true, recordId: true, audience: true } });
     analysis.insights.push(...surveyInsights({
       surveyName: s.name,
-      total: s.total,
-      registered: s.registered,
       registrantsTotal: analysis.kpi.registrations.total,
-      summaries: s.summaries,
+      config: surveyConfig,
+      responses,
+      audienceVisitRate,
     }));
   }
 
@@ -130,7 +129,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       analysis,
       audiences,
       audienceRows: summarizeAudiences(audiences),
-      surveys,
     },
     { headers: { "Cache-Control": "private, max-age=60" } },
   );

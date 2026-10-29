@@ -378,49 +378,111 @@ export function answerText(q: SurveyQuestion, value: SurveyAnswerMap[string], lo
 }
 
 // ── 인사이트 — "결과 분석" 탭에 등록 인사이트와 같은 자리·같은 말투로 붙는다 ────────────
+//
+// 만족도 조사 자체의 "결과"(문항별 분포·평균·NPS)는 만족도 조사 탭에 이미 있다. 여기서 그 숫자를
+// 그대로 다시 보여주면 같은 화면이 두 번 있는 것뿐이라 — **등록 분석과 교차해야만 나오는 것**만 낸다:
+//  · 유형(응답자군)별 만족도 격차 — 그 유형의 등록·방문 분석과 나란히 읽혀야 다음 해 액션이 나온다.
+//  · 등록 없이 온 사람 vs 사전등록자의 만족도 차이.
+//  · 응답률이 낮아 전체 의견으로 믿기 어려울 때의 경고 + 다음 해 개선 제안.
+// 전부 "무엇이 다른가" 를 넘어 "그래서 내년에 뭘 하면 되는가" 까지 한 문장 안에 담는다.
 const SURVEY_MIN_N = 20;
-const pct = (x: number) => `${Math.round(x * 1000) / 10}%`;
 const num = (x: number) => x.toLocaleString("ko-KR");
+
+export interface SurveyInsightResponse {
+  recordId: string | null;
+  /** 응답자 유형(등록 폼의 유형 값 — 비면 구분 없음) */
+  audience: string;
+  answers: unknown;
+}
 
 export interface SurveyInsightInput {
   surveyName: string;
-  total: number;
-  registered: number;
   registrantsTotal: number;
-  summaries: QuestionSummary[];
+  config: SurveyConfig;
+  responses: SurveyInsightResponse[];
+  /** 유형별 사전등록 방문율(등록 분석에서 이미 계산한 값) — 있으면 만족도 격차와 함께 묶어 말한다. */
+  audienceVisitRate?: Record<string, number>;
 }
 
-/** 응답률 + 점수형 문항(scale·nps) 레벨 — 표본이 작은 만족도 조사 특성상 등록 분석보다 낮은 기준(20명)을 쓴다. */
-export function surveyInsights(input: SurveyInsightInput): Insight[] {
-  const out: Insight[] = [];
-  if (input.total === 0) return out;
+function scoreQuestions(config: SurveyConfig) {
+  return [...config.walkIn.questions, ...config.sections.flatMap((s) => s.questions)].filter((q) => q.type === "scale" || q.type === "nps");
+}
 
-  if (input.registrantsTotal >= SURVEY_MIN_N) {
-    const rate = input.registrantsTotal ? input.registered / input.registrantsTotal : 0;
-    const walkIn = input.total - input.registered;
-    out.push({
-      tone: rate >= 0.3 ? "good" : "info",
-      title: `${input.surveyName}: 등록자의 ${pct(rate)}가 만족도 조사에 응답했어요`,
-      detail: `등록자 ${num(input.registrantsTotal)}명 중 ${num(input.registered)}명이 응답했어요${walkIn > 0 ? ` · 등록 없이 참여 ${num(walkIn)}명` : ""}.`,
-    });
+function scoreOf(q: SurveyQuestion, answers: unknown): number | null {
+  const map = (answers && typeof answers === "object" ? answers : {}) as SurveyAnswerMap;
+  const n = Number(map[q.key]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function avgScore(rs: SurveyInsightResponse[], q: SurveyQuestion): number | null {
+  const nums = rs.map((r) => scoreOf(q, r.answers)).filter((n): n is number => n !== null);
+  return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
+}
+
+export function surveyInsights(input: SurveyInsightInput): Insight[] {
+  const { surveyName, registrantsTotal, config, responses, audienceVisitRate } = input;
+  const out: Insight[] = [];
+  if (responses.length === 0) return out;
+  const L = (x: Localized) => localize(x, config.defaultLocale);
+  const qs = scoreQuestions(config);
+
+  // 1) 응답률 — 낮으면 "이 결과를 대표값으로 믿기 어렵다 + 어떻게 올릴지" 를 같이 말한다.
+  const registered = responses.filter((r) => r.recordId).length;
+  if (registrantsTotal >= SURVEY_MIN_N) {
+    const rate = registered / registrantsTotal;
+    if (rate < 0.15) {
+      out.push({
+        tone: "warn",
+        title: `${surveyName}: 응답률 ${Math.round(rate * 1000) / 10}%로 낮아요`,
+        detail: `등록자 ${num(registrantsTotal)}명 중 ${num(registered)}명만 응답해 아래 숫자를 전체 의견으로 보기엔 조심해야 해요. 다음엔 출구·안내데스크 QR을 더 눈에 띄게 두거나, 현장에서 바로 보내는 리마인드 문자를 써 보세요.`,
+      });
+    }
   }
 
-  for (const q of input.summaries) {
-    if (q.answered < SURVEY_MIN_N) continue;
-    if (q.type === "nps" && q.nps !== undefined) {
+  // 2) 등록 없이 온 사람 vs 사전등록자 — 사전 기대와 현장 경험의 간극을 보여준다.
+  const walkIn = responses.filter((r) => !r.recordId);
+  const preRegistered = responses.filter((r) => r.recordId);
+  if (walkIn.length >= SURVEY_MIN_N && preRegistered.length >= SURVEY_MIN_N) {
+    for (const q of qs) {
+      const a = avgScore(preRegistered, q);
+      const b = avgScore(walkIn, q);
+      if (a === null || b === null) continue;
+      const scaleMax = q.type === "nps" ? 10 : q.scaleMax;
+      if (Math.abs(a - b) / scaleMax < 0.1) continue;
       out.push({
-        tone: q.nps >= 30 ? "good" : q.nps < 0 ? "warn" : "info",
-        title: `${q.title}: NPS ${q.nps}점`,
-        detail: `응답 ${num(q.answered)}명 기준 — 추천(9~10점) 비율에서 비추천(0~6점) 비율을 뺀 값이에요.`,
+        tone: b > a ? "info" : "warn",
+        title: `${L(q.title)}: 사전등록자(${a.toFixed(1)}) ${b > a ? "<" : ">"} 등록 없이 온 사람(${b.toFixed(1)})`,
+        detail: b > a
+          ? "현장에서 바로 참여한 사람들의 만족도가 더 높아요 — 기대 없이 왔다가 좋게 느꼈을 수 있어요. 사전등록자에게도 현장 경험을 구체적으로 미리 보여주면 기대와 체감의 간극이 줄어요."
+          : "사전등록자가 등록 때 기대한 것과 실제 현장 경험 사이에 간극이 있을 수 있어요. 사전 안내 문구(일정·구성)가 과장되지 않았는지, 실제 프로그램이 그걸 따라가는지 점검하세요.",
       });
-    } else if (q.type === "scale" && q.average !== undefined) {
-      const scaleMax = q.counts?.length ?? 5;
-      const ratio = scaleMax > 1 ? (q.average - 1) / (scaleMax - 1) : 1;
-      out.push({
-        tone: ratio >= 0.75 ? "good" : ratio < 0.5 ? "warn" : "info",
-        title: `${q.title}: 평균 ${q.average}/${scaleMax}점`,
-        detail: `응답 ${num(q.answered)}명 기준.`,
-      });
+    }
+  }
+
+  // 3) 유형(audience)별 만족도 격차 — 등록 분석의 방문율 격차와 함께 보면 "어느 유형을 고쳐야 하는지" 가 나온다.
+  const audiences = [...new Set(responses.map((r) => r.audience).filter(Boolean))];
+  if (audiences.length >= 2) {
+    for (const q of qs) {
+      const overall = avgScore(responses, q);
+      if (overall === null) continue;
+      const scaleMax = q.type === "nps" ? 10 : q.scaleMax;
+      for (const aud of audiences) {
+        const rs = responses.filter((r) => r.audience === aud);
+        if (rs.length < SURVEY_MIN_N) continue;
+        const avg = avgScore(rs, q);
+        if (avg === null) continue;
+        const diff = (avg - overall) / scaleMax;
+        if (Math.abs(diff) < 0.1) continue;
+        const visitRate = audienceVisitRate?.[aud];
+        const alsoLowVisit = diff < 0 && visitRate !== undefined && visitRate < 0.5;
+        out.push({
+          tone: diff > 0 ? "good" : "warn",
+          title: `${aud} 유형의 ${L(q.title)}가 전체보다 ${diff > 0 ? "높아요" : "낮아요"} (${avg.toFixed(1)} vs 전체 ${overall.toFixed(1)})`,
+          detail: diff < 0
+            ? `내년엔 이 유형을 위한 프로그램·응대를 따로 점검하세요.${alsoLowVisit ? ` 이 유형은 사전등록 방문율도 평균보다 낮아요(${Math.round(visitRate! * 1000) / 10}%) — 등록부터 현장 만족까지 전반적으로 신경 써야 할 그룹이에요.` : ""}`
+            : `이 유형에게 잘 맞은 구성이에요 — 다음 해 다른 유형에도 적용할 수 있는지 살펴보세요.`,
+        });
+      }
     }
   }
   return out;
