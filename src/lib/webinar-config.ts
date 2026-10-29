@@ -403,7 +403,15 @@ export interface LandingPageConfig {
   colors: LandingColors;
   /** 섹션별 배경 모드 */
   sectionBg: LandingSectionBgMap;
-  intro: { enabled: boolean; title: string; body: string };
+  intro: {
+    enabled: boolean;
+    title: string;
+    body: string;
+    /** 모바일 전용 제목 — 비우면 title 을 그대로 쓴다(PC·모바일 줄바꿈 위치가 달라야 할 때만 채운다). */
+    titleMobile: string;
+    /** 모바일 전용 본문 — 비우면 body 를 그대로 쓴다. */
+    bodyMobile: string;
+  };
   /** detailPopup: 세션 카드 클릭 시 연사 상세(주제·내용·사진·소속·약력) 팝업 열기 */
   sessions: { enabled: boolean; detailPopup: boolean };
   timetable: { enabled: boolean };
@@ -556,7 +564,13 @@ export function normalizeLandingPageConfig(
       acc[s.key] = sectionBg[s.key] === "light" ? "light" : fallback;
       return acc;
     }, {} as LandingSectionBgMap),
-    intro: { enabled: bool(intro.enabled, true), title: str(intro.title), body: str(intro.body) },
+    intro: {
+      enabled: bool(intro.enabled, true),
+      title: str(intro.title),
+      body: str(intro.body),
+      titleMobile: str(intro.titleMobile),
+      bodyMobile: str(intro.bodyMobile),
+    },
     sessions: { enabled: bool(obj(lp.sessions).enabled, true), detailPopup: bool(obj(lp.sessions).detailPopup, true) },
     timetable: { enabled: bool(obj(lp.timetable).enabled, true) },
     audience: {
