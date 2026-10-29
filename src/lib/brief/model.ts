@@ -19,27 +19,6 @@ export function isBriefCategory(value: unknown): value is BriefCategory {
   return BRIEF_CATEGORIES.some((c) => c.key === value);
 }
 
-export function isBriefCollectionDue(
-  brief: { collectEveryDays: number; lastCollectedAt: Date | string | null },
-  now = new Date(),
-): boolean {
-  if (!brief.lastCollectedAt) return true;
-  const days = Math.max(1, Math.min(30, Math.trunc(brief.collectEveryDays || 3)));
-  return now.getTime() - new Date(brief.lastCollectedAt).getTime() >= days * 86_400_000;
-}
-
-/** 수집 직후의 보수적인 1차 분류. 확신하기 어려운 감정은 중립으로 두고 사람이 검토한다. */
-export function analyzeBriefMention(title: string, source: string) {
-  const negative = /(논란|비판|항의|불만|환불|취소|사고|피해|오류|중단|사과|위기|부실)/i.test(title);
-  const positive = /(호평|성황|성료|수상|돌파|성공|확대|최대|기대|인기)/i.test(title);
-  const sentiment = negative ? "negative" : positive ? "positive" : "neutral";
-  return {
-    channel: source === "googlenews" ? "press" : source === "rss" ? "web" : "web",
-    sentiment,
-    reviewStatus: negative ? "issue" : "new",
-    riskLevel: negative ? "attention" : "watch",
-  } as const;
-}
 
 export function categoryMeta(key: BriefCategory) {
   return BRIEF_CATEGORIES.find((c) => c.key === key)!;

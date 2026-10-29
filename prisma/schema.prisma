@@ -190,6 +190,7 @@ model Project {
   expoSites            ExpoSite[]
   mediaAssets          MediaAsset[]
   briefs               Brief[]
+  prRoom               PrRoom?
   detailPages          DetailPage[]
   workGroups           WorkGroup[]
 }
@@ -971,11 +972,6 @@ model Brief {
   /// 카톡 텍스트 끝에 공개 페이지 링크를 붙일지
   appendPublicLink Boolean   @default(true)
   isPublic         Boolean   @default(true)
-  /// 자동 조사는 매일 크론이 확인하되, 이 간격이 지난 프로젝트만 실행한다
-  collectEveryDays Int       @default(3)
-  lastCollectedAt  DateTime?
-  /// 보도자료 작성실의 초안. 별도 발행 자원이 되기 전까지 프로젝트 브리프에 가볍게 보관한다
-  pressDrafts      Json      @default("[]")
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   deletedAt        DateTime?
@@ -1034,13 +1030,6 @@ model BriefItem {
   source      String    @default("manual")
   /// AI 추천 이유 같은 내부 메모 — 밖으로 안 나간다
   note        String    @default("")
-  /// 홍보실 분류 — 자동 수집 후 운영자가 필요한 값만 다듬는다
-  channel     String    @default("web")
-  sentiment   String    @default("neutral")
-  reviewStatus String   @default("new")
-  riskLevel   String    @default("watch")
-  responseNote String   @default("")
-  excerpt     String    @default("")
   adopted     Boolean   @default(false)
   /// 카톡으로 나간 회차. null 이면 아직 안 나감 — 다음 카톡 텍스트에 들어간다
   issueId     String?
@@ -1078,6 +1067,24 @@ model BriefIssue {
   items BriefItem[]
 
   @@index([briefId, publishedAt(sort: Desc)])
+}
+
+/// 프로젝트 홍보실. 브리프와 분리된 언급 조사·보도자료 작업 공간이다.
+model PrRoom {
+  id                String   @id @default(cuid())
+  workspaceId       String
+  projectId         String   @unique
+  collectEveryDays  Int      @default(3)
+  lastCollectedAt   DateTime?
+  keywords          Json     @default("[]")
+  mentions          Json     @default("[]")
+  pressReleases     Json     @default("[]")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
 }
 
 /// 마하스튜디오 업로드 — 사진(webp 포함)·동영상을 올려 공개 URL 을 받는다.

@@ -28,12 +28,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (typeof body.note === "string") data.note = body.note.slice(0, 300);
   if ("dueDate" in body) data.dueDate = parseDueDate(body.dueDate);
   if (isBriefCategory(body.category)) data.category = body.category;
-  if (["press", "sns", "comment", "community", "web"].includes(String(body.channel))) data.channel = body.channel;
-  if (["positive", "neutral", "negative"].includes(String(body.sentiment))) data.sentiment = body.sentiment;
-  if (["new", "reviewed", "issue", "archived"].includes(String(body.reviewStatus))) data.reviewStatus = body.reviewStatus;
-  if (["watch", "attention", "urgent", "crisis"].includes(String(body.riskLevel))) data.riskLevel = body.riskLevel;
-  if (typeof body.responseNote === "string") data.responseNote = body.responseNote.slice(0, 3000);
-  if (typeof body.excerpt === "string") data.excerpt = body.excerpt.slice(0, 1000);
 
   const updated = await prisma.briefItem.update({ where: { id: itemId }, data });
   // 채택하는 순간 단축링크를 만든다 — 카톡 텍스트를 복사할 때 기다리지 않게.

@@ -15,7 +15,7 @@
  */
 import { prisma } from "@/lib/prisma";
 import { safeFetchText } from "./link-preview";
-import { analyzeBriefMention, daysUntil, isBriefCollectionDue, urlKey } from "./model";
+import { daysUntil, urlKey } from "./model";
 import { parseDueDate } from "./input";
 import {
   BIZINFO_FIELDS,
@@ -159,7 +159,6 @@ export async function runSource(sourceId: string, now = new Date()): Promise<Sou
     }
     const res = await prisma.briefItem.createMany({
       data: [...byKey.entries()].map(([key, c]) => ({
-        ...analyzeBriefMention(c.title, source.kind),
         briefId: source.briefId,
         category: c.category,
         org: c.org.slice(0, 80),
@@ -195,7 +194,6 @@ export async function collectBrief(briefId: string, now = new Date()) {
     select: { id: true },
   });
   const results = await Promise.all(sources.map((s) => runSource(s.id, now)));
-  await prisma.brief.update({ where: { id: briefId }, data: { lastCollectedAt: now } });
   return { briefId, added: results.reduce((n, r) => n + r.added, 0), results };
 }
 
@@ -203,11 +201,9 @@ export async function collectBrief(briefId: string, now = new Date()) {
 export async function collectAllBriefs(now = new Date()) {
   const briefs = await prisma.brief.findMany({
     where: { deletedAt: null, sources: { some: { enabled: true } } },
-    select: { id: true, collectEveryDays: true, lastCollectedAt: true },
+    select: { id: true },
   });
   const out = [];
-  for (const b of briefs) {
-    if (isBriefCollectionDue(b, now)) out.push(await collectBrief(b.id, now));
-  }
+  for (const b of briefs) out.push(await collectBrief(b.id, now));
   return out;
 }
