@@ -16,7 +16,15 @@
  *    완료와 예정이 섞이면 진행.
  *  - 같은 내역이 며칠 적혀 있으면 한 번만(매일 "광고 모니터링" 을 적어도 보고서에는 한 줄).
  *  - 금주 목표 = 다음 7일에 미리 적어 둔 줄 + 전주에 끝내지 못한 줄(이월).
- * 여러 줄을 한 문장으로 합치는 건 사람(또는 AI 다듬기)이 한다 — 이건 그 초안이다.
+ *
+ * 초안도 실제 보고서처럼 정리한다(2026-10-29 — 일지를 통째로 옮기면 그대로 낼 수 없어서):
+ *  - 회의·미팅 일정, 지출결의·품의·정산, 아젠다, 사진·폴더·주소록 정리, 해지 같은 잔손 일은 뺀다.
+ *  - 머리표 없는 줄도 내용에 행사 이름·줄임말이 있으면 그 행사로("딥테크 메타 광고 세팅" → 딥테크).
+ *  - 발송·배포는 날짜를 붙이고, 며칠에 걸친 같은 업로드도 날짜로 한 줄("뉴스레터 발송(10/19,21)").
+ *  - 같은 끝말의 업로드는 한 줄로("A / B / C 게시물 업로드").
+ *  - 지난 보고서의 금주 목표에서 출발한다: 일지에 근거가 있으면 그 문장으로 쓰고, 상시 일(모니터링·소통·
+ *    관리·운영)은 일지에 없어도 잇는다. 근거 없는 지난 목표는 뺀다.
+ * 더 짧게 합치고 문체를 맞추는 건 사람(또는 AI 다듬기)이 한다.
  *
  * DB 를 모른다 — 화면·엑셀·테스트가 같은 결과를 쓴다.
  */
@@ -156,6 +164,17 @@ const ROUTINE = [
   /전표\s*(입력|마감)?/,
   /^\d{1,2}(:\d{2})?\s*시?\s*.*회의$/,
   /회의$/,
+  /(회의|미팅)\s*\d{1,2}:\d{2}$/,
+  /^(\d{1,2}:\d{2}\s*)?회의(\s|$)/,
+  /^\d{1,2}:\d{2}\s.*(회의|미팅|논의|통화|콜)/,
+  /아젠다/,
+  /지출\s*결의|^지결|품의|세금\s*계산서/,
+  /(사진|폴더|파일|메일함|드라이브|주소록)\s*정리$/,
+  /(해지|구독\s*취소)$/,
+  /택배|발주|물품\s*(배분|정리|구매|수령)|짐\s*(배분|정리|싸기|챙기기)/,
+  /링크\s*발행|확인\s*요청$/,
+  /조직\s*개편/,
+  /^현장$/,
   /^↳/,
   /^good\s*bye/i,
 ];
@@ -173,16 +192,62 @@ function blockStatus(statuses: WorkStatus[]): string {
   return done ? WORK_STATUS_LABEL.done : WORK_STATUS_LABEL.planned;
 }
 
-function buildBlock(category: string, entries: WorkEntryInput[], authorName: (id: string) => string, extraOf: (e: WorkEntryInput) => string): ReportBlock {
-  const seen = new Set<string>();
-  const lines: string[] = [];
-  for (const e of entries) {
-    const text = e.content.trim();
-    const key = text.toLowerCase().replace(/\s+/g, "");
-    if (!text || seen.has(key)) continue;
-    seen.add(key);
-    lines.push(text);
+const lineKey = (text: string) => text.toLowerCase().replace(/\s+/g, "");
+
+/** "10/12,15" — 같은 달은 날만, 달이 바뀌면 "10/30, 11/2". */
+export function shortDates(days: string[]): string {
+  const sorted = [...new Set(days)].sort();
+  const parts: string[] = [];
+  let month = "";
+  for (const d of sorted) {
+    const [, m, day] = d.split("-").map(Number);
+    if (String(m) === month) parts[parts.length - 1] += `,${day}`;
+    else { parts.push(`${m}/${day}`); month = String(m); }
   }
+  return parts.join(", ");
+}
+
+const SENDS = /(발송|배포|송출)$/;
+const POSTS = /(업로드|게시)$/;
+const HAS_DATE = /\d{1,2}\/\d{1,2}/;
+const MERGE_TAILS = ["게시물 업로드", "스토리 업로드", "릴스 업로드", "피드 업로드", "콘텐츠 업로드", "카드뉴스 업로드"];
+
+/** 같은 끝말("게시물 업로드")로 끝나는 줄 여럿 → "A / B 게시물 업로드" 한 줄(첫 줄 자리). */
+export function mergeSimilarLines(lines: string[]): string[] {
+  const out = [...lines];
+  for (const tail of MERGE_TAILS) {
+    const hits = out.map((l, i) => ({ l, i })).filter(({ l }) => l.endsWith(tail) && l.length > tail.length && !HAS_DATE.test(l));
+    if (hits.length < 2) continue;
+    const merged = `${hits.map(({ l }) => l.slice(0, -tail.length).trim()).join(" / ")} ${tail}`;
+    const drop = new Set(hits.slice(1).map(({ i }) => i));
+    out[hits[0].i] = merged;
+    for (let i = out.length - 1; i >= 0; i--) if (drop.has(i)) out.splice(i, 1);
+  }
+  return out;
+}
+
+function buildBlock(
+  category: string, entries: WorkEntryInput[], authorName: (id: string) => string, extraOf: (e: WorkEntryInput) => string,
+  textOf: (e: WorkEntryInput) => string = (e) => e.content,
+): ReportBlock {
+  const order: string[] = [];
+  const byKey = new Map<string, { text: string; days: Set<string> }>();
+  for (const e of entries) {
+    const text = textOf(e).trim();
+    if (!text) continue;
+    const key = lineKey(text);
+    const hit = byKey.get(key);
+    if (hit) { hit.days.add(e.date); continue; }
+    byKey.set(key, { text, days: new Set([e.date]) });
+    order.push(key);
+  }
+  const lines = mergeSimilarLines(order.map((key) => {
+    const { text, days } = byKey.get(key)!;
+    // 발송은 날짜를, 며칠 한 업로드도 날짜를 붙인다 — 이미 날짜를 적었으면 그대로.
+    if (HAS_DATE.test(text)) return text;
+    if (SENDS.test(text) || (POSTS.test(text) && days.size > 1)) return `${text}(${shortDates([...days])})`;
+    return text;
+  }));
   return {
     category,
     lines,
@@ -215,11 +280,50 @@ export function orderGroupsForReport<G extends Pick<WorkGroupInput, "startDate" 
   });
 }
 
+/** 내용에 행사 이름·줄임말이 있으면 그 행사(긴 이름 먼저). 영문 3글자 이하 줄임말은 낱말로만("LA" ≠ "PLAY"). */
+export function groupFromContent<G extends TagGroup>(content: string, groups: G[]): G | null {
+  const flat = normTag(content);
+  let best: { g: G; len: number } | null = null;
+  for (const g of groups) {
+    if (g.archived) continue;
+    for (const name of [g.name, ...(g.aliases ?? [])]) {
+      const n = normTag(name);
+      if (n.length < 2) continue;
+      const hit = /^[a-z0-9]{1,3}$/.test(n)
+        ? new RegExp(`(^|[^a-z0-9])${n}([^a-z0-9]|$)`, "i").test(content)
+        : flat.includes(n);
+      if (hit && (!best || n.length > best.len)) best = { g, len: n.length };
+    }
+  }
+  return best?.g ?? null;
+}
+
+const tokens = (text: string) =>
+  new Set(text.toLowerCase().split(/[\s,/·&()[\]+\-~:.]+/).map((t) => t.trim()).filter((t) => t.length >= 2 && !["및", "등", "건"].includes(t)));
+
+/** 지난 목표 문장과 일지 줄이 같은 일인가 — 한쪽이 다른 쪽을 품거나, 핵심 낱말 둘 이상이 겹친다. */
+export function sameWork(a: string, b: string): boolean {
+  const ka = lineKey(a), kb = lineKey(b);
+  if (ka.length >= 4 && kb.length >= 4 && (ka.includes(kb) || kb.includes(ka))) return true;
+  const ta = tokens(a), tb = tokens(b);
+  let common = 0;
+  for (const t of ta) if (tb.has(t)) common++;
+  return common >= 2 && common / Math.min(ta.size, tb.size) >= 0.6;
+}
+
+/** 상시 일 — 일지에 안 적혀도 주마다 잇는다. */
+const STANDING = /(모니터링|소통|관리|운영|팔로업|f\/u)(\s*\([^)]*\))?$|모니터링/i;
+export const isStandingWork = (text: string) => STANDING.test(text.trim());
+
+const firstLine = (name: string) => normTag(name.split("\n")[0] ?? "");
+
 export function buildWeeklyReport(input: {
   reportDate: string;
   groups: WorkGroupInput[];
   entries: WorkEntryInput[];
   authorName: (id: string) => string;
+  /** 바로 앞 보고서(저장본) — 그 금주 목표가 이번 전주 달성의 출발점. */
+  previous?: ReportRow[];
 }): WeeklyReport {
   const { last: lastWeek, next: thisWeek } = reportWindows(input.reportDate);
   const inRange = (day: string, r: { start: string; end: string }) => day >= r.start && day <= r.end;
@@ -229,12 +333,17 @@ export function buildWeeklyReport(input: {
   // 행사: 고른 행사 → 없으면 머리표(분류 칸에 남은 "[코엑]")를 줄임말로 찾는다 → 그래도 없으면 기타.
   const gid = (e: WorkEntryInput): string | null => {
     if (e.groupId && groupIds.has(e.groupId)) return e.groupId;
-    if (e.category && !isReportCategory(e.category)) return matchGroup(e.category, groupOrder)?.id ?? null;
-    return null;
+    if (e.category && !isReportCategory(e.category)) {
+      const tagged = matchGroup(e.category, groupOrder);
+      if (tagged) return tagged.id;
+    }
+    return groupFromContent(e.content, groupOrder)?.id ?? null;
   };
   // 분류: 보고서 분류면 그대로, 아니면 낱말로. 기타 줄에서는 행사를 못 찾은 머리표를 분류 자리에 남긴다("[더모스트]").
   const catOf = (e: WorkEntryInput): string => {
     const c = e.category.trim();
+    // "기타" 는 고르다 만 분류 — 실제 보고서엔 [기타] 묶음이 없어서 낱말로 다시 고른다.
+    if (c === "기타") return classifyWork(e.content);
     if (c && isReportCategory(c)) return c;
     if (c && gid(e) === null) return c;
     return classifyWork(e.content);
@@ -263,16 +372,36 @@ export function buildWeeklyReport(input: {
   for (const slot of slots) {
     const last = lastEntries.filter((e) => gid(e) === slot.id);
     const next = nextEntries.filter((e) => gid(e) === slot.id);
+
+    // 지난 보고의 금주 목표 — 일지에 근거가 있으면 그 문장으로, 상시 일은 그대로 잇는다.
+    const prevRow = (input.previous ?? []).find((r) => (slot.id && r.groupId === slot.id) || firstLine(r.groupName) === firstLine(slot.name));
+    const rename = new Map<string, string>(); // 일지 줄 id → 지난 목표 문장
+    const carried: Array<{ category: string; line: string }> = [];
+    for (const goal of (prevRow?.pairs ?? []).map((p) => p.next).filter((b): b is ReportBlock => !!b && b.category !== "지표")) {
+      for (const line of goal.lines) {
+        const evidence = [...last, ...next].filter((e) => !rename.has(e.id) && sameWork(line, e.content));
+        if (evidence.length) for (const e of evidence) rename.set(e.id, line);
+        else if (isStandingWork(line)) carried.push({ category: goal.category, line });
+      }
+    }
+    const textOf = (e: WorkEntryInput) => rename.get(e.id) ?? e.content;
+
     if (slot.hideWhenEmpty && last.length === 0 && next.length === 0) continue;
-    const categories = [...new Set([...last, ...next].map(catOf))].sort(
+    const categories = [...new Set([...last, ...next].map(catOf).concat(carried.map((c) => c.category)))].sort(
       (a, b) => categoryRank(a) - categoryRank(b) || a.localeCompare(b, "ko"),
     );
+    const withCarried = (block: ReportBlock | null, category: string): ReportBlock | null => {
+      const add = carried.filter((c) => c.category === category && !(block?.lines ?? []).some((l) => sameWork(l, c.line))).map((c) => c.line);
+      if (!add.length) return block;
+      if (!block) return { category, lines: add, owners: [], status: WORK_STATUS_LABEL.doing, extra: [] };
+      return { ...block, lines: [...block.lines, ...add], status: block.status === WORK_STATUS_LABEL.done ? WORK_STATUS_LABEL.doing : block.status };
+    };
     const pairs = categories.map((category) => {
       const l = last.filter((e) => catOf(e) === category);
       const n = next.filter((e) => catOf(e) === category);
       return {
-        last: l.length ? buildBlock(category, l, input.authorName, (e) => e.result) : null,
-        next: n.length ? buildBlock(category, n, input.authorName, (e) => e.note) : null,
+        last: withCarried(l.length ? buildBlock(category, l, input.authorName, (e) => e.result, textOf) : null, category),
+        next: withCarried(n.length ? buildBlock(category, n, input.authorName, (e) => e.note, textOf) : null, category),
       };
     });
     rows.push({ groupId: slot.id, groupName: slot.name, pairs });

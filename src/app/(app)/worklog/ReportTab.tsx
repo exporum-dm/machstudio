@@ -250,7 +250,7 @@ export default function ReportTab({ workspaceId, hasGroups }: { workspaceId: str
         </p>
       )}
       <p className="text-[11px] text-muted-foreground">
-        칸을 눌러 시트처럼 고쳐요 — 첫 줄 <code className="rounded bg-secondary px-1">[운영]</code> 이 분류, 아래 <code className="rounded bg-secondary px-1">- 내역</code> 이 줄이에요. 초안은 일지 줄을 그대로 옮긴 것이라, 비슷한 줄은 합쳐 주세요{aiAvailable ? "(AI로 다듬기가 대신 해요)" : ""}.
+        칸을 눌러 시트처럼 고쳐요 — 첫 줄 <code className="rounded bg-secondary px-1">[운영]</code> 이 분류, 아래 <code className="rounded bg-secondary px-1">- 내역</code> 이 줄이에요. 초안은 지난 보고의 금주 목표에서 이어 쓰고, 회의·정산·정리 같은 잔손 일은 빼고, 같은 종류 업로드는 한 줄로 합쳐 둔 거예요. 더 줄이거나 문장을 다듬어 주세요{aiAvailable ? "(AI로 다듬기가 대신 해요)" : ""}.
       </p>
 
       {loading && !report ? (

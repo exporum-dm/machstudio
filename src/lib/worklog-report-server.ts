@@ -79,8 +79,12 @@ export async function loadReportEntries(workspaceId: string, reportDate: string)
 }
 
 export async function buildDraftReport(workspaceId: string, reportDate: string, opts: { metrics: boolean }): Promise<WeeklyReport> {
-  const [groups, { entries, authorName }] = await Promise.all([loadGroups(workspaceId), loadReportEntries(workspaceId, reportDate)]);
-  const report = buildWeeklyReport({ reportDate, groups: toGroupInputs(groups), entries, authorName });
+  const [groups, { entries, authorName }, [prev]] = await Promise.all([
+    loadGroups(workspaceId), loadReportEntries(workspaceId, reportDate), loadPreviousReports(workspaceId, reportDate, 1),
+  ]);
+  // 바로 앞 주(2주 안) 보고서만 잇는다 — 한참 전 보고서의 목표를 끌어오지 않게.
+  const previous = prev && prev.reportDate >= shiftDay(reportDate, -13) ? prev.rows : undefined;
+  const report = buildWeeklyReport({ reportDate, groups: toGroupInputs(groups), entries, authorName, previous });
   if (opts.metrics) {
     const projectIds = [...new Set(groups.map((g) => g.projectId).filter((id): id is string => !!id))];
     const metrics = await weeklyMetrics(projectIds, report.lastWeek);
