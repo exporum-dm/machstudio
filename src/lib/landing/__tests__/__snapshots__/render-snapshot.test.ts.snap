@@ -677,8 +677,12 @@ exports[`웨비나 랜딩 렌더 — 리팩터 기준선 > CSS 가 그대로다 
 .lnd .schedule-speaker .sep { opacity: .38; font-weight: 400; }
 .lnd .schedule-speaker .co { font-weight: 500; }
 /* 세션 로고 — 규격은 webinar-logo.ts 한 곳에서 온다(랜딩·대기·시청이 같은 크기여야 한다).
-   밝은 타임테이블 행에서는 흰 판을 끈다 — 흰 배경에 흰 판은 네모 테두리로만 보인다. */
-.lnd .schedule-logo { display:block; box-sizing:content-box; height:26px; width:120px; object-fit:contain; object-position:left center; }
+   밝은 타임테이블 행에서는 흰 판을 끈다 — 흰 배경에 흰 판은 네모 테두리로만 보인다.
+   fixedWidth:false — 줄마다 로고가 하나씩이고 justify-content:space-between 으로 오른쪽
+   끝에 붙는다. 고정 슬롯(기본값)이면 로고 자체는 그 슬롯 왼쪽에 붙어 그려져서, 슬롯 오른쪽
+   끝은 줄마다 맞아도 **로고 모양**은 줄마다 다른 자리에서 끝나 보였다(실측 민원).
+   슬롯을 로고 크기로 줄이면 로고 자체의 오른쪽 끝이 슬롯 끝과 같아져 모든 줄이 맞는다. */
+.lnd .schedule-logo { display:block; box-sizing:content-box; height:26px; width:auto; max-width:220px; object-fit:contain; object-position:left center; }
 /* 펼침 영역 오른쪽 — 상세 본문과 나란히. flex:none 이라야 긴 본문에 눌려 찌그러지지 않는다. */
 .lnd .schedule-logo { flex: none; margin-top: 12px; }
 /* 반전된 휴식 행에서도 로고가 보이게 흰 판을 깐다(투명 PNG 가 대부분). */
