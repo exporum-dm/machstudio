@@ -2,6 +2,7 @@
 
 /**
  * 도구 — UTM 빌더 · 미디어 · 이벤트 택소노미를 한 메뉴의 탭으로(2026-10-17).
+ * UTM 선택지(source·medium·campaign 값)는 UTM 빌더 안 "선택지 관리"에서 고친다(2026-10-29).
  *
  * 사이드바에 작은 도구가 하나씩 늘어나면 정작 매일 쓰는 메뉴가 묻힌다. 셋 다 "캠페인을 만들 때 옆에
  * 두고 쓰는 것" 이라 한 자리에 모은다. 예전 주소(/utm-builder, /media)도 그대로 열린다 —
@@ -59,7 +60,7 @@ export default function ToolsPage() {
       {tab === "media" && <MediaPage />}
       {tab === "taxonomy" && (
         <div className="p-4 sm:p-6 lg:p-8">
-          <TaxonomyTab />
+          <TaxonomyTab onOpenUtm={() => { setTab("utm"); router.replace("/tools?tab=utm&manage=1", { scroll: false }); }} />
         </div>
       )}
     </div>

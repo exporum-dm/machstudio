@@ -6,8 +6,9 @@ import {
   Plus, Copy, Check, QrCode, Link2, Trash2, ExternalLink,
   ChevronDown, FolderOpen, Layers, X, Save,
   RotateCcw, Search, ChevronRight, Loader2, Edit2, FileDown,
-  AlertCircle, ArrowUpDown, CopyPlus, CheckCircle2, LayoutList,
+  AlertCircle, ArrowUpDown, CopyPlus, CheckCircle2, LayoutList, SlidersHorizontal,
 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
 import { downloadQr } from "@/lib/qr-download";
 import { toast } from "sonner";
@@ -15,6 +16,7 @@ import { useWorkspace } from "@/contexts/workspace";
 import { Select } from "@/components/ui/select";
 import { formatKst, kstDateString, kstYear } from "@/lib/datetime";
 import { normalizeUtmKey } from "@/lib/attribution-normalize";
+import UtmPresetsPanel from "./UtmPresetsPanel";
 
 const BASIC_SOURCES = [
   { label: "구글",       value: "google" },
@@ -1370,6 +1372,15 @@ export default function UTMBuilderPage() {
   const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(new Set());
   const deleteTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const yearInitialized = useRef(false);
+  // 선택지 관리 — 이벤트 택소노미 탭의 "UTM 빌더 → 선택지 관리" 링크(?manage=1)로 들어오면 펼친 채로 연다.
+  const searchParams = useSearchParams();
+  const manageParam = searchParams.get("manage") === "1";
+  const [manageOpen, setManageOpen] = useState(manageParam);
+  const [seenManageParam, setSeenManageParam] = useState(manageParam);
+  if (manageParam !== seenManageParam) {
+    setSeenManageParam(manageParam);
+    if (manageParam) setManageOpen(true);
+  }
 
   const openDrawer = (edit?: UTMLink | null, dup?: UTMLink | null) => {
     setEditingLink(edit ?? null);
@@ -1505,7 +1516,7 @@ export default function UTMBuilderPage() {
     <>
       <div className="p-8 space-y-6">
         {/* 헤더 */}
-        <div className="flex items-end justify-between">
+        <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold">UTM 빌더</h1>
             <p className="mt-1.5 text-sm text-muted-foreground flex items-center gap-1.5">
@@ -1514,11 +1525,29 @@ export default function UTMBuilderPage() {
                 : "프로젝트를 선택해주세요"}
             </p>
           </div>
-          <motion.button whileTap={{ scale: 0.95 }} onClick={() => openDrawer()}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors">
-            <Plus className="w-4 h-4" />UTM 생성
-          </motion.button>
+          <div className="flex items-center gap-2">
+            <motion.button whileTap={{ scale: 0.95 }} onClick={() => setManageOpen((v) => !v)} aria-expanded={manageOpen}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm transition-colors ${manageOpen ? "border-violet-400 bg-violet-500/10 text-violet-600 dark:text-violet-400" : "border-border text-muted-foreground hover:bg-secondary hover:text-foreground"}`}>
+              <SlidersHorizontal className="w-4 h-4" />선택지 관리
+            </motion.button>
+            <motion.button whileTap={{ scale: 0.95 }} onClick={() => openDrawer()}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors">
+              <Plus className="w-4 h-4" />UTM 생성
+            </motion.button>
+          </div>
         </div>
+
+        {manageOpen && (
+          <div className="rounded-2xl border border-border bg-secondary/20 p-4">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold">UTM 선택지 관리</h2>
+              <button onClick={() => setManageOpen(false)} className="rounded p-1 text-muted-foreground hover:text-foreground" aria-label="선택지 관리 닫기">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <UtmPresetsPanel onChanged={fetchPresetsAndTemplates} />
+          </div>
+        )}
 
         {savedLinks.length === 0 ? (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
