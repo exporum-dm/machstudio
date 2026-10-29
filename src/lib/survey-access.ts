@@ -7,7 +7,10 @@ import { requireWorkspaceMember } from "@/lib/workspace-access";
 export async function authorizeSurvey(surveyId: string) {
   const survey = await prisma.survey.findUnique({
     where: { id: surveyId },
-    select: { id: true, name: true, token: true, status: true, config: true, sourceId: true, workspaceId: true, updatedAt: true },
+    select: {
+      id: true, name: true, token: true, status: true, config: true, sourceId: true, workspaceId: true, updatedAt: true,
+      aiSummary: true, aiInsights: true, aiGeneratedAt: true,
+    },
   });
   if (!survey) return { error: NextResponse.json({ error: "조사를 찾을 수 없어요" }, { status: 404 }) } as const;
   const access = await requireWorkspaceMember(survey.workspaceId);

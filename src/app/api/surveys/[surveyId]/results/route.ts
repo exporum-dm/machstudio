@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { localize, normalizeCollectForm } from "@/lib/collect-form-config";
 import { answerText, normalizeSurveyConfig, resolveLinkedQuestions, summarizeSurvey, type SurveyAnswerMap } from "@/lib/survey-config";
 import { authorizeSurvey } from "@/lib/survey-access";
+import { surveyAiAvailable } from "@/lib/survey-ai-insight";
 
 export async function GET(request: Request, { params }: { params: Promise<{ surveyId: string }> }) {
   const { surveyId } = await params;
@@ -115,5 +116,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ surv
     scoreQuestions: scoreQuestions.map((q) => ({ key: q.key, type: q.type, title: localize(q.title, locale) })),
     segments,
     lastAt: responses[0]?.updatedAt ?? null,
+    ai: auth.survey.aiGeneratedAt
+      ? { summary: auth.survey.aiSummary ?? "", insights: auth.survey.aiInsights ?? [], generatedAt: auth.survey.aiGeneratedAt }
+      : null,
+    aiAvailable: surveyAiAvailable(),
   }, { headers: { "Cache-Control": "no-store" } });
 }

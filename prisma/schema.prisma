@@ -467,6 +467,10 @@ model Survey {
   /// "draft" | "open" | "closed"
   status      String   @default("draft")
   config      Json     @default("{}")
+  /// AI 해석(만족도 조사 탭에서 "AI로 해석하기"로 생성) — 결과 분석 탭이 다시 해석하지 않고 이 저장값을 그대로 보여준다.
+  aiSummary     String?
+  aiInsights    Json?
+  aiGeneratedAt DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

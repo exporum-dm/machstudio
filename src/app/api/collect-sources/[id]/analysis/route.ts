@@ -39,7 +39,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const audienceVisitRate = audienceKey
     ? Object.fromEntries(audienceRows.map((r) => [r.value, r.showUpPre.rate]))
     : undefined;
-  const surveyRows = await prisma.survey.findMany({ where: { sourceId: id }, select: { id: true, name: true, config: true } });
+  const surveyRows = await prisma.survey.findMany({
+    where: { sourceId: id },
+    select: { id: true, name: true, config: true, aiSummary: true, aiInsights: true, aiGeneratedAt: true },
+    orderBy: { createdAt: "asc" },
+  });
   for (const s of surveyRows) {
     const surveyConfig = resolveLinkedQuestions(normalizeSurveyConfig(s.config), config);
     const responses = await prisma.surveyResponse.findMany({ where: { surveyId: s.id }, select: { answers: true, recordId: true, audience: true } });
@@ -58,6 +62,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const closes = config.eventInfo.openingHours.map((h) => hourOf(h.close)).filter(Number.isFinite);
   const hours = { open: opens.length ? Math.min(...opens) : null, close: closes.length ? Math.max(...closes) : null };
 
+  // AI 해석은 여기서 다시 돌리지 않는다 — 만족도 조사 탭에서 저장해 둔 걸 그대로 보여준다(같은 글, 두 번 안 씀).
+  const primarySurvey = surveyRows[0];
+  const surveyAi = primarySurvey?.aiGeneratedAt
+    ? { summary: primarySurvey.aiSummary ?? "", insights: primarySurvey.aiInsights ?? [], generatedAt: primarySurvey.aiGeneratedAt }
+    : null;
+
   return NextResponse.json(
     {
       sourceName: source.name,
@@ -69,6 +79,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       audienceRows,
       hasSurvey: surveyRows.length > 0,
       surveyAiAvailable: surveyAiAvailable(),
+      surveyAi,
     },
     { headers: { "Cache-Control": "private, max-age=60" } },
   );
