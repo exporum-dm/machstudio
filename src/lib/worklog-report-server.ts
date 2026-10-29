@@ -78,7 +78,11 @@ export async function loadReportEntries(workspaceId: string, reportDate: string)
   return { entries: inputs, authorName: (id: string) => names.get(id) ?? "" };
 }
 
-export async function buildDraftReport(workspaceId: string, reportDate: string, opts: { metrics: boolean }): Promise<WeeklyReport> {
+export async function buildDraftReport(
+  workspaceId: string,
+  reportDate: string,
+  opts: { metrics: boolean; viewer: { userId: string; isAdmin: boolean } },
+): Promise<WeeklyReport> {
   const [groups, { entries, authorName }, [prev]] = await Promise.all([
     loadGroups(workspaceId), loadReportEntries(workspaceId, reportDate), loadPreviousReports(workspaceId, reportDate, 1),
   ]);
@@ -86,7 +90,16 @@ export async function buildDraftReport(workspaceId: string, reportDate: string, 
   const previous = prev && prev.reportDate >= shiftDay(reportDate, -13) ? prev.rows : undefined;
   const report = buildWeeklyReport({ reportDate, groups: toGroupInputs(groups), entries, authorName, previous });
   if (opts.metrics) {
-    const projectIds = [...new Set(groups.map((g) => g.projectId).filter((id): id is string => !!id))];
+    const linkedProjectIds = [...new Set(groups.map((g) => g.projectId).filter((id): id is string => !!id))];
+    let projectIds = linkedProjectIds;
+    if (!opts.viewer.isAdmin && linkedProjectIds.length) {
+      // 일반 멤버에게는 직접 참여한 프로젝트 숫자만 보여 준다.
+      const memberships = await prisma.projectMember.findMany({
+        where: { userId: opts.viewer.userId, projectId: { in: linkedProjectIds } },
+        select: { projectId: true },
+      });
+      projectIds = memberships.map((m) => m.projectId);
+    }
     const metrics = await weeklyMetrics(projectIds, report.lastWeek);
     // 같은 프로젝트에 행사가 여럿이면(LA·도쿄·파리) 지금 가장 가까운 행사 하나에만 붙인다 — 세 줄에 같은 숫자가 반복되면 읽는 사람이 더한다.
     const attached = new Set<string>();

@@ -43,6 +43,13 @@ export default function ReportTab({ workspaceId, hasGroups }: { workspaceId: str
   const rowsRef = useRef<ReportRow[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pending = useRef<Promise<void> | null>(null);
+  const timerJob = useRef<{ workspaceId: string; date: string; source: "edited" | "ai" } | null>(null);
+  const saveQueue = useRef<{ workspaceId: string; date: string; rows: ReportRow[]; source: "edited" | "ai" } | null>(null);
+  const saveRunning = useRef(false);
+  const resolvePending = useRef<(() => void) | null>(null);
+  const loadSeq = useRef(0);
+  const loadingRef = useRef(false);
+  const [saveScheduled, setSaveScheduled] = useState(false);
 
   const applyRows = useCallback((next: ReportRow[]) => {
     rowsRef.current = next;
@@ -50,10 +57,13 @@ export default function ReportTab({ workspaceId, hasGroups }: { workspaceId: str
   }, []);
 
   const load = useCallback(async (fresh = false) => {
+    const seq = ++loadSeq.current;
+    loadingRef.current = true;
     setLoading(true);
     try {
       const res = await fetch(`/api/worklog/report?workspaceId=${workspaceId}&date=${date}${metrics ? "&metrics=1" : ""}${fresh ? "&fresh=1" : ""}`);
       const json = await res.json().catch(() => null);
+      if (seq !== loadSeq.current) return;
       if (!res.ok) { toast.error(json?.error ?? "보고서를 만들지 못했어요"); return; }
       setReport(json.report);
       applyRows(json.report.rows);
@@ -61,45 +71,95 @@ export default function ReportTab({ workspaceId, hasGroups }: { workspaceId: str
       setAiAvailable(!!json.aiAvailable);
       setVersion((v) => v + 1);
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) {
+        loadingRef.current = false;
+        setLoading(false);
+      }
     }
   }, [workspaceId, date, metrics, applyRows]);
   useEffect(() => { void Promise.resolve().then(() => load()); }, [load]);
 
-  const save = useCallback(async (source: "edited" | "ai" = "edited") => {
+  const drainSaveQueue = useCallback(async () => {
+    if (saveRunning.current) return;
+    saveRunning.current = true;
     setSaving(true);
-    const p = (async () => {
-      const res = await fetch("/api/worklog/report", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workspaceId, date, rows: rowsRef.current, source }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) { toast.error(json.error ?? "저장하지 못했어요"); return; }
-      setSaved(json.saved);
-    })();
-    pending.current = p;
-    await p;
-    setSaving(false);
-  }, [workspaceId, date]);
+    try {
+      while (saveQueue.current) {
+        // 기다리는 동안 여러 번 고쳤으면 마지막 모습 하나만 저장한다.
+        const job = saveQueue.current;
+        saveQueue.current = null;
+        try {
+          const res = await fetch("/api/worklog/report", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(job),
+          });
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok) toast.error(json.error ?? "저장하지 못했어요");
+          else setSaved(json.saved);
+        } catch {
+          toast.error("저장하지 못했어요");
+        }
+      }
+    } finally {
+      saveRunning.current = false;
+      setSaving(false);
+      const resolve = resolvePending.current;
+      resolvePending.current = null;
+      pending.current = null;
+      resolve?.();
+    }
+  }, []);
 
-  // 보고일을 바꾸기 전에 고치던 내용은 그 보고일로 저장한다(다음 보고일 줄로 덮이기 전에).
+  const save = useCallback((source: "edited" | "ai" = "edited", scope = { workspaceId, date }): Promise<void> => {
+    // 날짜가 바뀐 뒤 실행돼도 고치던 보고일로 가도록 예약 순간의 범위를 담는다.
+    saveQueue.current = { ...scope, rows: rowsRef.current, source };
+    if (!pending.current) {
+      pending.current = new Promise<void>((resolve) => { resolvePending.current = resolve; });
+    }
+    const wait = pending.current;
+    void drainSaveQueue();
+    return wait;
+  }, [workspaceId, date, drainSaveQueue]);
+
   const saveRef = useRef(save);
   useEffect(() => { saveRef.current = save; }, [save]);
   useEffect(() => () => {
-    if (timer.current) { clearTimeout(timer.current); timer.current = null; void saveRef.current(); }
-  }, [date]);
+    if (!timer.current || !timerJob.current) return;
+    clearTimeout(timer.current);
+    timer.current = null;
+    const job = timerJob.current;
+    timerJob.current = null;
+    void saveRef.current(job.source, { workspaceId: job.workspaceId, date: job.date });
+  }, []);
 
   const scheduleSave = () => {
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => { timer.current = null; void save(); }, 700);
+    timerJob.current = { workspaceId, date, source: "edited" };
+    setSaveScheduled(true);
+    timer.current = setTimeout(() => {
+      timer.current = null;
+      const job = timerJob.current;
+      timerJob.current = null;
+      setSaveScheduled(false);
+      if (job) void save(job.source, { workspaceId: job.workspaceId, date: job.date });
+    }, 700);
   };
   const flush = async () => {
-    if (timer.current) { clearTimeout(timer.current); timer.current = null; await save(); }
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+      const job = timerJob.current;
+      timerJob.current = null;
+      setSaveScheduled(false);
+      if (job) await save(job.source, { workspaceId: job.workspaceId, date: job.date });
+    }
     if (pending.current) await pending.current;
   };
 
   const edit = (fn: (rows: ReportRow[]) => ReportRow[]) => {
+    // 다른 보고서를 읽는 사이 남아 있던 입력 이벤트가 새 날짜에 섞이지 않게 한다.
+    if (loadingRef.current) return;
     applyRows(fn(rowsRef.current));
     scheduleSave();
   };
@@ -120,8 +180,25 @@ export default function ReportTab({ workspaceId, hasGroups }: { workspaceId: str
     setVersion((v) => v + 1);
   };
   const removePair = (ri: number, pi: number) => {
+    const removed = rowsRef.current[ri]?.pairs[pi];
+    if (!removed) return;
+    let restored = false;
     edit((rs) => rs.map((r, i) => (i !== ri ? r : { ...r, pairs: r.pairs.filter((_, j) => j !== pi) })));
     setVersion((v) => v + 1);
+    toast("묶음을 지웠어요", {
+      action: {
+        label: "되돌리기",
+        onClick: () => {
+          if (restored || loadingRef.current) return;
+          restored = true;
+          edit((rs) => rs.map((r, i) => (i !== ri ? r : {
+            ...r,
+            pairs: [...r.pairs.slice(0, pi), removed, ...r.pairs.slice(pi)],
+          })));
+          setVersion((v) => v + 1);
+        },
+      },
+    });
   };
 
   const regenerate = async () => {
@@ -134,6 +211,9 @@ export default function ReportTab({ workspaceId, hasGroups }: { workspaceId: str
       });
       if (!ok) return;
       if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+      timerJob.current = null;
+      setSaveScheduled(false);
+      if (pending.current) await pending.current;
       await fetch(`/api/worklog/report?workspaceId=${workspaceId}&date=${date}`, { method: "DELETE" });
     }
     await load(true);
@@ -159,7 +239,7 @@ export default function ReportTab({ workspaceId, hasGroups }: { workspaceId: str
       if (!res.ok) { toast.error(json.error ?? "AI 가 보고서를 쓰지 못했어요"); return; }
       applyRows(json.report.rows);
       setVersion((v) => v + 1);
-      await save("ai");
+      await save("ai", { workspaceId, date });
       toast.success("AI로 다듬었어요 — 칸을 눌러 더 고칠 수 있어요");
     } finally {
       setAiBusy(false);
@@ -194,6 +274,31 @@ export default function ReportTab({ workspaceId, hasGroups }: { workspaceId: str
     window.location.href = `/api/worklog/report?workspaceId=${workspaceId}&date=${date}&format=xlsx${hideOwners ? "&hideOwners=1" : ""}${metrics ? "&metrics=1" : ""}`;
   };
 
+  const changeDate = async (next: string) => {
+    if (next === date) return;
+    // 이전 요청과 입력을 먼저 닫고 나서 날짜를 바꿔야 줄이 다른 보고일로 가지 않는다.
+    loadSeq.current++;
+    loadingRef.current = true;
+    setLoading(true);
+    await flush();
+    setDate(next);
+  };
+  const changeMetrics = async (next: boolean) => {
+    if (next === metrics) return;
+    loadSeq.current++;
+    loadingRef.current = true;
+    setLoading(true);
+    await flush();
+    setMetrics(next);
+  };
+
+  useEffect(() => {
+    if (!saveScheduled && !saving) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [saveScheduled, saving]);
+
   const filled = rows.reduce((n, r) => n + r.pairs.length, 0);
 
   return (
@@ -203,9 +308,9 @@ export default function ReportTab({ workspaceId, hasGroups }: { workspaceId: str
           <label className="space-y-1">
             <span className="block text-[11px] text-muted-foreground">보고일</span>
             <div className="flex items-center gap-1">
-              <button onClick={() => setDate((d) => shiftDay(d, -7))} className={`bg-secondary px-2 py-1.5 text-xs ${R.control}`} aria-label="지난 보고">‹</button>
-              <input type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} className={`${FIELD_CLS} h-8 w-40 text-xs`} />
-              <button onClick={() => setDate((d) => shiftDay(d, 7))} className={`bg-secondary px-2 py-1.5 text-xs ${R.control}`} aria-label="다음 보고">›</button>
+              <button onClick={() => void changeDate(shiftDay(date, -7))} className={`bg-secondary px-2 py-1.5 text-xs ${R.control}`} aria-label="지난 보고">‹</button>
+              <input type="date" value={date} onChange={(e) => e.target.value && void changeDate(e.target.value)} className={`${FIELD_CLS} h-8 w-40 text-xs`} />
+              <button onClick={() => void changeDate(shiftDay(date, 7))} className={`bg-secondary px-2 py-1.5 text-xs ${R.control}`} aria-label="다음 보고">›</button>
             </div>
           </label>
           {report && (
@@ -219,7 +324,7 @@ export default function ReportTab({ workspaceId, hasGroups }: { workspaceId: str
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <label className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground" title="초안에 프로젝트 전주 사전등록·광고 숫자를 붙여요">
-            <input type="checkbox" checked={metrics} onChange={(e) => setMetrics(e.target.checked)} className="accent-violet-500" />
+            <input type="checkbox" checked={metrics} onChange={(e) => void changeMetrics(e.target.checked)} className="accent-violet-500" />
             지표 붙이기
           </label>
           <label className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground" title="회사 보고용 — 엑셀에서 담당자·결과 칸을 비워요">
@@ -256,20 +361,20 @@ export default function ReportTab({ workspaceId, hasGroups }: { workspaceId: str
       {loading && !report ? (
         <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
       ) : report && (
-        <div className={`overflow-x-auto bg-background ${R.panel} ${FINISH.s1}`}>
+        <div className={`overflow-x-auto bg-background ${loading ? "pointer-events-none opacity-60" : ""} ${R.panel} ${FINISH.s1}`}>
           <table className="w-full min-w-[1000px] table-fixed border-collapse text-xs">
             <colgroup>
               <col className="w-44" /><col /><col className="w-[72px]" /><col className="w-36" /><col /><col className="w-[72px]" /><col className="w-36" /><col className="w-7" />
             </colgroup>
             <thead>
               <tr className="bg-secondary/50 text-muted-foreground">
-                <th className="px-3 py-2" />
+                <th className="sticky left-0 z-10 bg-secondary px-3 py-2" />
                 <th colSpan={3} className="border-l border-border px-3 py-2 text-left font-semibold text-foreground">전주 달성</th>
                 <th colSpan={3} className="border-l border-border px-3 py-2 text-left font-semibold text-foreground">금주 목표</th>
                 <th />
               </tr>
               <tr className="bg-secondary/30 text-left text-muted-foreground">
-                <th className="px-3 py-1.5 font-medium">행사</th>
+                <th className="sticky left-0 z-10 bg-secondary px-3 py-1.5 font-medium">행사</th>
                 <th className="border-l border-border px-3 py-1.5 font-medium">내역</th>
                 <th className="px-2 py-1.5 font-medium">달성</th>
                 <th className="px-2 py-1.5 font-medium">결과 및 산출물</th>
@@ -285,7 +390,7 @@ export default function ReportTab({ workspaceId, hasGroups }: { workspaceId: str
                 return pairs.map((pair, pi) => (
                   <tr key={`${version}-${ri}-${pi}`} className={`group align-top ${pi === 0 ? "border-t-2 border-border" : "border-t border-border/50"}`}>
                     {pi === 0 && (
-                      <td rowSpan={pairs.length} className="px-3 py-2 font-medium">
+                      <td rowSpan={pairs.length} className="sticky left-0 z-10 bg-background px-3 py-2 font-medium">
                         <div className="whitespace-pre-line">{row.groupName}</div>
                         <button onClick={() => addPair(ri)} className="mt-1 flex items-center gap-0.5 text-[11px] font-normal text-muted-foreground opacity-0 transition-opacity hover:text-violet-500 group-hover:opacity-100 [@media(hover:none)]:opacity-60">
                           <Plus className="h-3 w-3" />묶음 추가
@@ -346,6 +451,12 @@ function BlockCells({ block, border, onText, onStatus, onExtra }: {
 
 function AutoTextarea({ defaultValue, placeholder, muted, onCommit }: { defaultValue: string; placeholder: string; muted?: boolean; onCommit: (v: string) => void }) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const commitRef = useRef(onCommit);
+  useEffect(() => { commitRef.current = onCommit; }, [onCommit]);
+  useEffect(() => () => {
+    if (debounce.current) clearTimeout(debounce.current);
+  }, []);
   const fit = () => {
     const el = ref.current;
     if (!el) return;
@@ -359,8 +470,21 @@ function AutoTextarea({ defaultValue, placeholder, muted, onCommit }: { defaultV
       rows={1}
       defaultValue={defaultValue}
       placeholder={placeholder.replace("&#10;", "\n")}
-      onInput={fit}
-      onBlur={(e) => onCommit(e.target.value)}
+      onInput={(e) => {
+        fit();
+        if (debounce.current) clearTimeout(debounce.current);
+        const value = e.currentTarget.value;
+        // 탭을 닫기 전에도 입력값이 부모 상태와 저장 예약에 올라오게 한다.
+        debounce.current = setTimeout(() => {
+          debounce.current = null;
+          commitRef.current(value);
+        }, 600);
+      }}
+      onBlur={(e) => {
+        if (debounce.current) clearTimeout(debounce.current);
+        debounce.current = null;
+        commitRef.current(e.target.value);
+      }}
       className={`block w-full resize-none overflow-hidden rounded-md bg-transparent px-1.5 py-1 text-xs leading-5 outline-none transition-colors hover:bg-secondary/50 focus:bg-secondary/60 focus:ring-1 focus:ring-violet-500/40 ${muted ? "text-muted-foreground" : ""}`}
     />
   );

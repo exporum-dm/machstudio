@@ -126,7 +126,11 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
   const load = useCallback(async () => {
     const entries = await fetchRange(rangeRef.current.from, rangeRef.current.to, true);
     if (!entries) { if (!linesRef.current.length) setLinesState([]); return; }
-    linesRef.current = entries.map((e) => ({ ...e, ck: e.id }));
+    const server = entries.map((e) => ({ ...e, ck: e.id }));
+    const serverIds = new Set(server.map((line) => line.id));
+    // 아직 POST가 끝나지 않은 줄은 서버 재조회 결과 뒤에 남겨 입력을 잃지 않는다.
+    const creatingLines = linesRef.current.filter((line) => line.temp && !serverIds.has(line.id));
+    linesRef.current = [...server, ...creatingLines];
     setLinesState(linesRef.current);
   }, [fetchRange]);
   useEffect(() => { void Promise.resolve().then(load); }, [load]);

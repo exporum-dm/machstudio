@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   blockText, buildWeeklyReport, orderCellLines, shiftInCell, sortOrderNeighbors, classifyWork, orderGroupsForReport, defaultReportDate, effectiveStatus, groupDateLabel, isRoutineWork, openStatus,
   parseBlockText, parsePastedWork, reportTable, reportWindows, resolveWorkTag, resolveWorkTagInContext, splitWorkTag, weekOf, type WorkEntryInput,
+  isValidDay, mergeAiRows, normalizeReportRows, type ReportBlock, type WeeklyReport,
 } from "@/lib/worklog";
 
 const entry = (patch: Partial<WorkEntryInput>): WorkEntryInput => ({
@@ -206,5 +207,80 @@ describe("칸 안의 줄 순서", () => {
   it("sortOrder 이웃 — 같은 값은 건너뛴다", () => {
     expect(sortOrderNeighbors([1, 1, 2, 5], 2)).toEqual({ below: 1, above: 5 });
     expect(sortOrderNeighbors([3], 3)).toEqual({ below: null, above: null });
+  });
+});
+
+describe("날짜 검사", () => {
+  /** 2/31 을 받으면 JS 가 3/3 으로 바꿔 저장한다 — 사람이 적은 날짜와 다른 날에 일지가 들어간다. */
+  it("달력에 없는 날은 거절", () => {
+    expect(isValidDay("2026-10-29")).toBe(true);
+    expect(isValidDay("2028-02-29")).toBe(true);
+    expect(isValidDay("2026-02-29")).toBe(false);
+    expect(isValidDay("2026-02-31")).toBe(false);
+    expect(isValidDay("2026-99-99")).toBe(false);
+    expect(isValidDay("2026-1-5")).toBe(false);
+    expect(isValidDay(null)).toBe(false);
+  });
+});
+
+describe("보고서 저장 크기", () => {
+  it("묶음 안 줄·담당·비고 개수를 자른다", () => {
+    const big = Array.from({ length: 500 }, (_, i) => `줄 ${i}`);
+    const [row] = normalizeReportRows([{ groupId: "la", groupName: "LA", pairs: [{ last: { category: "운영", lines: big, owners: big, extra: big, status: "진행" }, next: null }] }]);
+    expect(row.pairs[0].last!.lines).toHaveLength(60);
+    expect(row.pairs[0].last!.owners).toHaveLength(20);
+    expect(row.pairs[0].last!.extra).toHaveLength(30);
+  });
+});
+
+describe("AI 다듬기 결과 합치기", () => {
+  const block = (patch: Partial<ReportBlock>): ReportBlock => ({ category: "운영", lines: ["초안 줄"], owners: ["이창환"], status: "진행", extra: [], ...patch });
+  const draft: WeeklyReport = {
+    reportDate: "2026-10-08",
+    lastWeek: { start: "2026-10-02", end: "2026-10-08" },
+    thisWeek: { start: "2026-10-09", end: "2026-10-15" },
+    rows: [
+      { groupId: "a", groupName: "코리아 엑스포 LA", pairs: [{ last: block({ extra: ["결과 링크"] }), next: block({ category: "콘텐츠", extra: ["비고 메모"] }) }] },
+      { groupId: "b", groupName: "STK", pairs: [{ last: block({ lines: ["STK 초안"] }), next: null }] },
+      { groupId: "c", groupName: "X-Space", pairs: [{ last: block({ lines: ["X 초안"] }), next: null }] },
+    ],
+  };
+
+  /** 예전에는 이름으로 못 찾으면 같은 순번의 AI 행을 썼다 — B 를 빠뜨리면 C 내용이 B 에 복사됐다. */
+  it("AI 가 행사를 빠뜨리면 그 행사는 초안 그대로", () => {
+    const out = [
+      { groupId: "a", groupName: "코리아 엑스포 LA", pairs: [{ last: { category: "운영", lines: ["다듬은 줄"], status: "완료" }, next: null }] },
+      { groupId: "c", groupName: "X-Space", pairs: [{ last: { category: "운영", lines: ["X 다듬음"], status: "진행" }, next: null }] },
+    ];
+    const rows = mergeAiRows(draft, out);
+    expect(rows[1]).toEqual(draft.rows[1]);
+    expect(rows[2].pairs[0].last!.lines).toEqual(["X 다듬음"]);
+  });
+
+  it("groupId 가 이름보다 먼저 — 이름을 바꿔 써도 맞는 행사로", () => {
+    const out = [{ groupId: "b", groupName: "엉뚱한 이름", pairs: [{ last: { category: "운영", lines: ["STK 다듬음"] }, next: null }] }];
+    expect(mergeAiRows(draft, out)[1].pairs[0].last!.lines).toEqual(["STK 다듬음"]);
+  });
+
+  /** AI 는 결과 및 산출물·비고 칸을 모른다 — 예전엔 AI 를 누르면 전부 비워져 저장됐다. */
+  it("결과 및 산출물·비고·담당을 초안에서 옮긴다", () => {
+    const out = [{ groupId: "a", groupName: "코리아 엑스포 LA", pairs: [
+      { last: { category: "운영", lines: ["다듬은 줄"] }, next: { category: "콘텐츠", lines: ["다음 주"] } },
+    ] }];
+    const [row] = mergeAiRows(draft, out);
+    expect(row.pairs[0].last).toMatchObject({ extra: ["결과 링크"], owners: ["이창환"] });
+    expect(row.pairs[0].next).toMatchObject({ extra: ["비고 메모"] });
+  });
+
+  it("AI 가 분류 이름을 바꿔도 결과·비고는 한 번만, 첫 블록에", () => {
+    const out = [{ groupId: "a", groupName: "코리아 엑스포 LA", pairs: [
+      { last: { category: "퍼포먼스", lines: ["하나"] }, next: null },
+      { last: { category: "퍼포먼스", lines: ["둘"] }, next: { category: "기획", lines: ["다음"] } },
+    ] }];
+    const [row] = mergeAiRows(draft, out);
+    const lastExtras = row.pairs.flatMap((p) => p.last?.extra ?? []);
+    expect(lastExtras).toEqual(["결과 링크"]);
+    expect(row.pairs[0].last!.extra).toEqual(["결과 링크"]);
+    expect(row.pairs.flatMap((p) => p.next?.extra ?? [])).toEqual(["비고 메모"]);
   });
 });

@@ -40,6 +40,13 @@ export function isWorkStatus(v: unknown): v is WorkStatus {
   return v === "planned" || v === "doing" || v === "done";
 }
 
+/** YYYY-MM-DD 모양뿐 아니라 실제 존재하는 달력 날짜인지 확인한다. */
+export function isValidDay(v: unknown): v is string {
+  if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const date = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === v;
+}
+
 export interface WorkGroupInput {
   id: string;
   name: string;
@@ -471,14 +478,80 @@ export function reportSheetName(reportDate: string): string {
 }
 
 /** 저장된 보고서 rows(JSON) 를 믿을 수 있는 모양으로. */
+/**
+ * AI 다듬기 결과를 초안에 맞춰 넣는다(AI 응답은 믿지 않는다).
+ *  · 행사는 groupId → 이름(공백 무시) 순으로 찾는다. 못 찾으면 그 행사는 초안 그대로 — 자리(순번)로 맞추면
+ *    AI 가 한 줄을 빠뜨렸을 때 옆 행사 내용이 복사된다.
+ *  · 담당·결과 및 산출물·비고는 AI 가 다루지 않는 칸이라 초안에서 옮긴다. 같은 분류의 첫 블록에 한 번만 붙이고,
+ *    AI 가 분류 이름을 바꿔 짝이 없는 값은 그쪽(전주/금주) 첫 블록에 붙인다 — 어떤 값도 사라지거나 두 번 붙지 않게.
+ */
+export function mergeAiRows(draft: WeeklyReport, out: unknown[]): ReportRow[] {
+  const candidates = out.filter((r): r is Record<string, unknown> => !!r && typeof r === "object");
+  const squash = (v: string) => v.replace(/\s+/g, "");
+  return draft.rows.map((row) => {
+    const hit =
+      (row.groupId ? candidates.find((r) => r.groupId === row.groupId) : undefined) ??
+      candidates.find((r) => typeof r.groupName === "string" && squash(r.groupName) === squash(row.groupName));
+    if (!hit) return row;
+
+    const parse = (value: unknown): ReportBlock | null => {
+      if (!value || typeof value !== "object") return null;
+      const o = value as Record<string, unknown>;
+      const lines = Array.isArray(o.lines)
+        ? o.lines.filter((l): l is string => typeof l === "string" && !!l.trim()).map((l) => l.trim().slice(0, 2000)).slice(0, 60)
+        : [];
+      if (!lines.length) return null;
+      const category = typeof o.category === "string" ? o.category.trim().slice(0, 40) : "";
+      return { category, lines, owners: [], status: typeof o.status === "string" ? o.status.slice(0, 10) : "", extra: [] };
+    };
+    const pairs = (Array.isArray(hit.pairs) ? hit.pairs : [])
+      .map((pair) => {
+        const p = (pair ?? {}) as Record<string, unknown>;
+        return { last: parse(p.last), next: parse(p.next) };
+      })
+      .filter((pair) => pair.last || pair.next);
+
+    for (const side of ["last", "next"] as const) {
+      const blocks = pairs.map((p) => p[side]).filter((b): b is ReportBlock => !!b);
+      const sources = row.pairs.map((p) => p[side]).filter((b): b is ReportBlock => !!b);
+      const leftOwners: string[] = [];
+      const leftExtra: string[] = [];
+      for (const src of sources) {
+        const target = blocks.find((b) => b.category === src.category);
+        (target ? target.owners : leftOwners).push(...src.owners);
+        (target ? target.extra : leftExtra).push(...src.extra);
+      }
+      if (blocks[0]) {
+        blocks[0].owners.push(...leftOwners);
+        blocks[0].extra.push(...leftExtra);
+      } else if (leftExtra.length) {
+        // AI 가 이쪽을 통째로 비웠는데 결과·비고가 있었다 — 값을 살리려고 빈 줄 블록으로 남긴다.
+        const keep = { category: sources[0]?.category ?? "", lines: [], owners: [...new Set(leftOwners)], status: sources[0]?.status ?? "", extra: [...new Set(leftExtra)] };
+        if (pairs[0]) pairs[0][side] = keep;
+        else pairs.push(side === "last" ? { last: keep, next: null } : { last: null, next: keep });
+      }
+      for (const b of blocks) {
+        b.owners = [...new Set(b.owners)];
+        b.extra = [...new Set(b.extra)];
+      }
+    }
+    return { groupId: row.groupId, groupName: row.groupName, pairs };
+  });
+}
+
 export function normalizeReportRows(raw: unknown): ReportRow[] {
   if (!Array.isArray(raw)) return [];
   const str = (v: unknown, max = 4000) => (typeof v === "string" ? v.slice(0, max) : "");
-  const strs = (v: unknown) => (Array.isArray(v) ? v.map((x) => str(x, 2000)).filter((x) => x.trim()) : []);
+  const strs = (v: unknown, maxItems: number) => (
+    Array.isArray(v) ? v.slice(0, maxItems).map((x) => str(x, 2000)).filter((x) => x.trim()) : []
+  );
   const block = (b: unknown): ReportBlock | null => {
     if (!b || typeof b !== "object") return null;
     const o = b as Record<string, unknown>;
-    const out = { category: str(o.category, 40).trim(), lines: strs(o.lines), owners: strs(o.owners), status: str(o.status, 10), extra: strs(o.extra) };
+    const out = {
+      category: str(o.category, 40).trim(), lines: strs(o.lines, 60), owners: strs(o.owners, 20),
+      status: str(o.status, 10), extra: strs(o.extra, 30),
+    };
     return out.lines.length || out.category || out.extra.length ? out : null;
   };
   return raw.slice(0, 100).map((r) => {

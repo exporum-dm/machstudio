@@ -8,10 +8,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireWorkspaceMember } from "@/lib/workspace-access";
-import { isWorkStatus } from "@/lib/worklog";
+import { isValidDay, isWorkStatus } from "@/lib/worklog";
 
-const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
-const toDateValue = (v: unknown) => (typeof v === "string" && DAY_RE.test(v) && !Number.isNaN(Date.parse(v)) ? new Date(`${v}T00:00:00Z`) : null);
+const toDateValue = (v: unknown) => (isValidDay(v) ? new Date(`${v}T00:00:00Z`) : null);
 const text = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
@@ -95,16 +94,36 @@ export async function POST(request: Request) {
   const items: ItemInput[] = batch ? (body.items as ItemInput[]).slice(0, 200) : [body];
   if (items.length === 0) return NextResponse.json({ entries: [] }, { status: 201 });
 
-  const rows = [];
+  const prepared: Array<{ item: ItemInput; date: Date | null; content: string }> = [];
   for (const item of items) {
     const date = dateField(item.date);
     const content = text(item.content, 2000);
     if (date === "invalid") return NextResponse.json({ error: "날짜를 확인해주세요" }, { status: 400 });
     if (!content) return NextResponse.json({ error: "내역을 입력해주세요" }, { status: 400 });
-    const groupId = await groupInWorkspace(item.groupId, workspaceId!);
-    if (groupId === "invalid") return NextResponse.json({ error: "행사를 찾을 수 없어요" }, { status: 400 });
+    if (item.groupId !== null && item.groupId !== "" && item.groupId !== undefined && typeof item.groupId !== "string") {
+      return NextResponse.json({ error: "행사를 찾을 수 없어요" }, { status: 400 });
+    }
+    prepared.push({ item, date, content });
+  }
+  const groupIds = [...new Set(items.flatMap((item) => (
+    typeof item.groupId === "string" && item.groupId ? [item.groupId] : []
+  )))];
+  const authorIds = [...new Set(items.flatMap((item) => (
+    typeof item.authorId === "string" && item.authorId ? [item.authorId] : []
+  )))];
+  const [validGroups, validMembers] = await Promise.all([
+    prisma.workGroup.findMany({ where: { workspaceId: workspaceId!, id: { in: groupIds } }, select: { id: true } }),
+    prisma.workspaceMember.findMany({ where: { workspaceId: workspaceId!, userId: { in: authorIds } }, select: { userId: true } }),
+  ]);
+  const groupSet = new Set(validGroups.map((g) => g.id));
+  const memberSet = new Set(validMembers.map((m) => m.userId));
+
+  const rows = [];
+  for (const { item, date, content } of prepared) {
+    const groupId = typeof item.groupId === "string" && item.groupId ? item.groupId : null;
+    if (groupId && !groupSet.has(groupId)) return NextResponse.json({ error: "행사를 찾을 수 없어요" }, { status: 400 });
     // 다른 팀원 칸에 적으면 그 사람이 칸 주인 — 적은 사람은 createdById 로 남긴다.
-    const owner = (await memberIn(item.authorId, workspaceId!)) ?? access.userId;
+    const owner = typeof item.authorId === "string" && memberSet.has(item.authorId) ? item.authorId : access.userId;
     rows.push({
       workspaceId: workspaceId!, authorId: owner, createdById: access.userId, date, groupId, content,
       common: item.common === true, sortOrder: num(item.sortOrder),
