@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   buildKakaoText,
+  analyzeBriefMention,
   dateSuffix,
   daysUntil,
   isHttpUrl,
+  isBriefCollectionDue,
   isStillVisible,
   toSlug,
   urlKey,
@@ -16,6 +18,26 @@ import {
  * 공고 사이·카테고리 앞에 빈 줄을 넣은 모양이다(2026-09-23 — 붙어 있으면 읽기 어렵다).
  */
 const kst = (iso: string) => new Date(`${iso}T00:00:00+09:00`);
+
+describe("자동 조사 주기", () => {
+  const now = new Date("2026-10-29T00:00:00Z");
+  it("한 번도 조사하지 않았으면 바로 실행한다", () => {
+    expect(isBriefCollectionDue({ collectEveryDays: 3, lastCollectedAt: null }, now)).toBe(true);
+  });
+  it("기본 3일이 지난 경우에만 실행한다", () => {
+    expect(isBriefCollectionDue({ collectEveryDays: 3, lastCollectedAt: "2026-10-26T00:00:00Z" }, now)).toBe(true);
+    expect(isBriefCollectionDue({ collectEveryDays: 3, lastCollectedAt: "2026-10-27T00:00:00Z" }, now)).toBe(false);
+  });
+});
+
+describe("수집 언급 1차 분석", () => {
+  it("위험 단어가 있는 보도는 대응 이슈로 올린다", () => {
+    expect(analyzeBriefMention("행사 운영 부실 논란", "googlenews")).toMatchObject({ channel: "press", sentiment: "negative", reviewStatus: "issue", riskLevel: "attention" });
+  });
+  it("불확실한 내용은 중립으로 남긴다", () => {
+    expect(analyzeBriefMention("행사 11월 개막", "rss").sentiment).toBe("neutral");
+  });
+});
 
 const items: BriefItemLike[] = [
   {

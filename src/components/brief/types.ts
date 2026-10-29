@@ -10,6 +10,17 @@ export interface BriefRow {
   isPublic: boolean;
   appendPublicLink: boolean;
   publicUrl: string;
+  collectEveryDays: number;
+  lastCollectedAt: string | null;
+  pressDrafts: PressDraft[];
+}
+
+export interface PressDraft {
+  id: string;
+  type: "advance" | "opening" | "closing" | "statement";
+  title: string;
+  body: string;
+  updatedAt: string;
 }
 
 export interface BriefIssueRow {

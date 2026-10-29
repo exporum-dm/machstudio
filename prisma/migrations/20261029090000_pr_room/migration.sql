@@ -1,0 +1,12 @@
+ALTER TABLE "Brief"
+  ADD COLUMN "collectEveryDays" INTEGER NOT NULL DEFAULT 3,
+  ADD COLUMN "lastCollectedAt" TIMESTAMP(3),
+  ADD COLUMN "pressDrafts" JSONB NOT NULL DEFAULT '[]';
+
+ALTER TABLE "BriefItem"
+  ADD COLUMN "channel" TEXT NOT NULL DEFAULT 'web',
+  ADD COLUMN "sentiment" TEXT NOT NULL DEFAULT 'neutral',
+  ADD COLUMN "reviewStatus" TEXT NOT NULL DEFAULT 'new',
+  ADD COLUMN "riskLevel" TEXT NOT NULL DEFAULT 'watch',
+  ADD COLUMN "responseNote" TEXT NOT NULL DEFAULT '',
+  ADD COLUMN "excerpt" TEXT NOT NULL DEFAULT '';

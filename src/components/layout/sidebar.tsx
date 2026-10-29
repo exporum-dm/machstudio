@@ -45,7 +45,7 @@ export const navItems: NavItem[] = [
   { href: "/competition", icon: Trophy, label: "대회" },
   { href: "/detail-page", icon: FileText, label: "상세페이지" },
   { href: "/homepage", icon: Globe, label: "홈페이지", capability: "expoHomepage" },
-  { href: "/brief", icon: Newspaper, label: "브리프" },
+  { href: "/brief", icon: Newspaper, label: "홍보실" },
   { href: "/worklog", icon: NotebookPen, label: "업무일지" },
   // UTM 빌더·미디어·이벤트 택소노미를 한 메뉴의 탭으로(2026-10-17). 예전 주소도 그대로 열린다.
   { href: "/tools", icon: Wrench, label: "도구", aliases: ["/utm-builder", "/media"] },

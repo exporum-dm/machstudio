@@ -68,7 +68,7 @@ function BlurField({ value, onSave, ...rest }: { value: string; onSave: (v: stri
   );
 }
 
-export function SourcesTab({ brief, canWrite, onCollected }: { brief: BriefRow; canWrite: boolean; onCollected: () => Promise<void> }) {
+export function SourcesTab({ brief, canWrite, onCollected, onBriefChange }: { brief: BriefRow; canWrite: boolean; onCollected: () => Promise<void>; onBriefChange: (brief: BriefRow) => void }) {
   const confirm = useConfirm();
   const [sources, setSources] = useState<SourceRow[] | null>(null);
   const [presets, setPresets] = useState<{ key: string; label: string; description: string }[]>([]);
@@ -166,14 +166,26 @@ export function SourcesTab({ brief, canWrite, onCollected }: { brief: BriefRow; 
     }
   };
 
+  const changeSchedule = async (collectEveryDays: number) => {
+    try {
+      const r = await api<{ brief: BriefRow }>(`/api/briefs/${brief.id}`, { method: "PATCH", body: JSON.stringify({ collectEveryDays }) });
+      onBriefChange(r.brief);
+      toast.success(`${collectEveryDays}일마다 조사하도록 저장했어요`);
+    } catch (e) { toast.error((e as Error).message); }
+  };
+
   if (!sources) return <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> 불러오는 중</div>;
 
   return (
     <div className="max-w-4xl space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          매일 아침 <b className="text-foreground">9시</b>에 아래 소스에서 새 소식을 모아 “링크 고르기”에 <b className="text-foreground">후보</b>로 넣어요. 무엇을 내보낼지는 거기서 고르면 돼요.
-        </p>
+        <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+          <span>매일 오전 9시에 확인하고, 이 프로젝트는</span>
+          <select value={brief.collectEveryDays} disabled={!canWrite} onChange={(e) => changeSchedule(Number(e.target.value))} className={SELECT_CLS + " w-auto"} aria-label="자동 조사 주기">
+            {[1,2,3,5,7,14,30].map((n) => <option key={n} value={n}>{n}일에 한 번</option>)}
+          </select>
+          <span>새 언급을 수집·분석합니다.</span>
+        </div>
         {canWrite && sources.length > 0 && (
           <Btn tone="key" onClick={() => collect()} disabled={running !== null}>
             {running === "all" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} 지금 모두 수집

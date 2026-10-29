@@ -40,6 +40,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (typeof body.intro === "string") data.intro = body.intro.slice(0, 200);
   if (typeof body.isPublic === "boolean") data.isPublic = body.isPublic;
   if (typeof body.appendPublicLink === "boolean") data.appendPublicLink = body.appendPublicLink;
+  if (typeof body.collectEveryDays === "number") data.collectEveryDays = Math.max(1, Math.min(30, Math.trunc(body.collectEveryDays)));
+  if (Array.isArray(body.pressDrafts)) data.pressDrafts = body.pressDrafts.slice(0, 30);
   if (typeof body.slug === "string") {
     const slug = toSlug(body.slug);
     if (!slug) return NextResponse.json({ error: "주소는 영문·숫자·하이픈으로 적어주세요" }, { status: 400 });

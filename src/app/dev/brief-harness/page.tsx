@@ -23,7 +23,7 @@ if (process.env.NODE_ENV === "production") notFound();
 
 const kst = (d: string) => new Date(`${d}T00:00:00+09:00`).toISOString();
 const now = new Date().toISOString();
-const base = { url: "https://example.com", source: "manual", sourceName: "", publishedAt: null, note: "", issueId: null, createdAt: now };
+const base = { url: "https://example.com", source: "manual", sourceName: "", publishedAt: null, note: "", issueId: null, createdAt: now, channel: "web", sentiment: "neutral", reviewStatus: "new", riskLevel: "watch", responseNote: "", excerpt: "" };
 
 const SEED: BriefItem[] = [
   { ...base, id: "a", category: "support", org: "중소벤처기업부", title: "2026년 온라인수출 물류 지원사업 2차 참여기업 모집", dueDate: kst("2026-09-24"), dateLabel: "", adopted: true, shortUrl: "http://localhost:3000/r/aB3xQ9z" },
@@ -49,6 +49,7 @@ let memSources = [
 const BRIEF: BriefRow = {
   id: "h", name: "The Action", slug: "zz-verify-brief", intro: "이번주 바로 확인해야 할 실용 정보를 보내드립니다!",
   isPublic: true, appendPublicLink: true, publicUrl: "http://localhost:3000/b/zz-verify-brief",
+  collectEveryDays: 3, lastCollectedAt: null, pressDrafts: [],
 };
 
 const STATS = {
@@ -151,7 +152,7 @@ export default function BriefHarness() {
           ]}
         />
         {tab === "pick" && <PickTab brief={brief} items={items} issues={[]} canWrite setItems={setItems} reload={reload} onOpenSources={() => setTab("sources")} />}
-        {tab === "sources" && <SourcesTab brief={brief} canWrite onCollected={reload} />}
+        {tab === "sources" && <SourcesTab brief={brief} canWrite onCollected={reload} onBriefChange={setBrief} />}
         {tab === "dashboard" && <DashboardTab brief={brief} />}
         {tab === "public" && <PublicTab brief={brief} canWrite onChange={setBrief} items={items} />}
       </div>
