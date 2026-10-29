@@ -29,6 +29,12 @@ export const SESSION_LOGO_HEIGHT = 26;
  * object-fit:contain 으로 안에 맞추면 **슬롯이 같아진다**.
  */
 export const SESSION_LOGO_WIDTH = 120;
+/**
+ * fixedWidth:false 에서 쓰는 안전판 — 아주 가늘고 긴 원본(배너형 로고)이 height:26 으로
+ * 커지면서 폭이 통제 불능으로 벌어지는 걸 막는다(실측 위험: 480×10 원본이 26px 높이로
+ * 스케일되면 폭이 1200px 을 넘는다). 평소엔 닿지 않는 값이라 보통 로고의 모양에 영향이 없다.
+ */
+export const SESSION_LOGO_MAX_WIDTH = 220;
 
 /**
  * 로고 표시 규칙을 CSS 로 찍는다.
@@ -38,12 +44,19 @@ export const SESSION_LOGO_WIDTH = 120;
  *   판이 없으면 검은 글자 로고가 배경에 묻혀 사라진다). 밝은 배경에서는 판이 오히려
  *   네모난 테두리처럼 보여서 끈다.
  * @param opts.align object-position 의 가로 정렬 — 왼쪽 정렬이 기본(글의 흐름과 맞춘다).
+ *   fixedWidth:false 면 폭이 자체 비율대로 좁혀져 의미가 없어진다(무시됨).
+ * @param opts.fixedWidth 폭도 높이처럼 고정 슬롯(SESSION_LOGO_WIDTH)으로 둘지 — 기본 true.
+ *   **목록**(타임테이블처럼 로고가 여러 줄에 걸쳐 나오는 자리)에서는 모든 로고가 같은 폭에서
+ *   시작·끝나야 줄이 가지런해 보여 고정 폭이 맞다. 반대로 **단독 로고**(상세 팝업처럼 한
+ *   번에 하나만 보이는 자리)에서는 고정 폭이 로고 주위에 불필요한 흰 여백만 남긴다 — false 로
+ *   주면 높이만 고정하고 폭은 로고 자체 비율대로 좁혀져, 흰 판이 로고 크기에 꼭 맞게 줄어든다.
  */
 export function sessionLogoCss(
   selector: string,
-  opts?: { plate?: boolean; align?: "left" | "center" },
+  opts?: { plate?: boolean; align?: "left" | "center"; fixedWidth?: boolean },
 ): string {
   const align = opts?.align ?? "left";
+  const fixedWidth = opts?.fixedWidth ?? true;
   const plate = opts?.plate
     ? " background:#fff; border-radius:4px; padding:2px 4px;"
     : "";
@@ -56,5 +69,8 @@ export function sessionLogoCss(
    * 2) 랜딩은 **남의 사이트에 직접 마운트**된다. 호스트의 리셋이 border-box 든 content-box 든
    *    같은 크기로 보여야 하므로 이 규칙이 호스트 리셋에 의존하면 안 된다.
    */
-  return `${selector} { display:block; box-sizing:content-box; height:${SESSION_LOGO_HEIGHT}px; width:${SESSION_LOGO_WIDTH}px; object-fit:contain; object-position:${align} center;${plate} }`;
+  const sizing = fixedWidth
+    ? `width:${SESSION_LOGO_WIDTH}px; object-fit:contain; object-position:${align} center;`
+    : `width:auto; max-width:${SESSION_LOGO_MAX_WIDTH}px; object-fit:contain; object-position:${align} center;`;
+  return `${selector} { display:block; box-sizing:content-box; height:${SESSION_LOGO_HEIGHT}px; ${sizing}${plate} }`;
 }
