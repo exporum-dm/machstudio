@@ -14,6 +14,7 @@
  * DB 를 모른다 — 화면·API·테스트가 같은 규칙을 쓴다.
  */
 import { localize, toLocalized, type CollectField, type CollectFormConfig, type Localized } from "@/lib/collect-form-config";
+import type { Insight } from "@/lib/registration-analysis";
 
 export type SurveyQuestionType = "single" | "multiple" | "scale" | "nps" | "grid" | "short" | "long";
 export const SURVEY_QUESTION_TYPES: SurveyQuestionType[] = ["single", "multiple", "scale", "nps", "grid", "short", "long"];
@@ -374,6 +375,55 @@ export function answerText(q: SurveyQuestion, value: SurveyAnswerMap[string], lo
     return q.rows.map((r, i) => `${localize(r, locale)}: ${(value as Record<string, unknown>)[String(i)] ?? ""}`).join(" / ");
   }
   return String(value);
+}
+
+// ── 인사이트 — "결과 분석" 탭에 등록 인사이트와 같은 자리·같은 말투로 붙는다 ────────────
+const SURVEY_MIN_N = 20;
+const pct = (x: number) => `${Math.round(x * 1000) / 10}%`;
+const num = (x: number) => x.toLocaleString("ko-KR");
+
+export interface SurveyInsightInput {
+  surveyName: string;
+  total: number;
+  registered: number;
+  registrantsTotal: number;
+  summaries: QuestionSummary[];
+}
+
+/** 응답률 + 점수형 문항(scale·nps) 레벨 — 표본이 작은 만족도 조사 특성상 등록 분석보다 낮은 기준(20명)을 쓴다. */
+export function surveyInsights(input: SurveyInsightInput): Insight[] {
+  const out: Insight[] = [];
+  if (input.total === 0) return out;
+
+  if (input.registrantsTotal >= SURVEY_MIN_N) {
+    const rate = input.registrantsTotal ? input.registered / input.registrantsTotal : 0;
+    const walkIn = input.total - input.registered;
+    out.push({
+      tone: rate >= 0.3 ? "good" : "info",
+      title: `${input.surveyName}: 등록자의 ${pct(rate)}가 만족도 조사에 응답했어요`,
+      detail: `등록자 ${num(input.registrantsTotal)}명 중 ${num(input.registered)}명이 응답했어요${walkIn > 0 ? ` · 등록 없이 참여 ${num(walkIn)}명` : ""}.`,
+    });
+  }
+
+  for (const q of input.summaries) {
+    if (q.answered < SURVEY_MIN_N) continue;
+    if (q.type === "nps" && q.nps !== undefined) {
+      out.push({
+        tone: q.nps >= 30 ? "good" : q.nps < 0 ? "warn" : "info",
+        title: `${q.title}: NPS ${q.nps}점`,
+        detail: `응답 ${num(q.answered)}명 기준 — 추천(9~10점) 비율에서 비추천(0~6점) 비율을 뺀 값이에요.`,
+      });
+    } else if (q.type === "scale" && q.average !== undefined) {
+      const scaleMax = q.counts?.length ?? 5;
+      const ratio = scaleMax > 1 ? (q.average - 1) / (scaleMax - 1) : 1;
+      out.push({
+        tone: ratio >= 0.75 ? "good" : ratio < 0.5 ? "warn" : "info",
+        title: `${q.title}: 평균 ${q.average}/${scaleMax}점`,
+        detail: `응답 ${num(q.answered)}명 기준.`,
+      });
+    }
+  }
+  return out;
 }
 
 export function isSurveyStatus(v: unknown): v is "draft" | "open" | "closed" {

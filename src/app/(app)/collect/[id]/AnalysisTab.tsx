@@ -19,6 +19,16 @@ import { Btn, FINISH, R, Segmented } from "@/components/ui/primitives";
 import { useChartColors } from "@/components/ui/use-chart-colors";
 import { checkinTimezoneLabel, csvDateTimeIn } from "@/lib/collect-checkin";
 import type { AudienceRow, Insight, RegistrationAnalysis, Segment } from "@/lib/registration-analysis";
+import type { QuestionSummary } from "@/lib/survey-config";
+
+interface SurveyPayload {
+  id: string;
+  name: string;
+  status: string;
+  total: number;
+  registered: number;
+  summaries: QuestionSummary[];
+}
 
 interface Payload {
   sourceName: string;
@@ -29,6 +39,8 @@ interface Payload {
   analysis: RegistrationAnalysis;
   audiences: { value: string; analysis: RegistrationAnalysis }[];
   audienceRows: AudienceRow[];
+  /** 이 등록 폼에 연결된 만족도 조사(0·1·N개) — 등록과 별개 집계라 KPI에는 안 섞인다. */
+  surveys: SurveyPayload[];
 }
 
 const n = (x: number) => x.toLocaleString("ko-KR");
@@ -263,6 +275,67 @@ function TextTopCard({ t, color }: { t: RegistrationAnalysis["textTops"][number]
   );
 }
 
+/** 만족도 조사 문항 하나 = 카드 하나. 문항 유형마다 다르게 그린다 — 점수형은 평균·NPS를 머리에 띄운다. */
+function SurveySummaryCard({ s, color }: { s: QuestionSummary; color: string }) {
+  if (s.type === "short" || s.type === "long") {
+    const texts = s.texts ?? [];
+    return (
+      <Card>
+        <h4 className="line-clamp-2 text-sm font-medium leading-snug" title={s.title}>{s.title}</h4>
+        <p className="mt-0.5 text-[11px] text-muted-foreground tabular-nums">응답 {n(s.answered)}명</p>
+        <ul className="mt-3 space-y-1.5 text-xs">
+          {texts.length === 0 && <li className="text-muted-foreground">아직 답변이 없어요.</li>}
+          {texts.slice(0, 5).map((t, i) => (
+            <li key={i} className="rounded-lg bg-secondary/50 px-3 py-2 leading-relaxed whitespace-pre-wrap">{t}</li>
+          ))}
+          {texts.length > 5 && <li className="text-[11px] text-muted-foreground">외 {texts.length - 5}건</li>}
+        </ul>
+      </Card>
+    );
+  }
+  if (s.type === "grid") {
+    const rows = s.rows ?? [];
+    const max = Math.max(...rows.map((r) => r.average ?? 0), 1);
+    return (
+      <Card>
+        <h4 className="line-clamp-2 text-sm font-medium leading-snug" title={s.title}>{s.title}</h4>
+        <p className="mt-0.5 text-[11px] text-muted-foreground tabular-nums">응답 {n(s.answered)}명</p>
+        <ul className="mt-3 space-y-1.5 text-xs">
+          {rows.map((r) => (
+            <li key={r.label} className="min-w-0">
+              <div className="flex items-baseline justify-between gap-2"><span className="truncate" title={r.label}>{r.label}</span><span className="shrink-0 tabular-nums text-muted-foreground">{r.average != null ? <b className="text-foreground">{r.average}점</b> : "해당 없음 많음"} · {n(r.answered)}명</span></div>
+              <div className="mt-1"><ShareBar value={r.average ?? 0} max={max} color={color} /></div>
+            </li>
+          ))}
+        </ul>
+      </Card>
+    );
+  }
+  const counts = s.counts ?? [];
+  const max = Math.max(...counts.map((c) => c.count), 1);
+  return (
+    <Card>
+      <h4 className="line-clamp-2 text-sm font-medium leading-snug" title={s.title}>{s.title}</h4>
+      <p className="mt-0.5 text-[11px] text-muted-foreground tabular-nums">
+        응답 {n(s.answered)}명
+        {s.average !== undefined && <> · 평균 <b className="text-foreground">{s.average}</b>점</>}
+        {s.nps !== undefined && <> · NPS <b className="text-foreground">{s.nps}</b></>}
+      </p>
+      <ul className="mt-3 space-y-1.5 text-xs">
+        {counts.map((c) => (
+          <li key={c.label} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+            <div className="min-w-0">
+              <p className="truncate" title={c.label}>{c.label}</p>
+              <ShareBar value={c.count} max={max} color={color} />
+            </div>
+            <span className="text-right tabular-nums text-muted-foreground"><b className="text-foreground">{n(c.count)}</b> · {pct(s.answered ? c.count / s.answered : 0, 0)}</span>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
 function SegmentTable({ seg, view, colors }: { seg: Segment; view: SegView; colors: { pre: string; onsite: string; reg: string } }) {
   const visitorsPre = seg.rows.reduce((a, r) => a + r.preVisited, 0);
   const visitorsOnsite = seg.rows.reduce((a, r) => a + r.onsiteVisited, 0);
@@ -430,6 +503,15 @@ export default function AnalysisTab({ sourceId }: { sourceId: string }) {
           유형: r.value, 등록: r.regs, 사전등록: r.pre, 현장등록: r.onsite, 순방문: r.visitors, 동반: r.companions, "순방문(동반 포함)": r.visitorsWithCompanions,
           "누적 방문객(연인원, 동반 포함)": r.visitorDaysWithCompanions, "사전등록 방문율": pct(r.showUpPre.rate), "현장등록 방문율": r.onsite ? pct(r.showUpOnsite.rate) : "-",
         }))), "유형별 비교");
+      }
+      for (const s of data.surveys) {
+        if (s.summaries.length === 0) continue;
+        const rows = s.summaries.map((q) => ({
+          문항: q.title, 응답: q.answered,
+          평균: q.average ?? "", NPS: q.nps ?? "",
+          분포: (q.counts ?? []).map((c) => `${c.label}:${c.count}`).join(" / "),
+        }));
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), `설문_${s.name}`.slice(0, 31));
       }
       XLSX.writeFile(wb, `${data.sourceName.replace(/[^a-zA-Z0-9가-힣_-]+/g, "_")}_결과분석${audience ? `_${audience.replace(/[^a-zA-Z0-9가-힣_-]+/g, "_")}` : ""}.xlsx`);
     } catch {
@@ -752,6 +834,35 @@ export default function AnalysisTab({ sourceId }: { sourceId: string }) {
         </section>
       )}
 
+      {/* 만족도 조사 — 등록과 별개 집계라 KPI에는 안 섞이고, 같은 탭에 나란히 보여준다 */}
+      {data.surveys.length > 0 && (
+        <section className="space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold">만족도 조사</h3>
+            <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+              등록과 이어진 만족도 조사 결과예요. 이메일/전화로 본인 확인을 했기 때문에 성별·연령·유형 같은 인구통계는 다시 묻지 않았어요 — 등록 폼의 &apos;누가 왔나&apos;를 함께 보세요.
+            </p>
+          </div>
+          {data.surveys.map((s) => (
+            <div key={s.id} className="space-y-3">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h4 className="text-sm font-medium">{s.name}</h4>
+                <p className="text-xs text-muted-foreground tabular-nums">
+                  응답 {n(s.total)}명 · 등록자 응답 {n(s.registered)}명{s.total > s.registered ? ` · 등록 없이 ${n(s.total - s.registered)}명` : ""}
+                </p>
+              </div>
+              {s.summaries.length === 0 ? (
+                <Card><p className="text-sm text-muted-foreground">아직 응답이 없어요.</p></Card>
+              ) : (
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  {s.summaries.map((q) => <SurveySummaryCard key={q.key} s={q} color={seriesPre} />)}
+                </div>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
+
       {/* 용어·데이터 품질 */}
       <Card>
         <details>
@@ -774,7 +885,7 @@ export default function AnalysisTab({ sourceId }: { sourceId: string }) {
               </ul>
             </div>
           )}
-          <p className="mt-3 text-[11px] text-muted-foreground">계산 시각 {new Date(data.generatedAt).toLocaleString("ko-KR")} · 만족도 조사 분석은 응답이 쌓이면 이 탭에 붙여요.</p>
+          <p className="mt-3 text-[11px] text-muted-foreground">계산 시각 {new Date(data.generatedAt).toLocaleString("ko-KR")}</p>
         </details>
       </Card>
     </div>

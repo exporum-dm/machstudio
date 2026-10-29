@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeSurveyConfig, summarizeSurvey, validateSurveyAnswers, visibleSections } from "@/lib/survey-config";
+import { normalizeSurveyConfig, summarizeSurvey, surveyInsights, validateSurveyAnswers, visibleSections } from "@/lib/survey-config";
 
 const config = normalizeSurveyConfig({
   defaultLocale: "en",
@@ -58,6 +58,30 @@ describe("만족도 조사 — 집계", () => {
     expect(nps.nps).toBe(33); // 추천 2 − 비추천 1, 3명
     expect(s.find((x) => x.key === "overall")!.average).toBe(4);
     expect(s.find((x) => x.key === "watched")!.counts).toEqual([{ label: "Yes", count: 2 }, { label: "No", count: 1 }]);
+  });
+});
+
+describe("만족도 조사 — 결과 분석 탭에 붙는 인사이트", () => {
+  it("문항 응답·등록자 수가 모자라면 아무것도 내지 않는다", () => {
+    const fewSummaries = summarizeSurvey(config, Array.from({ length: 5 }, () => ({ answers: { overall: 5, nps: 10 } })));
+    expect(surveyInsights({ surveyName: "kela2026", total: 5, registered: 3, registrantsTotal: 10, summaries: fewSummaries })).toEqual([]);
+  });
+
+  it("응답률과 점수형 문항 레벨을 낸다", () => {
+    const summaries = summarizeSurvey(config, Array.from({ length: 25 }, (_, i) => ({
+      answers: { overall: i % 5 === 0 ? 2 : 5, nps: i % 5 === 0 ? 3 : 10 },
+    })));
+    const out = surveyInsights({ surveyName: "kela2026", total: 25, registered: 20, registrantsTotal: 1000, summaries });
+    const rate = out.find((i) => i.title.includes("응답"));
+    expect(rate?.detail).toContain("1,000명 중 20명");
+    const nps = out.find((i) => i.title.includes("NPS"));
+    expect(nps?.title).toContain("NPS 60"); // 추천(≥9) 20명 − 비추천(≤6) 5명, 25명 중 60%
+    const overall = out.find((i) => i.title.includes("평균"));
+    expect(overall?.title).toContain("4.4/5"); // (5*20 + 2*5)/25
+  });
+
+  it("응답이 하나도 없으면 빈 배열", () => {
+    expect(surveyInsights({ surveyName: "kela2026", total: 0, registered: 0, registrantsTotal: 1000, summaries: [] })).toEqual([]);
   });
 });
 

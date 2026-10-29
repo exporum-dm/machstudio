@@ -14,6 +14,7 @@ import { prisma } from "@/lib/prisma";
 import { collectColumnsFor } from "@/lib/collect-columns";
 import { normalizeCollectForm } from "@/lib/collect-form-config";
 import { audienceInsights, buildRegistrationAnalysis, pickAnalysisFields, summarizeAudiences, type AnalysisInput } from "@/lib/registration-analysis";
+import { normalizeSurveyConfig, resolveLinkedQuestions, summarizeSurvey, surveyInsights, type QuestionSummary } from "@/lib/survey-config";
 
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -92,6 +93,28 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     analysis.insights.splice(2, 0, ...audienceInsights(rows, audienceField?.label ?? "유형"));
   }
 
+  // 연결된 만족도 조사 — 등록 분석과 같은 탭에 같이 보여준다(별도 집계이므로 등록자 수와는 절대 안 섞는다).
+  // 한 등록 소스에 조사가 0·1·N개일 수 있다 — 전부 낸다.
+  const surveyRows = await prisma.survey.findMany({ where: { sourceId: id }, orderBy: { createdAt: "asc" } });
+  const surveys = surveyRows.length
+    ? await Promise.all(surveyRows.map(async (s) => {
+        const surveyConfig = resolveLinkedQuestions(normalizeSurveyConfig(s.config), config);
+        const responses = await prisma.surveyResponse.findMany({ where: { surveyId: s.id }, select: { answers: true, recordId: true } });
+        const registered = responses.filter((r) => r.recordId).length;
+        const summaries: QuestionSummary[] = summarizeSurvey(surveyConfig, responses).filter((q) => q.answered > 0);
+        return { id: s.id, name: s.name, status: s.status, total: responses.length, registered, summaries };
+      }))
+    : [];
+  for (const s of surveys) {
+    analysis.insights.push(...surveyInsights({
+      surveyName: s.name,
+      total: s.total,
+      registered: s.registered,
+      registrantsTotal: analysis.kpi.registrations.total,
+      summaries: s.summaries,
+    }));
+  }
+
   // 행사 운영 시간(개최일별 개장·마감 중 가장 이른·늦은 시) — 시간대별 그래프 가로축을 마감까지 그린다
   const hourOf = (v: string) => (/^\d{1,2}:\d{2}$/.test(v) ? Number(v.split(":")[0]) : NaN);
   const opens = config.eventInfo.openingHours.map((h) => hourOf(h.open)).filter(Number.isFinite);
@@ -107,6 +130,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       analysis,
       audiences,
       audienceRows: summarizeAudiences(audiences),
+      surveys,
     },
     { headers: { "Cache-Control": "private, max-age=60" } },
   );
