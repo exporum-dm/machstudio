@@ -33,6 +33,7 @@ interface Room {
 }
 type Loaded = { room: Room; canWrite: boolean };
 const control = `min-h-9 rounded-lg bg-background px-2 text-sm shadow-sm ${R.control}`;
+const readable=(value:string)=>value.replace(/&#x([0-9a-f]+);/gi,(_,x)=>String.fromCodePoint(parseInt(x,16))).replace(/&#(\d+);/g,(_,x)=>String.fromCodePoint(Number(x))).replace(/&quot;/g,'"').replace(/&apos;|&#39;/g,"'").replace(/&amp;/g,"&").replace(/\s*새 창 열림\s*/g," ").trim();
 const dateTime = (value: string | null) =>
   value
     ? new Date(value).toLocaleString("ko-KR", {
@@ -95,7 +96,7 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
   if (!data) return <Loading />;
   const mentions = (
     Array.isArray(data.room.mentions) ? data.room.mentions : []
-  ) as PrMention[];
+  ).map(x=>{const row=x as PrMention;return{...row,title:readable(row.title),excerpt:readable(row.excerpt)}}) as PrMention[];
   const patchMention = async (id: string, patch: Partial<PrMention>) => {
     const next = mentions.map((x) => (x.id === id ? { ...x, ...patch } : x));
     setData(await save(projectId, { mentions: next }));
