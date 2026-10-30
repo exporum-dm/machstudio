@@ -4,11 +4,13 @@
  * 일지 — 시트(DM 업무 현황)처럼 쓴다(2026-10-18).
  *
  *  행 = 날짜(맨 위 "먼 미래", 미래가 위·과거가 아래 — 시트와 같은 순서), 열 = 공통 + 사람.
- *  칸을 누르면 바로 적고 Enter 로 확정, 한 번 더 Enter 로 다음 줄. ● 를 누르거나 Ctrl+Enter → 취소선(완료).
+ *  칸을 누르면 바로 적고 Enter 한 번으로 확정 + 다음 줄. ● 를 누르거나 Ctrl+Enter → 취소선(완료).
  *  "[LA] 배너 교체" 처럼 머리표로 시작하면 행사(아니면 분류)가 붙고, Enter 로 이어 쓰는 줄도 같은 머리표.
  *  시트 칸을 통째로 붙여 넣으면 줄마다 나뉜다. 줄을 끌어 다른 날·먼 미래·공통으로 옮긴다.
  *  한 칸 안에선 같은 행사 줄을 한 머리표 아래 모아 보이고, 끌어 놓거나 ⋯ · Alt+↑↓ 로 순서를 바꾼다(2026-10-29).
  *  상태는 고르지 않는다 — 취소선이면 완료, 아니면 날짜로 진행/예정(주간 보고가 그렇게 읽는다).
+ *  빈 줄에서 Backspace 는 그 줄만 지운다 — 위 줄로 넘어가 글자를 지우지 않는다(2026-10-30).
+ *  지운 줄은 Ctrl/Cmd+Z 로 되살린다(텍스트 칸 밖에서 — 칸 안에서는 브라우저 기본 되돌리기를 그대로 둔다).
  */
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
@@ -86,6 +88,8 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
   const dragCk = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrolledToToday = useRef(false);
+  // 지운 줄 되돌리기 스택 — 토스트의 "되돌리기"와 Ctrl/Cmd+Z 가 같은 스택을 공유한다(최대 20개).
+  const undoStack = useRef<Line[]>([]);
 
   const enqueueMutation = <T,>(ck: string, task: () => Promise<T>): Promise<T> => {
     setSavingKeys((prev) => new Set(prev).add(ck));
@@ -268,6 +272,7 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
   };
 
   const restore = (line: Line) => {
+    undoStack.current = undoStack.current.filter((l) => l.ck !== line.ck);
     const ck = tmpKey();
     const copy: Line = { ...line, ck, id: ck, temp: true };
     setLines((prev) => [...prev, copy]);
@@ -288,9 +293,32 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
       const res = await fetch(`/api/worklog/entries?id=${id}`, { method: "DELETE", keepalive: true });
       // 이미 지워진 줄(다른 창·팀원이 먼저 지움)은 되살리지 않는다.
       if (!res.ok && res.status !== 404) { toast.error("지우지 못했어요"); setLines((prev) => [...prev, line]); return; }
-      if (undo) toast("줄을 지웠어요", { description: line.content, action: { label: "되돌리기", onClick: () => restore(line) } });
+      if (undo) {
+        undoStack.current = [...undoStack.current, line].slice(-20);
+        toast("줄을 지웠어요", { description: line.content, action: { label: "되돌리기", onClick: () => restore(line) } });
+      }
     });
   };
+
+  /**
+   * Ctrl/Cmd+Z 로 가장 최근 지운 줄을 되살린다 — 토스트의 "되돌리기"와 같은 스택을 쓴다.
+   * 글 칸(textarea)에 포커스가 있을 때는 비워 둔다 — 브라우저 기본 되돌리기(글자 입력 취소)를
+   * 그대로 쓰게 하기 위해서다. 그 밖(메뉴를 닫은 뒤·빈 화면 클릭 뒤 등)에서만 켠다.
+   */
+  const restoreRef = useRef(restore);
+  useEffect(() => { restoreRef.current = restore; });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.key.toLowerCase() !== "z") return;
+      if ((document.activeElement as HTMLElement | null)?.tagName === "TEXTAREA") return;
+      const last = undoStack.current.pop();
+      if (!last) return;
+      e.preventDefault();
+      restoreRef.current(last);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   /** 칸에 빈 줄을 하나 만든다(저장은 글자가 생길 때). after 가 있으면 그 줄 바로 아래. */
   const addDraft = (row: string, col: string, after?: Line, tags?: TagFields) => {
@@ -438,14 +466,12 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
     if (target) setFocus({ ck: target.ck, caret: dir < 0 ? "end" : "start" });
   };
 
+  /** 빈 줄에서 Backspace — 그 줄만 지운다. 위 줄로 포커스를 넘기지 않는다(그러면 다음 Backspace 가 위 줄 글자를 지운다). */
   const backspaceEmpty = (ck: string) => {
     const line = find(ck);
     if (!line) return;
-    const list = byCellNow(rowOf(line), colOf(line));
-    const prev = list[list.findIndex((l) => l.ck === ck) - 1];
     if (line.temp && !creating.current.has(ck)) setLines((p) => p.filter((l) => l.ck !== ck));
     else void remove(ck);
-    if (prev) setFocus({ ck: prev.ck, caret: "end" });
   };
 
   /** 여러 줄 붙여넣기 — 시트 칸을 통째로. 한 줄이면 평소처럼 붙인다(false). */
@@ -543,7 +569,7 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
           </div>
         </div>
         <p className="hidden text-[11px] text-muted-foreground sm:block">
-          {savingKeys.size ? <span className="font-medium text-violet-600 dark:text-violet-400">저장 중…</span> : "Enter로 자동 저장"} · 한 번 더 눌러 다음 줄 · <Kbd>Ctrl</Kbd>+<Kbd>Enter</Kbd> 또는 ● 완료 · <Kbd>Alt</Kbd>+<Kbd>↑↓</Kbd> 순서 · <code className="rounded bg-secondary px-1">[LA] 할 일</code> 로 행사 지정(<button onClick={onGoGroups} className="underline">행사 관리</button>)
+          {savingKeys.size ? <span className="font-medium text-violet-600 dark:text-violet-400">저장 중…</span> : "Enter로 저장 + 다음 줄"} · <Kbd>Ctrl</Kbd>+<Kbd>Enter</Kbd> 또는 ● 완료 · <Kbd>Alt</Kbd>+<Kbd>↑↓</Kbd> 순서 · <Kbd>Ctrl</Kbd>+<Kbd>Z</Kbd> 지운 줄 되돌리기 · <code className="rounded bg-secondary px-1">[LA] 할 일</code> 로 행사 지정(<button onClick={onGoGroups} className="underline">행사 관리</button>)
         </p>
       </div>
 
@@ -732,7 +758,6 @@ function LineRow({
     const r = e.currentTarget.getBoundingClientRect();
     return e.clientY < r.top + r.height / 2 ? "before" : "after";
   };
-  const committedValue = useRef<string | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const value = draft ?? line.content;
   const done = line.status === "done";
@@ -766,13 +791,7 @@ function LineRow({
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       if (!el.value.trim()) return;
-      if (committedValue.current === el.value) {
-        committedValue.current = null;
-        onEnter(el.value);
-      } else {
-        onCommit(el.value);
-        committedValue.current = el.value;
-      }
+      onEnter(el.value);
       return;
     }
     if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
@@ -857,9 +876,9 @@ function LineRow({
                 ref={ref}
                 rows={1}
                 value={value}
-                onFocus={() => { committedValue.current = null; setDraft(line.content); }}
-                onChange={(e) => { committedValue.current = null; setDraft(e.target.value); }}
-                onBlur={(e) => { committedValue.current = null; onCommit(e.target.value); setDraft(null); }}
+                onFocus={() => setDraft(line.content)}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={(e) => { onCommit(e.target.value); setDraft(null); }}
                 onKeyDown={onKeyDown}
                 onPaste={(e) => {
                   const text = e.clipboardData.getData("text/plain");
