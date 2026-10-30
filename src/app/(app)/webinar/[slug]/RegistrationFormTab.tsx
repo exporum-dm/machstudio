@@ -256,6 +256,10 @@ export function RegistrationFormPreview({
   marketingBody,
   privacyDefaultChecked,
   marketingDefaultChecked,
+  thirdPartyEnabled,
+  thirdPartyText,
+  thirdPartyBody,
+  thirdPartyDefaultChecked,
   submitLabel,
   successCta,
   theme,
@@ -268,6 +272,10 @@ export function RegistrationFormPreview({
   marketingBody: string;
   privacyDefaultChecked: boolean;
   marketingDefaultChecked: boolean;
+  thirdPartyEnabled: boolean;
+  thirdPartyText: string;
+  thirdPartyBody: string;
+  thirdPartyDefaultChecked: boolean;
   submitLabel: string;
   successCta: WebinarLinkCtaConfig;
   theme: { accent: string; text: string; surface: string };
@@ -368,6 +376,12 @@ export function RegistrationFormPreview({
                       <span className={`rp-check ${marketingDefaultChecked ? "on" : ""}`}>✓</span>
                       <span className={marketingBody ? "rp-link" : ""}>{marketingText}</span>
                     </label>
+                    {thirdPartyEnabled && (
+                      <label className="rp-consent">
+                        <span className={`rp-check ${thirdPartyDefaultChecked ? "on" : ""}`}>✓</span>
+                        <span className={thirdPartyBody ? "rp-link" : ""}>{thirdPartyText}</span>
+                      </label>
+                    )}
                   </div>
                   <button type="button" className="rp-submit">{submitLabel}</button>
                 </div>
@@ -493,6 +507,13 @@ export default function RegistrationFormTab({ webinar, onSilentUpdate, confirmLi
   const [marketingLinkUrl, setMarketingLinkUrl] = useState(initial.marketingLinkUrl);
   const [privacyDefaultChecked, setPrivacyDefaultChecked] = useState(initial.privacyDefaultChecked);
   const [marketingDefaultChecked, setMarketingDefaultChecked] = useState(initial.marketingDefaultChecked);
+  // 제3자 제공 동의 — privacy/marketing 과 달리 쓰는 웨비나만 켠다(대회 신청 폼과 같은 이유).
+  const [thirdPartyEnabled, setThirdPartyEnabled] = useState(initial.thirdPartyEnabled);
+  const [thirdPartyText, setThirdPartyText] = useState(initial.thirdPartyText);
+  const [thirdPartyBody, setThirdPartyBody] = useState(initial.thirdPartyBody);
+  const [thirdPartyBodyMode, setThirdPartyBodyMode] = useState(initial.thirdPartyBodyMode);
+  const [thirdPartyLinkUrl, setThirdPartyLinkUrl] = useState(initial.thirdPartyLinkUrl);
+  const [thirdPartyDefaultChecked, setThirdPartyDefaultChecked] = useState(initial.thirdPartyDefaultChecked);
   const [successCta, setSuccessCta] = useState(initial.successCta);
   /** 확인 버튼이 이동할 주소 — CTA(새 탭 부가 링크)와 다른 자리다. */
   const [successRedirectUrl, setSuccessRedirectUrl] = useState(initial.successRedirectUrl);
@@ -566,6 +587,12 @@ export default function RegistrationFormTab({ webinar, onSilentUpdate, confirmLi
               marketingLinkUrl: marketingLinkUrl.trim(),
               privacyDefaultChecked,
               marketingDefaultChecked,
+              thirdPartyEnabled,
+              thirdPartyText: thirdPartyText.trim() || initial.thirdPartyText,
+              thirdPartyBody: thirdPartyBody.trim(),
+              thirdPartyBodyMode,
+              thirdPartyLinkUrl: thirdPartyLinkUrl.trim(),
+              thirdPartyDefaultChecked,
               submitLabel: submitLabel.trim() || initial.submitLabel,
               successCta: {
                 enabled: successCta.enabled,
@@ -590,7 +617,11 @@ export default function RegistrationFormTab({ webinar, onSilentUpdate, confirmLi
     } catch { return false; }
   };
   const { state: saveState, retry } = useAutosave(
-    { fields, privacyText, marketingText, privacyBody, marketingBody, privacyBodyMode, marketingBodyMode, privacyLinkUrl, marketingLinkUrl, privacyDefaultChecked, marketingDefaultChecked, submitLabel, successCta, successRedirectUrl, deadline, liveReg },
+    {
+      fields, privacyText, marketingText, privacyBody, marketingBody, privacyBodyMode, marketingBodyMode, privacyLinkUrl, marketingLinkUrl, privacyDefaultChecked, marketingDefaultChecked,
+      thirdPartyEnabled, thirdPartyText, thirdPartyBody, thirdPartyBodyMode, thirdPartyLinkUrl, thirdPartyDefaultChecked,
+      submitLabel, successCta, successRedirectUrl, deadline, liveReg,
+    },
     save,
   );
   // 표시는 껍데기 한 곳에서 그린다(만들기 화면당 1개) — 저장 경로는 그대로 각자.
@@ -751,6 +782,42 @@ export default function RegistrationFormTab({ webinar, onSilentUpdate, confirmLi
               )}
             </div>
             <div>
+              {thirdPartyEnabled ? (
+                <>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <label htmlFor={`${uid}-thirdparty`} className="text-xs text-muted-foreground block">개인정보 제3자 제공 동의 문구</label>
+                    <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground select-none">
+                      사용
+                      <Switch checked={thirdPartyEnabled} onChange={setThirdPartyEnabled} label="제3자 제공 동의 사용" />
+                    </label>
+                  </div>
+                  <input id={`${uid}-thirdparty`} value={thirdPartyText} onChange={(e) => setThirdPartyText(e.target.value)} className={inputCls} />
+                  <div className="my-2 flex w-fit rounded-lg bg-secondary p-0.5 shadow-sm" role="tablist">{(["text", "link"] as const).map((mode) => <button key={mode} type="button" role="tab" aria-selected={thirdPartyBodyMode === mode} onClick={() => setThirdPartyBodyMode(mode)} className={`rounded-md px-2.5 py-1 text-[10px] font-semibold ${thirdPartyBodyMode === mode ? "bg-background shadow-sm" : "text-muted-foreground"}`}>{mode === "text" ? "텍스트" : "링크"}</button>)}</div>
+                  {thirdPartyBodyMode === "link" ? <input type="url" value={thirdPartyLinkUrl} onChange={(e) => setThirdPartyLinkUrl(e.target.value)} placeholder="https://..." aria-label="제3자 제공 동의 링크" className={inputCls} /> : <ConsentBodyField
+                    label="개인정보 제3자 제공"
+                    value={thirdPartyBody}
+                    onChange={setThirdPartyBody}
+                  />}
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground mt-2 select-none">
+                    <Switch checked={thirdPartyDefaultChecked} onChange={setThirdPartyDefaultChecked} label="제3자 제공 동의 기본 체크" />
+                    폼 진입 시 기본으로 체크해두기
+                  </label>
+                  {thirdPartyDefaultChecked && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-500 mt-1 leading-relaxed">
+                      제3자 제공 동의는 선택 동의 항목이에요. 국가·업종에 따라 사전 체크가 관련 법령에 저촉될 수 있으니 적용 전 확인해주세요.
+                    </p>
+                  )}
+                </>
+              ) : (
+                // privacy·marketing 은 항상 폼에 뜬다. 제3자 제공만 협찬사·제휴사가 있는 웨비나에만
+                // 필요해 기본 꺼짐이다 — 켜기 전엔 자리만 차지하지 않게 한 줄로 접는다.
+                <div className="flex items-center justify-between gap-2 rounded-lg bg-secondary/30 p-2 h-full">
+                  <span className="text-xs font-medium text-muted-foreground">개인정보 제3자 제공 동의 — 사용 안 함</span>
+                  <Switch checked={thirdPartyEnabled} onChange={setThirdPartyEnabled} label="제3자 제공 동의 사용" />
+                </div>
+              )}
+            </div>
+            <div>
               <label htmlFor={`${uid}-submit`} className="text-xs text-muted-foreground mb-1 block">제출 버튼 문구</label>
               <input id={`${uid}-submit`} value={submitLabel} onChange={(e) => setSubmitLabel(e.target.value)} className={inputCls} />
             </div>
@@ -821,6 +888,10 @@ export default function RegistrationFormTab({ webinar, onSilentUpdate, confirmLi
         marketingBody={marketingBody}
         privacyDefaultChecked={privacyDefaultChecked}
         marketingDefaultChecked={marketingDefaultChecked}
+        thirdPartyEnabled={thirdPartyEnabled}
+        thirdPartyText={thirdPartyText}
+        thirdPartyBody={thirdPartyBody}
+        thirdPartyDefaultChecked={thirdPartyDefaultChecked}
         submitLabel={submitLabel}
         successCta={successCta}
         theme={previewTheme}

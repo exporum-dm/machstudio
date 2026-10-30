@@ -31,6 +31,7 @@ export interface CsvRegistrant {
   jobTitle: string | null;
   industry: string | null;
   agreeMarketing: boolean;
+  agreeThirdParty: boolean;
   submittedAt: Date | string;
   enteredAt: Date | string | null;
   memo: string | null;
@@ -105,6 +106,10 @@ function fixedColumns(engagementByRegistrant: Map<string, CsvEngagement>): Colum
     { header: "직함", value: (r) => r.jobTitle ?? "" },
     { header: "업종", value: (r) => r.industry ?? "" },
     { header: "마케팅동의", value: (r) => (r.agreeMarketing ? "Y" : "N") },
+    // 쓰는 웨비나만 있는 항목이라 끈 웨비나에서는 전원 N 으로 나간다 — agreeMarketing 과
+    // 같은 고정 열로 둔다(사용 여부로 열 자체를 뺐다 붙였다 하면 과거에 받은 동의가
+    // 파일에서 조용히 사라진 것처럼 보인다).
+    { header: "제3자제공동의", value: (r) => (r.agreeThirdParty ? "Y" : "N") },
     {
       // 참여점수와 같은 소스(실제 시청 구간 합)를 쓴다 — DB 원본 stayMinutes 는
       // leave 이벤트를 못 받은 시청자(탭 강제종료 등)에게 0 으로 남아 한 행 안에서 값이 어긋난다.

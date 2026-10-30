@@ -97,6 +97,17 @@ export interface WebinarRegistrationFormConfig {
   /** 폼 진입 시 동의 체크박스를 기본으로 체크해둘지 — 사용자가 직접 만지면 그 값이 우선한다 */
   privacyDefaultChecked: boolean;
   marketingDefaultChecked: boolean;
+  /**
+   * 개인정보 제3자 제공 동의 — 대회 신청 폼(competition-config.ts)과 같은 이유로 기본 꺼짐이다.
+   * privacy/marketing 과 달리 **쓰는 웨비나만** 켠다(제공받는 제3자가 없으면 문구 자체가 거짓이
+   * 된다) — 그래서 이 항목만 enabled 토글을 따로 둔다.
+   */
+  thirdPartyEnabled: boolean;
+  thirdPartyText: string;
+  thirdPartyBody: string;
+  thirdPartyBodyMode: "text" | "link";
+  thirdPartyLinkUrl: string;
+  thirdPartyDefaultChecked: boolean;
   submitLabel: string;
   successCta: WebinarLinkCtaConfig;
   /**
@@ -759,6 +770,12 @@ export function normalizeRegistrationForm(
     marketingLinkUrl: typeof raw?.marketingLinkUrl === "string" ? raw.marketingLinkUrl : "",
     privacyDefaultChecked: raw?.privacyDefaultChecked === true,
     marketingDefaultChecked: raw?.marketingDefaultChecked === true,
+    thirdPartyEnabled: raw?.thirdPartyEnabled === true,
+    thirdPartyText: typeof raw?.thirdPartyText === "string" ? raw.thirdPartyText : "[선택] 개인정보 제3자 제공에 동의합니다",
+    thirdPartyBody: typeof raw?.thirdPartyBody === "string" ? raw.thirdPartyBody : "",
+    thirdPartyBodyMode: raw?.thirdPartyBodyMode === "link" ? "link" : "text",
+    thirdPartyLinkUrl: typeof raw?.thirdPartyLinkUrl === "string" ? raw.thirdPartyLinkUrl : "",
+    thirdPartyDefaultChecked: raw?.thirdPartyDefaultChecked === true,
     submitLabel: typeof raw?.submitLabel === "string" ? raw.submitLabel : "사전 등록하기",
     successCta: {
       enabled: successCtaRaw.enabled === true,

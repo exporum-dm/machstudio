@@ -47,7 +47,7 @@ const REGISTRATIONS = [
   {
     id: "r1", name: "설문·문의 다 한 사람", phone: "01011112222", email: "a@ex.com",
     company: "엑스포럼", department: "마케팅", jobTitle: "매니저", industry: "IT",
-    agreeMarketing: true, agreePrivacy: true, memo: "사전질문: 가격 정책 안내 부탁드립니다",
+    agreeMarketing: true, agreePrivacy: true, agreeThirdParty: true, memo: "사전질문: 가격 정책 안내 부탁드립니다",
     connectedSeconds: 3120, focusSeconds: 2800, stayMinutes: 52,
     isActive: false, submittedAt: "2026-08-18T02:00:00.000Z", enteredAt: "2026-08-20T05:01:00.000Z",
     lastPingAt: "2026-08-20T05:53:00.000Z",
@@ -58,7 +58,7 @@ const REGISTRATIONS = [
   {
     id: "r2", name: "설문만 한 사람", phone: "01033334444", email: "b@ex.com",
     company: "테스트컴퍼니", department: null, jobTitle: null, industry: null,
-    agreeMarketing: false, agreePrivacy: true, memo: null,
+    agreeMarketing: false, agreePrivacy: true, agreeThirdParty: false, memo: null,
     connectedSeconds: 600, focusSeconds: 500, stayMinutes: 10,
     isActive: false, submittedAt: "2026-08-19T02:00:00.000Z", enteredAt: "2026-08-20T05:02:00.000Z",
     lastPingAt: "2026-08-20T05:12:00.000Z",
@@ -69,7 +69,7 @@ const REGISTRATIONS = [
   {
     id: "r3", name: "아무것도 안 한 사람", phone: "01055556666", email: "c@ex.com",
     company: null, department: null, jobTitle: null, industry: null,
-    agreeMarketing: false, agreePrivacy: true, memo: null,
+    agreeMarketing: false, agreePrivacy: true, agreeThirdParty: false, memo: null,
     connectedSeconds: 0, focusSeconds: 0, stayMinutes: 0,
     isActive: false, submittedAt: "2026-08-19T03:00:00.000Z", enteredAt: null, lastPingAt: null,
     // 등록만 하고 입장 안 함
@@ -80,7 +80,7 @@ const REGISTRATIONS = [
     // 인터랙션 캡(30)에 걸린 사례 — 툴팁이 "(원점수 42, 30점에서 멈춤)" 을 밝히는지 확인용
     id: "r4", name: "질문 폭격기", phone: "01077778888", email: "d@ex.com",
     company: "아웃컴", department: null, jobTitle: "대표", industry: null,
-    agreeMarketing: true, agreePrivacy: true, memo: null,
+    agreeMarketing: true, agreePrivacy: true, agreeThirdParty: false, memo: null,
     connectedSeconds: 3600, focusSeconds: 3600, stayMinutes: 60,
     isActive: false, submittedAt: "2026-08-19T04:00:00.000Z", enteredAt: "2026-08-20T05:00:00.000Z",
     lastPingAt: "2026-08-20T06:00:00.000Z",

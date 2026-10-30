@@ -1222,6 +1222,8 @@ model WebinarRegistration {
   industry         String?
   agreeMarketing   Boolean   @default(false)
   agreePrivacy     Boolean   @default(true)
+  // CompetitionEntry.agreeThirdParty 와 같은 이유로 둔다 — 제3자 제공 동의를 쓰는 웨비나만 켠다.
+  agreeThirdParty  Boolean   @default(false)
   memo             String?
   enteredAt        DateTime?
   leftAt           DateTime?

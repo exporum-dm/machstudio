@@ -161,7 +161,7 @@ describe("문의 상태 라벨 — 세 곳이 같은 문자열을 쓴다", () =>
 const reg = (patch: Partial<CsvRegistrant> = {}): CsvRegistrant => ({
   id: "r1", name: "엄재호", phone: "01012345678", email: "a@b.com",
   company: "엑스포럼", department: null, jobTitle: null, industry: null,
-  agreeMarketing: true, submittedAt: "2026-08-20T05:00:00.000Z", enteredAt: null,
+  agreeMarketing: true, agreeThirdParty: false, submittedAt: "2026-08-20T05:00:00.000Z", enteredAt: null,
   memo: null, utmSource: null, utmMedium: null, utmCampaign: null,
   firstUtmSource: null, firstUtmMedium: null, firstUtmCampaign: null, referrer: null, ...patch,
 });
