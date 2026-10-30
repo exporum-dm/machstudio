@@ -119,6 +119,9 @@ export function mountLanding(opts: MountLandingOptions): LandingHandle {
       // 골라도 읽히게. CSS 의 모드 블록이 이 두 변수를 --paper 로 집어간다.
       "--paper-light": paperFor(m.lp.colors.lightBg),
       "--paper-dark": paperFor(m.lp.colors.darkBg),
+      // 히어로 커스텀 — 배경 스크림 세기(0~100 → 0~1 배율)와 대형 타이틀 자간(%).
+      "--lnd-hero-overlay": String(m.lp.heroOverlayOpacity / 100),
+      "--lnd-hero-tracking": String(m.lp.heroTitleTracking),
     },
     // 루트 모드 = 세션·타임테이블 구간의 바탕. 그 구간은 자기 배경을 칠하면
     // 키컬러 전환(.on-accent)이 가려지므로 루트가 칠한다.

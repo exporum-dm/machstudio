@@ -54,6 +54,10 @@ interface EditorState {
   subtitle: string;
   venue: string;
   ctaLabel: string;
+  /** 히어로 배경 미디어 위 어두운 스크림 세기(0~100) — 미디어가 있을 때만 의미가 있다. */
+  heroOverlayOpacity: number;
+  /** 히어로 대형 타이틀 자간(%) — 음수면 좁게. */
+  heroTitleTracking: number;
   intro: { enabled: boolean; title: string; body: string; titleMobile: string; bodyMobile: string };
   /** 라이트·다크 두 모드의 배경 키컬러 */
   colors: LandingColors;
@@ -66,7 +70,7 @@ interface EditorState {
   audience: { enabled: boolean; title: string; items: WithRowKey<LandingAudienceItem>[] };
   programs: { enabled: boolean; items: WithRowKey<LandingProgramItem>[] };
   highlights: { enabled: boolean; title: string; items: WithRowKey<LandingHighlightItem>[] };
-  join: { enabled: boolean; steps: WithRowKey<LandingJoinStep>[] };
+  join: { enabled: boolean; steps: WithRowKey<LandingJoinStep>[]; note: string };
   faq: { enabled: boolean; items: WithRowKey<LandingFaqItem>[] };
   /** 스폰서 — 최하단 로고 벽. 머리글은 행사마다 부르는 말이 달라 편집 가능하다. */
   sponsors: { enabled: boolean; title: string; items: WithRowKey<LandingSponsorItem>[] };
@@ -85,6 +89,8 @@ function toEditorState(config: Record<string, unknown>): EditorState {
     subtitle: lp.subtitle,
     venue: lp.venue,
     ctaLabel: lp.ctaLabel,
+    heroOverlayOpacity: lp.heroOverlayOpacity,
+    heroTitleTracking: lp.heroTitleTracking,
     intro: lp.intro,
     colors: lp.colors,
     sectionBg: lp.sectionBg,
@@ -113,6 +119,8 @@ function toConfigPayload(s: EditorState) {
     subtitle: s.subtitle,
     venue: s.venue,
     ctaLabel: s.ctaLabel,
+    heroOverlayOpacity: s.heroOverlayOpacity,
+    heroTitleTracking: s.heroTitleTracking,
     intro: s.intro,
     colors: s.colors,
     sectionBg: s.sectionBg,
@@ -453,7 +461,26 @@ export default function LandingPageTab({
               </div>
             </div>
             <div>
-              <label htmlFor={`${uid}-title`} className={labelCls}>대형 타이틀 (줄바꿈 = 줄 나눔)</label>
+              <div className="flex items-end justify-between gap-3">
+                <label htmlFor={`${uid}-title`} className={labelCls}>대형 타이틀 (줄바꿈 = 줄 나눔)</label>
+                <label htmlFor={`${uid}-title-tracking`} className="mb-1 flex items-center gap-1.5 text-[11px] text-muted-foreground whitespace-nowrap">
+                  자간
+                  <input
+                    id={`${uid}-title-tracking`}
+                    type="number"
+                    step={0.5}
+                    min={-20}
+                    max={20}
+                    value={state.heroTitleTracking}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      patch({ heroTitleTracking: Number.isFinite(n) ? Math.min(20, Math.max(-20, n)) : state.heroTitleTracking });
+                    }}
+                    className={`${inputCls} w-16 min-h-8 px-2 py-1 text-[11px] tabular-nums`}
+                  />
+                  %
+                </label>
+              </div>
               <textarea
                 id={`${uid}-title`}
                 className={`${inputCls} resize-none`}
@@ -462,6 +489,7 @@ export default function LandingPageTab({
                 onChange={(e) => patch({ titleText: e.target.value })}
                 placeholder={webinar.name}
               />
+              <p className="mt-1 text-[11px] text-muted-foreground">자간은 음수면 좁게, 양수면 넓게 — 기본값은 -5.5예요.</p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
@@ -534,14 +562,33 @@ export default function LandingPageTab({
                 )}
               </div>
               {state.heroMediaType !== "none" && state.heroMediaUrl.trim() && (
-                <div className={`mt-2 overflow-hidden rounded-xl bg-black/40 ${FINISH.s2}`}>
-                  {state.heroMediaType === "video" ? (
-                    <video src={state.heroMediaUrl} className="h-28 w-full object-cover" muted loop autoPlay playsInline />
-                  ) : (
-                    // eslint-disable-next-line @next/next/no-img-element -- 어드민 미리보기(임의 호스트 URL)
-                    <img src={transformedImageUrl(state.heroMediaUrl, IMAGE_PRESETS.adminHeroPreview)} alt="배경 미리보기" className="h-28 w-full object-cover" />
-                  )}
-                </div>
+                <>
+                  <div className={`mt-2 overflow-hidden rounded-xl bg-black/40 ${FINISH.s2}`}>
+                    {state.heroMediaType === "video" ? (
+                      <video src={state.heroMediaUrl} className="h-28 w-full object-cover" muted loop autoPlay playsInline />
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element -- 어드민 미리보기(임의 호스트 URL)
+                      <img src={transformedImageUrl(state.heroMediaUrl, IMAGE_PRESETS.adminHeroPreview)} alt="배경 미리보기" className="h-28 w-full object-cover" />
+                    )}
+                  </div>
+                  <div className="mt-2 flex items-center gap-2.5">
+                    <label htmlFor={`${uid}-hero-overlay`} className="shrink-0 text-xs text-muted-foreground">배경 어둡기</label>
+                    <input
+                      id={`${uid}-hero-overlay`}
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={state.heroOverlayOpacity}
+                      onChange={(e) => patch({ heroOverlayOpacity: Number(e.target.value) })}
+                      className="flex-1 accent-violet-500"
+                    />
+                    <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{state.heroOverlayOpacity}%</span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    글자가 배경 위에서 읽히도록 까는 어두운 막이에요 — 낮출수록 사진·영상이 밝게 보여요.
+                  </p>
+                </>
               )}
               <p className="mt-1 text-[11px] text-muted-foreground">
                 이미지 5MB·동영상 50MB까지. 없으면 키컬러 그라디언트가 배경이 돼요. 동영상은 자동재생·음소거·반복으로 깔려요.
@@ -765,6 +812,19 @@ export default function LandingPageTab({
                 </>
               )}
             />
+            <div>
+              <label htmlFor={`${uid}-join-note`} className={labelCls}>단계 아래 마감 안내 문구</label>
+              <input
+                id={`${uid}-join-note`}
+                className={inputCls}
+                value={state.join.note}
+                onChange={(e) => patch({ join: { ...state.join, note: e.target.value } })}
+                placeholder="라이브 시작 · 사전 등록 후 입장 안내를 보내드려요"
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                날짜·시각({state.join.enabled ? "예: 2026. 08. 11. (화) 14:00 KST" : "일정"})은 항상 자동으로 앞에 굵게 붙어요 — 여기는 그 뒤에 붙는 문구만 바꿔요.
+              </p>
+            </div>
           </SectionCard>
 
           {/* FAQ */}

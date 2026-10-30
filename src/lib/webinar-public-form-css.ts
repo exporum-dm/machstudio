@@ -30,8 +30,11 @@ export const PUBLIC_REGISTRATION_FORM_CSS = `
 .mw-check input:disabled { cursor:not-allowed; }
 .mw-check:has(input:disabled) { opacity:.45; cursor:not-allowed; }
 .mw-multi { display:flex; flex-direction:column; gap:2px; }
-.mw-multi .mw-check { margin-bottom:0; min-height:44px; align-items:flex-start; gap:10px; padding:12px 0; line-height:20px; }
-.mw-multi .mw-check input { margin-top:1px; }
+/* 체크박스 한 줄 — align-items:center 로 체크박스를 라벨 첫 줄 중앙에 맞춘다(flex-start 는
+   줄 높이·폰트에 따라 margin 이 미묘하게 어긋나 보일 수 있다). 행 높이는 36px 로, WCAG AA
+   최소 터치 타깃(24px)은 넉넉히 넘기면서도 예전(44px, AAA 기준)보다 조밀하게 훑힌다. */
+.mw-multi .mw-check { margin-bottom:0; min-height:36px; align-items:center; gap:10px; padding:8px 0; line-height:20px; }
+.mw-multi .mw-check input { margin:0; }
 .mw-multi .mw-input { margin-top:4px; }
 .mw-hint { margin-top:4px; color:color-mix(in srgb,var(--mw-text) 52%,transparent); font-size:11px; }
 .mw-submit { display:inline-flex; width:100%; min-height:46px; align-items:center; justify-content:center; margin-top:8px; padding:12px 18px; border:0; border-radius:9px; background:var(--mw-accent); color:var(--mw-on-accent); font:inherit; font-size:14px; font-weight:700; cursor:pointer; box-shadow:0 4px 16px color-mix(in srgb,var(--mw-accent) 28%,transparent); transition:transform .18s ease,opacity .18s ease,box-shadow .18s ease; }

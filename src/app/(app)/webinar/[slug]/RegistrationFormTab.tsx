@@ -164,17 +164,7 @@ function FieldCard({
               <OptionRows
                 listId={`reg-field-${field.id}`}
                 value={options}
-                onChange={(next) =>
-                  patch({
-                    /**
-                     * 복수 선택 답변은 ", " 로 합친 한 문자열로 저장된다(customFields JSON).
-                     * 선택지 문구에 쉼표가 있으면 그 항목은 읽을 때 둘로 쪼개져 **체크가 유지되지
-                     * 않는다** — 눌러도 안 켜지는 것처럼 보이고 원인이 화면에 드러나지 않는다.
-                     * 안내가 아니라 입력 시점에 막는다. 드롭다운(select)은 값이 하나라 무관.
-                     */
-                    options: field.type === "multiple" ? next.map((o) => o.replace(/,/g, " ")) : next,
-                  })
-                }
+                onChange={(next) => patch({ options: next })}
                 ownerLabel="필드"
                 ownerTitle={field.label}
               />
