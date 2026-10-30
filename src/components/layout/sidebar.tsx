@@ -700,7 +700,7 @@ export function Sidebar({ expoHomepageEnabled = false }: SidebarProps = {}) {
     <WorkspaceSettingsModal open={wsSettingsOpen} onClose={() => setWsSettingsOpen(false)} />
     <ProfileSettingsModal open={profileSettingsOpen} onClose={() => setProfileSettingsOpen(false)} />
     {apiTokensOpen && workspace && (
-      <ApiTokensModal workspaceId={workspace.id} onClose={() => setApiTokensOpen(false)} />
+      <ApiTokensModal workspaceId={workspace.id} projects={projects} onClose={() => setApiTokensOpen(false)} />
     )}
     {notifPrefsOpen && (
       <NotificationPrefsModal onClose={() => setNotifPrefsOpen(false)} />

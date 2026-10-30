@@ -23,6 +23,7 @@ interface Token {
 
 interface Props {
   workspaceId: string;
+  projects: { id: string; name: string }[];
   onClose: () => void;
 }
 
@@ -35,7 +36,7 @@ const SCOPES = [
   { id: "ads:read",        label: "광고 성과 조회" },
 ];
 
-export default function ApiTokensModal({ workspaceId, onClose }: Props) {
+export default function ApiTokensModal({ workspaceId, projects, onClose }: Props) {
   const publicOrigin = getPublicAppOrigin();
   const confirm = useConfirm();
   const [tokens, setTokens] = useState<Token[]>([]);
@@ -44,6 +45,19 @@ export default function ApiTokensModal({ workspaceId, onClose }: Props) {
   const [form, setForm] = useState({ name: "", scopes: ["dashboards:read", "ads:read"] as string[], expiresInDays: 90 });
   const [newToken, setNewToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [mcpProjectId, setMcpProjectId] = useState(projects[0]?.id ?? "");
+  const [mcpLinkCopied, setMcpLinkCopied] = useState(false);
+
+  const copyMcpLink = async () => {
+    if (!mcpProjectId) return;
+    try {
+      await navigator.clipboard.writeText(`${publicOrigin}/mcp/${mcpProjectId}`);
+      setMcpLinkCopied(true);
+      setTimeout(() => setMcpLinkCopied(false), 1500);
+    } catch {
+      toast.error("복사에 실패했어요");
+    }
+  };
 
   const fetchTokens = useCallback(async () => {
     setLoading(true);
@@ -132,10 +146,32 @@ export default function ApiTokensModal({ workspaceId, onClose }: Props) {
           <p className="text-xs text-muted-foreground">
             외부 도구와 AI가 Machstudio API·MCP를 읽을 때 사용합니다. 토큰은 발급 직후 한 번만 표시되니 안전한 곳에 저장하세요.
           </p>
-          <div className="rounded-xl bg-secondary/40 p-3 text-[11px] leading-5 text-muted-foreground">
+          <div className="rounded-xl bg-secondary/40 p-3 text-[11px] leading-5 text-muted-foreground space-y-2">
             <p><span className="font-medium text-foreground">REST API</span> · <code className="font-mono break-all">{publicOrigin}/api/v1/openapi.json</code></p>
-            <p><span className="font-medium text-foreground">원격 MCP</span> · <code className="font-mono break-all">{publicOrigin}/mcp</code></p>
-            <p>연결할 때 Authorization 헤더에 <code className="font-mono">Bearer xfp_...</code> 형식으로 토큰을 넣으세요.</p>
+            <p><span className="font-medium text-foreground">원격 MCP(워크스페이스 전체)</span> · <code className="font-mono break-all">{publicOrigin}/mcp</code></p>
+            {projects.length > 0 && (
+              <div>
+                <p className="font-medium text-foreground">원격 MCP(프로젝트 하나만 — Claude 커넥터에 이걸 쓰면 다른 프로젝트는 안 보여요)</p>
+                <div className="mt-1 flex items-center gap-1.5">
+                  <select
+                    value={mcpProjectId}
+                    onChange={(e) => setMcpProjectId(e.target.value)}
+                    className="rounded-md border border-border bg-background px-1.5 py-1 text-[11px] text-foreground"
+                  >
+                    {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                  <code className="flex-1 break-all">{publicOrigin}/mcp/{mcpProjectId}</code>
+                  <button
+                    onClick={copyMcpLink}
+                    className="shrink-0 rounded-md p-1 hover:bg-secondary text-muted-foreground transition-colors"
+                    aria-label="복사"
+                  >
+                    {mcpLinkCopied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                </div>
+              </div>
+            )}
+            <p>연결할 때 Authorization 헤더에 <code className="font-mono">Bearer xfp_...</code> 형식으로 토큰을 넣으세요. Claude 같은 OAuth 커넥터는 링크만 넣으면 로그인 화면이 떠요.</p>
           </div>
 
           <AnimatePresence>

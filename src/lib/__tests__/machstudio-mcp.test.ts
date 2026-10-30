@@ -15,6 +15,7 @@ vi.mock("@/lib/external-api-data", () => ({
 }));
 
 import { createMachstudioMcpServer } from "@/lib/machstudio-mcp";
+import { getApiDashboard } from "@/lib/external-api-data";
 
 const servers: Array<{ close(): Promise<void> }> = [];
 const clients: Array<{ close(): Promise<void> }> = [];
@@ -24,8 +25,8 @@ afterEach(async () => {
   await Promise.allSettled(servers.splice(0).map((server) => server.close()));
 });
 
-async function connect(scopes: string[]) {
-  const server = createMachstudioMcpServer({ workspaceId: "workspace-1", userId: "user-1", tokenId: "token-1", scopes });
+async function connect(scopes: string[], lockProjectId?: string) {
+  const server = createMachstudioMcpServer({ workspaceId: "workspace-1", userId: "user-1", tokenId: "token-1", scopes }, lockProjectId);
   const client = new Client({ name: "test-client", version: "1.0.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
@@ -52,5 +53,14 @@ describe("Machstudio MCP", () => {
     const ads = await client.callTool({ name: "get_ad_performance", arguments: { projectId: "project-1" } });
     expect(ads.isError).toBe(true);
     expect(ads.content).toContainEqual(expect.objectContaining({ text: expect.stringContaining("ads:read") }));
+  });
+
+  it("locked to one project — list_projects only shows it and other projectIds are ignored", async () => {
+    const client = await connect(["dashboards:read"], "project-1");
+    const projects = await client.callTool({ name: "list_projects", arguments: {} });
+    expect(projects.structuredContent).toMatchObject({ count: 1, projects: [{ id: "project-1" }] });
+
+    await client.callTool({ name: "get_dashboard_summary", arguments: { projectId: "some-other-project" } });
+    expect(vi.mocked(getApiDashboard)).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-1" }));
   });
 });
