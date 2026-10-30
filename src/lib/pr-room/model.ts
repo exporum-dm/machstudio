@@ -21,10 +21,14 @@ export interface ExcludedMentionRule { title:string; excerpt:string; source:stri
 
 export interface PressRelease {
   id: string;
-  type: "advance" | "opening" | "closing" | "statement";
+  /** archived = 실제로 배포·게재된 원고를 그대로 보관(생성기를 거치지 않음). */
+  type: "advance" | "opening" | "closing" | "statement" | "archived";
   title: string;
   body: string;
   updatedAt: string;
+  /** 언급 조사 결과에서 가져왔을 때의 출처 — 직접 작성·붙여넣기면 비워 둔다. */
+  sourceUrl?: string;
+  sourceOutlet?: string;
 }
 
 export interface PressAnswers {
@@ -101,7 +105,7 @@ export function parseClaudeResearch(value: string): ClaudeResearchMention[] {
   return rows;
 }
 
-const releaseLabel:Record<PressRelease["type"],string>={advance:"개최 예정",opening:"개막",closing:"성료",statement:"공식 입장"};
+export const releaseLabel:Record<PressRelease["type"],string>={advance:"개최 예정",opening:"개막",closing:"성료",statement:"공식 입장",archived:"아카이브"};
 
 export function buildPressRelease(type:PressRelease["type"],a:PressAnswers){
   const name=a.eventName.trim()||"행사";const label=releaseLabel[type];
