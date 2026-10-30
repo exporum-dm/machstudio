@@ -477,7 +477,7 @@ export default function PageSetupTab({
               {section === "landing" && (
                 <div className="lg:h-full overflow-auto">
                   <LandingPageTab
-                    webinar={{ id: webinar.id, slug: webinar.slug, name: webinar.name, description: webinar.description, config: webinar.config }}
+                    webinar={{ id: webinar.id, slug: webinar.slug, name: webinar.name, description: webinar.description, config: webinar.config, liveStartAt: webinar.liveStartAt }}
                     onSilentUpdate={onSilentUpdate}
                     onGoToSource={() => onSectionChange("source")}
                     onGoToDeploy={onJumpToTab ? () => onJumpToTab("deploy") : undefined}
