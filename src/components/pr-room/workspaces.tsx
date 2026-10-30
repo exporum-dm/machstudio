@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
+  Archive,
   Clipboard,
   ExternalLink,
   FileText,
@@ -16,6 +17,7 @@ import { Btn, Field, FINISH, R, Segmented } from "@/components/ui/primitives";
 import { api } from "@/components/brief/types";
 import {
   buildPressRelease,
+  releaseLabel,
   type PressAnswers,
   type PressRelease,
   type PrMention,
@@ -111,6 +113,30 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
     setData(await save(projectId,{mentions:mentions.filter(x=>x.id!==mention.id),excludedMentionUrls:[...new Set([...excluded,mention.url])],excludedMentionRules:[rule,...rules]}));
     toast.success("비슷한 조사 결과도 함께 제외하도록 기억했어요");
   };
+  /**
+   * 수집된 뉴스·보도 언급을 "보도자료" 탭의 아카이브(pressReleases)로 복사해 둔다.
+   * 기사 본문은 못 읽어 오므로(excerpt 는 메타 설명 요약뿐) 제목·요약·출처 링크까지만
+   * 옮긴다 — "어느 매체가 언제 다뤘는지" 레퍼런스로 쓰기엔 충분하고, 더 정확한 원문이
+   * 필요하면 '원문 보기' 링크를 그대로 들고 있다.
+   */
+  const archiveMention = async (mention: PrMention) => {
+    const existing = Array.isArray(data.room.pressReleases) ? (data.room.pressReleases as PressRelease[]) : [];
+    if (existing.some((r) => r.sourceUrl === mention.url)) {
+      toast.error("이미 아카이브에 저장된 언급이에요");
+      return;
+    }
+    const release: PressRelease = {
+      id: crypto.randomUUID(),
+      type: "archived",
+      title: mention.title,
+      body: mention.excerpt || mention.title,
+      updatedAt: new Date().toISOString(),
+      sourceUrl: mention.url,
+      sourceOutlet: mention.source,
+    };
+    setData(await save(projectId, { pressReleases: [release, ...existing] }));
+    toast.success("보도자료 아카이브에 저장했어요 — '보도자료' 탭에서 볼 수 있어요");
+  };
   const collect = async () => {
     setRunning(true);
     try {
@@ -199,6 +225,7 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
           canWrite={data.canWrite}
           patch={patchMention}
           exclude={excludeMention}
+          archive={archiveMention}
         />
       ) : tab === "response" ? (
         <ResponseList
@@ -220,11 +247,13 @@ function MentionList({
   canWrite,
   patch,
   exclude,
+  archive,
 }: {
   mentions: PrMention[];
   canWrite: boolean;
   patch: (id: string, p: Partial<PrMention>) => Promise<void>;
   exclude: (mention:PrMention) => Promise<void>;
+  archive: (mention: PrMention) => Promise<void>;
 }) {
   const [category, setCategory] = useState<"all" | "press" | "sns">("all");
   const shown = mentions
@@ -333,6 +362,12 @@ function MentionList({
                     <AlertTriangle className="h-4 w-4" />
                     {x.status === "issue" ? "해제" : "대응 필요"}
                   </Btn>
+                  {x.channel === "press" && (
+                    <Btn tone="ghost" onClick={() => archive(x)} aria-label="보도자료 아카이브에 저장">
+                      <Archive className="h-4 w-4" />
+                      아카이브에 저장
+                    </Btn>
+                  )}
                   <Btn tone="ghost" onClick={()=>exclude(x)} aria-label="이 조사 결과 제외"><Trash2 className="h-4 w-4"/>제외</Btn>
                 </div>
               )}
@@ -606,9 +641,9 @@ export function PressWorkspace({ projectId }: { projectId: string }) {
   const { data, setData, error, load } = useRoom(projectId);
   const [type, setType] = useState<PressRelease["type"]>("advance");
   const [answers, setAnswers] = useState<PressAnswers>(emptyAnswers);
-  const [draft, setDraft] = useState<{ title: string; body: string } | null>(
-    null,
-  );
+  const [draft, setDraft] = useState<
+    { title: string; body: string; sourceUrl?: string; sourceOutlet?: string } | null
+  >(null);
   if (error) return <ErrorState message={error} retry={load} />;
   if (!data) return <Loading />;
   const releases = (
@@ -624,6 +659,12 @@ export function PressWorkspace({ projectId }: { projectId: string }) {
       return toast.error("필수 질문 4개에 먼저 답해주세요");
     setDraft(buildPressRelease(type, answers));
   };
+  // 이미 완성된 원고(워드에서 작성한 것 등)를 그대로 붙여넣어 아카이브에 저장하는 경로 —
+  // 질문에 안 답해도 되고, 생성기를 거치지 않는다.
+  const startBlank = () => {
+    setType("archived");
+    setDraft({ title: "", body: "" });
+  };
   const saveRelease = async () => {
     if (!draft) return;
     const release: PressRelease = {
@@ -637,11 +678,19 @@ export function PressWorkspace({ projectId }: { projectId: string }) {
   };
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="text-lg font-semibold">보도자료 작성</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          확인된 사실만 질문에 답하면 배포 가능한 전체 원고로 정리합니다.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">보도자료 작성</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            확인된 사실만 질문에 답하면 배포 가능한 전체 원고로 정리합니다.
+          </p>
+        </div>
+        {/* 이미 완성된 원고(워드에서 쓴 것 등)는 질문 없이 바로 붙여넣어 아카이브할 수 있다 —
+            오른쪽 "저장한 보도자료" 목록에 같이 쌓인다. */}
+        <Btn tone="ghost" onClick={startBlank}>
+          <Archive className="h-4 w-4" />
+          완성된 원고 붙여넣기(아카이브)
+        </Btn>
       </div>
       <div className="grid gap-4 xl:grid-cols-[minmax(360px,0.85fr)_minmax(0,1.15fr)_280px]">
         <section className={`${R.panel} ${FINISH.s1} space-y-4 bg-card p-5`}>
@@ -659,6 +708,7 @@ export function PressWorkspace({ projectId }: { projectId: string }) {
               <option value="opening">개막 보도자료</option>
               <option value="closing">성료 보도자료</option>
               <option value="statement">공식 입장문</option>
+              <option value="archived">아카이브(실제 배포본)</option>
             </select>
           </label>
           {(Object.keys(questionLabels) as (keyof PressAnswers)[]).map(
@@ -687,7 +737,20 @@ export function PressWorkspace({ projectId }: { projectId: string }) {
           {draft ? (
             <>
               <div className="flex flex-wrap justify-between gap-2">
-                <h3 className="font-semibold">작성된 보도자료</h3>
+                <div>
+                  <h3 className="font-semibold">작성된 보도자료</h3>
+                  {draft.sourceUrl && (
+                    <a
+                      href={draft.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-violet-600"
+                    >
+                      {draft.sourceOutlet ? `${draft.sourceOutlet} 원문 보기` : "원문 보기"}
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                </div>
                 <Btn
                   tone="ghost"
                   onClick={() =>
@@ -704,11 +767,13 @@ export function PressWorkspace({ projectId }: { projectId: string }) {
                 className="mt-5"
                 value={draft.title}
                 onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+                placeholder="보도자료 제목"
               />
               <textarea
                 value={draft.body}
                 onChange={(e) => setDraft({ ...draft, body: e.target.value })}
                 className={`mt-3 min-h-[34rem] w-full bg-background p-4 text-sm leading-7 ${R.control}`}
+                placeholder="워드에서 작성한 본문을 그대로 붙여넣으세요"
               />
               <Btn
                 className="mt-3"
@@ -722,9 +787,9 @@ export function PressWorkspace({ projectId }: { projectId: string }) {
             </>
           ) : (
             <div className="flex min-h-96 items-center justify-center text-center text-sm text-muted-foreground">
-              왼쪽 질문에 답하고
+              왼쪽 질문에 답해 새로 쓰거나,
               <br />
-              ‘전체 원고 작성’을 눌러주세요.
+              위 ‘완성된 원고 붙여넣기’로 이미 있는 글을 저장하세요.
             </div>
           )}
         </section>
@@ -735,7 +800,7 @@ export function PressWorkspace({ projectId }: { projectId: string }) {
               key={x.id}
               onClick={() => {
                 setType(x.type);
-                setDraft({ title: x.title, body: x.body });
+                setDraft({ title: x.title, body: x.body, sourceUrl: x.sourceUrl, sourceOutlet: x.sourceOutlet });
               }}
               className={`${R.surface} block w-full bg-card p-3 text-left shadow-sm`}
             >
@@ -743,7 +808,8 @@ export function PressWorkspace({ projectId }: { projectId: string }) {
                 {x.title}
               </span>
               <span className="mt-1 block text-xs text-muted-foreground">
-                {new Date(x.updatedAt).toLocaleDateString("ko-KR")}
+                {releaseLabel[x.type] ?? "아카이브"} · {new Date(x.updatedAt).toLocaleDateString("ko-KR")}
+                {x.sourceOutlet ? ` · ${x.sourceOutlet}` : ""}
               </span>
             </button>
           ))}
