@@ -4,33 +4,42 @@
  * 시트 모양(2026-10-18): 행 = 날짜(date, NULL 이면 "먼 미래"), 열 = 공통(common) 또는 쓴 사람.
  * 시트처럼 팀원 누구나 다른 사람 칸에도 적고 고친다(2026-10-21). 칸 주인 = authorId, 실제로 적은 사람 = createdById.
  * POST 는 { items: [...] } 로 여러 줄을 한 번에 — 시트 칸을 통째로 붙여 넣을 때.
+ *
+ * 칸 주인 이름: 계정이 살아 있으면 지금 이름, 지워졌으면 줄에 적어 둔 authorName(2026-10-30).
+ * authorId 는 User 를 외래키로 물지 않는다 — 퇴사자 계정을 지워도 일지는 남아야 해서.
  */
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireWorkspaceMember } from "@/lib/workspace-access";
-import { isWorkStatus } from "@/lib/worklog";
+import { isValidDay, isWorkStatus } from "@/lib/worklog";
 
-const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
-const toDateValue = (v: unknown) => (typeof v === "string" && DAY_RE.test(v) && !Number.isNaN(Date.parse(v)) ? new Date(`${v}T00:00:00Z`) : null);
+const toDateValue = (v: unknown) => (isValidDay(v) ? new Date(`${v}T00:00:00Z`) : null);
 const text = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
 type EntryRow = {
-  id: string; groupId: string | null; authorId: string; createdById: string | null; date: Date | null; common: boolean; sortOrder: number;
+  id: string; groupId: string | null; authorId: string; authorName: string; createdById: string | null; date: Date | null; common: boolean; sortOrder: number;
   category: string; content: string; status: string; result: string; note: string; createdAt: Date; updatedAt: Date;
-  author: { name: string | null; email: string };
 };
 const displayName = (u: { name: string | null; email: string }) => u.name || u.email.split("@")[0];
-function serialize(e: EntryRow) {
+
+/** 칸 주인들의 지금 이름 — 한 번에 읽는다. 지워진 계정은 여기 없고, 줄에 적어 둔 이름으로 대신한다. */
+async function liveNames(ids: string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (unique.length === 0) return new Map();
+  const users = await prisma.user.findMany({ where: { id: { in: unique } }, select: { id: true, name: true, email: true } });
+  return new Map(users.map((u) => [u.id, displayName(u)]));
+}
+
+function serialize(e: EntryRow, names: Map<string, string>) {
   return {
-    id: e.id, groupId: e.groupId, authorId: e.authorId, authorName: displayName(e.author),
+    id: e.id, groupId: e.groupId, authorId: e.authorId, authorName: names.get(e.authorId) ?? (e.authorName || "떠난 팀원"),
     createdById: e.createdById,
     date: e.date ? e.date.toISOString().slice(0, 10) : null, common: e.common, sortOrder: e.sortOrder,
     category: e.category, content: e.content, status: e.status,
     result: e.result, note: e.note, createdAt: e.createdAt.toISOString(), updatedAt: e.updatedAt.toISOString(),
   };
 }
-const include = { author: { select: { name: true, email: true } } } as const;
 
 /** 칸 주인으로 지정할 사람 — 이 워크스페이스 멤버만. */
 async function memberIn(userId: unknown, workspaceId: string): Promise<string | null> {
@@ -66,7 +75,6 @@ export async function GET(request: Request) {
   const [entries, members] = await Promise.all([
     prisma.workEntry.findMany({
       where: { workspaceId: workspaceId!, AND: [{ OR: when }, ...who] },
-      include,
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     }),
     prisma.workspaceMember.findMany({
@@ -75,8 +83,9 @@ export async function GET(request: Request) {
       orderBy: { joinedAt: "asc" },
     }),
   ]);
+  const names = await liveNames(entries.map((e) => e.authorId));
   return NextResponse.json({
-    entries: entries.map(serialize),
+    entries: entries.map((e) => serialize(e, names)),
     members: members.map((m) => ({ id: m.userId, name: displayName(m.user) })),
     me: access.userId,
     isAdmin: access.isAdmin,
@@ -95,25 +104,46 @@ export async function POST(request: Request) {
   const items: ItemInput[] = batch ? (body.items as ItemInput[]).slice(0, 200) : [body];
   if (items.length === 0) return NextResponse.json({ entries: [] }, { status: 201 });
 
-  const rows = [];
+  const prepared: Array<{ item: ItemInput; date: Date | null; content: string }> = [];
   for (const item of items) {
     const date = dateField(item.date);
     const content = text(item.content, 2000);
     if (date === "invalid") return NextResponse.json({ error: "날짜를 확인해주세요" }, { status: 400 });
     if (!content) return NextResponse.json({ error: "내역을 입력해주세요" }, { status: 400 });
-    const groupId = await groupInWorkspace(item.groupId, workspaceId!);
-    if (groupId === "invalid") return NextResponse.json({ error: "행사를 찾을 수 없어요" }, { status: 400 });
+    if (item.groupId !== null && item.groupId !== "" && item.groupId !== undefined && typeof item.groupId !== "string") {
+      return NextResponse.json({ error: "행사를 찾을 수 없어요" }, { status: 400 });
+    }
+    prepared.push({ item, date, content });
+  }
+  const groupIds = [...new Set(items.flatMap((item) => (
+    typeof item.groupId === "string" && item.groupId ? [item.groupId] : []
+  )))];
+  const authorIds = [...new Set(items.flatMap((item) => (
+    typeof item.authorId === "string" && item.authorId ? [item.authorId] : []
+  )))];
+  const [validGroups, validMembers] = await Promise.all([
+    prisma.workGroup.findMany({ where: { workspaceId: workspaceId!, id: { in: groupIds } }, select: { id: true } }),
+    prisma.workspaceMember.findMany({ where: { workspaceId: workspaceId!, userId: { in: authorIds } }, select: { userId: true } }),
+  ]);
+  const groupSet = new Set(validGroups.map((g) => g.id));
+  const memberSet = new Set(validMembers.map((m) => m.userId));
+  const names = await liveNames([access.userId, ...memberSet]);
+
+  const rows = [];
+  for (const { item, date, content } of prepared) {
+    const groupId = typeof item.groupId === "string" && item.groupId ? item.groupId : null;
+    if (groupId && !groupSet.has(groupId)) return NextResponse.json({ error: "행사를 찾을 수 없어요" }, { status: 400 });
     // 다른 팀원 칸에 적으면 그 사람이 칸 주인 — 적은 사람은 createdById 로 남긴다.
-    const owner = (await memberIn(item.authorId, workspaceId!)) ?? access.userId;
+    const owner = typeof item.authorId === "string" && memberSet.has(item.authorId) ? item.authorId : access.userId;
     rows.push({
-      workspaceId: workspaceId!, authorId: owner, createdById: access.userId, date, groupId, content,
+      workspaceId: workspaceId!, authorId: owner, authorName: names.get(owner) ?? "", createdById: access.userId, date, groupId, content,
       common: item.common === true, sortOrder: num(item.sortOrder),
       category: text(item.category, 40), status: isWorkStatus(item.status) ? item.status : "planned",
       result: text(item.result, 1000), note: text(item.note, 1000),
     });
   }
-  const created = await prisma.$transaction(rows.map((data) => prisma.workEntry.create({ data, include })));
-  const entries = created.map(serialize);
+  const created = await prisma.$transaction(rows.map((data) => prisma.workEntry.create({ data })));
+  const entries = created.map((e) => serialize(e, names));
   return NextResponse.json(batch ? { entries } : { entry: entries[0] }, { status: 201 });
 }
 
@@ -155,13 +185,15 @@ export async function PATCH(request: Request) {
     if (!owner) return NextResponse.json({ error: "이 워크스페이스 멤버가 아니에요" }, { status: 400 });
     data.authorId = owner;
   }
+  // 칸 주인이 바뀌면 적어 두는 이름도 바꾼다(계정이 지워진 뒤에도 맞는 이름이 남게).
+  if (typeof data.authorId === "string") data.authorName = (await liveNames([data.authorId])).get(data.authorId) ?? "";
   if ("sortOrder" in body) data.sortOrder = num(body.sortOrder);
   if ("category" in body) data.category = text(body.category, 40);
   if ("status" in body && isWorkStatus(body.status)) data.status = body.status;
   if ("result" in body) data.result = text(body.result, 1000);
   if ("note" in body) data.note = text(body.note, 1000);
-  const entry = await prisma.workEntry.update({ where: { id: body.id }, data, include });
-  return NextResponse.json({ entry: serialize(entry) });
+  const entry = await prisma.workEntry.update({ where: { id: body.id }, data });
+  return NextResponse.json({ entry: serialize(entry, await liveNames([entry.authorId])) });
 }
 
 export async function DELETE(request: Request) {

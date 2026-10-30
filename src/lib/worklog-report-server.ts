@@ -66,10 +66,15 @@ export async function loadReportEntries(workspaceId: string, reportDate: string)
   const { last, next } = reportWindows(reportDate);
   const entries = await prisma.workEntry.findMany({
     where: { workspaceId, date: { gte: new Date(`${last.start}T00:00:00Z`), lte: new Date(`${next.end}T00:00:00Z`) } },
-    include: { author: { select: { name: true, email: true } } },
     orderBy: [{ date: "asc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
   });
-  const names = new Map(entries.map((e) => [e.authorId, e.author.name || e.author.email.split("@")[0]]));
+  // 지금 이름이 우선, 계정이 지워졌으면 줄에 적어 둔 이름(퇴사자 줄도 보고서에 남는다).
+  const users = await prisma.user.findMany({
+    where: { id: { in: [...new Set(entries.map((e) => e.authorId))] } },
+    select: { id: true, name: true, email: true },
+  });
+  const live = new Map(users.map((u) => [u.id, u.name || u.email.split("@")[0]]));
+  const names = new Map(entries.map((e) => [e.authorId, live.get(e.authorId) ?? (e.authorName || "떠난 팀원")]));
   const inputs: WorkEntryInput[] = entries.map((e) => ({
     id: e.id, groupId: e.groupId, authorId: e.authorId, date: day(e.date)!, common: e.common,
     // 시트처럼 취소선만 긋는다 — 안 그은 줄은 보고일 기준으로 진행/예정을 다시 정한다(미리 적어 둔 일이 날짜가 지나면 진행·이월).
@@ -78,7 +83,11 @@ export async function loadReportEntries(workspaceId: string, reportDate: string)
   return { entries: inputs, authorName: (id: string) => names.get(id) ?? "" };
 }
 
-export async function buildDraftReport(workspaceId: string, reportDate: string, opts: { metrics: boolean }): Promise<WeeklyReport> {
+export async function buildDraftReport(
+  workspaceId: string,
+  reportDate: string,
+  opts: { metrics: boolean; viewer: { userId: string; isAdmin: boolean } },
+): Promise<WeeklyReport> {
   const [groups, { entries, authorName }, [prev]] = await Promise.all([
     loadGroups(workspaceId), loadReportEntries(workspaceId, reportDate), loadPreviousReports(workspaceId, reportDate, 1),
   ]);
@@ -86,7 +95,16 @@ export async function buildDraftReport(workspaceId: string, reportDate: string, 
   const previous = prev && prev.reportDate >= shiftDay(reportDate, -13) ? prev.rows : undefined;
   const report = buildWeeklyReport({ reportDate, groups: toGroupInputs(groups), entries, authorName, previous });
   if (opts.metrics) {
-    const projectIds = [...new Set(groups.map((g) => g.projectId).filter((id): id is string => !!id))];
+    const linkedProjectIds = [...new Set(groups.map((g) => g.projectId).filter((id): id is string => !!id))];
+    let projectIds = linkedProjectIds;
+    if (!opts.viewer.isAdmin && linkedProjectIds.length) {
+      // 일반 멤버에게는 직접 참여한 프로젝트 숫자만 보여 준다.
+      const memberships = await prisma.projectMember.findMany({
+        where: { userId: opts.viewer.userId, projectId: { in: linkedProjectIds } },
+        select: { projectId: true },
+      });
+      projectIds = memberships.map((m) => m.projectId);
+    }
     const metrics = await weeklyMetrics(projectIds, report.lastWeek);
     // 같은 프로젝트에 행사가 여럿이면(LA·도쿄·파리) 지금 가장 가까운 행사 하나에만 붙인다 — 세 줄에 같은 숫자가 반복되면 읽는 사람이 더한다.
     const attached = new Set<string>();

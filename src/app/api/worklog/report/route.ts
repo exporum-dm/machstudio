@@ -10,13 +10,10 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
 import { requireWorkspaceMember } from "@/lib/workspace-access";
-import { defaultReportDate, kstToday, normalizeReportRows, reportSheetName, reportTable } from "@/lib/worklog";
+import { defaultReportDate, isValidDay, kstToday, normalizeReportRows, reportSheetName, reportTable } from "@/lib/worklog";
 import { buildReportWorkbook } from "@/lib/worklog-xlsx";
 import { buildDraftReport, loadSavedReport } from "@/lib/worklog-report-server";
 import { worklogAiAvailable } from "@/lib/worklog-ai";
-
-const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
-const validDay = (v: unknown): v is string => typeof v === "string" && DAY_RE.test(v) && !Number.isNaN(Date.parse(v));
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -24,11 +21,14 @@ export async function GET(request: Request) {
   const access = await requireWorkspaceMember(workspaceId);
   if ("error" in access) return NextResponse.json({ error: access.error }, { status: access.status });
   const dateParam = searchParams.get("date");
-  const reportDate = validDay(dateParam) ? dateParam : defaultReportDate(kstToday());
+  const reportDate = isValidDay(dateParam) ? dateParam : defaultReportDate(kstToday());
   const hideOwners = searchParams.get("hideOwners") === "1";
 
   const saved = searchParams.get("fresh") === "1" ? null : await loadSavedReport(workspaceId!, reportDate);
-  const report = saved?.report ?? (await buildDraftReport(workspaceId!, reportDate, { metrics: searchParams.get("metrics") === "1" }));
+  const report = saved?.report ?? (await buildDraftReport(workspaceId!, reportDate, {
+    metrics: searchParams.get("metrics") === "1",
+    viewer: { userId: access.userId, isAdmin: access.isAdmin },
+  }));
   const table = reportTable(report, { hideOwners });
 
   if (searchParams.get("format") === "xlsx") {
@@ -60,7 +60,7 @@ export async function PUT(request: Request) {
   const workspaceId = typeof body.workspaceId === "string" ? body.workspaceId : null;
   const access = await requireWorkspaceMember(workspaceId);
   if ("error" in access) return NextResponse.json({ error: access.error }, { status: access.status });
-  if (!validDay(body.date)) return NextResponse.json({ error: "보고일을 확인해주세요" }, { status: 400 });
+  if (!isValidDay(body.date)) return NextResponse.json({ error: "보고일을 확인해주세요" }, { status: 400 });
   const rows = normalizeReportRows(body.rows) as unknown as Prisma.InputJsonValue;
   const source = body.source === "ai" || body.source === "imported" ? body.source : "edited";
   const reportDate = new Date(`${body.date}T00:00:00Z`);
@@ -78,7 +78,7 @@ export async function DELETE(request: Request) {
   const access = await requireWorkspaceMember(workspaceId);
   if ("error" in access) return NextResponse.json({ error: access.error }, { status: access.status });
   const date = searchParams.get("date");
-  if (!validDay(date)) return NextResponse.json({ error: "보고일을 확인해주세요" }, { status: 400 });
+  if (!isValidDay(date)) return NextResponse.json({ error: "보고일을 확인해주세요" }, { status: 400 });
   await prisma.weeklyReport.deleteMany({ where: { workspaceId: workspaceId!, reportDate: new Date(`${date}T00:00:00Z`) } });
   return NextResponse.json({ ok: true });
 }

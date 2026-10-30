@@ -18,6 +18,7 @@ export default function GroupsTab({ workspaceId, groups, onChange }: { workspace
   const { projects } = useWorkspace();
   const confirm = useConfirm();
   const [name, setName] = useState("");
+  const [seeding, setSeeding] = useState(false);
   // 주간 보고와 같은 순서로 보여 준다 — 행사 날짜가 가까운 순(날짜 없는 행사·지난 행사는 아래).
   const sorted = orderGroupsForReport(groups, defaultReportDate(kstToday()));
   // 화살표는 날짜 없는 행사끼리만 의미가 있다(날짜 있는 행사는 날짜순으로 자리가 정해진다).
@@ -35,8 +36,14 @@ export default function GroupsTab({ workspaceId, groups, onChange }: { workspace
   };
 
   const seed = async () => {
-    const data = await call("POST", { workspaceId, seed: true });
-    if (data) { onChange(data.groups); toast.success("주간업무보고 양식의 행사를 불러왔어요 — 날짜·프로젝트를 확인해 주세요"); }
+    if (seeding) return;
+    setSeeding(true);
+    try {
+      const data = await call("POST", { workspaceId, seed: true });
+      if (data) { onChange(data.groups); toast.success("주간업무보고 양식의 행사를 불러왔어요 — 날짜·프로젝트를 확인해 주세요"); }
+    } finally {
+      setSeeding(false);
+    }
   };
   const add = async () => {
     if (!name.trim()) return;
@@ -73,7 +80,7 @@ export default function GroupsTab({ workspaceId, groups, onChange }: { workspace
       {groups.length === 0 && (
         <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border py-8 text-center">
           <p className="text-sm text-muted-foreground">아직 행사가 없어요</p>
-          <button onClick={() => void seed()} className={`flex items-center gap-1 bg-violet-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-600 ${R.control}`}>
+          <button onClick={() => void seed()} disabled={seeding} className={`flex items-center gap-1 bg-violet-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-600 disabled:cursor-not-allowed disabled:opacity-50 ${R.control}`}>
             <Download className="h-3 w-3" />주간업무보고 양식의 행사 불러오기
           </button>
           <p className="text-[11px] text-muted-foreground">X-Space · 코리아 엑스포 LA/도쿄/파리 · STK · 인디뷰티 서울 등 11개</p>

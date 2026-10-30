@@ -131,7 +131,11 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
   const load = useCallback(async () => {
     const entries = await fetchRange(rangeRef.current.from, rangeRef.current.to, true);
     if (!entries) { if (!linesRef.current.length) setLinesState([]); return; }
-    linesRef.current = entries.map((e) => ({ ...e, ck: e.id }));
+    const server = entries.map((e) => ({ ...e, ck: e.id }));
+    const serverIds = new Set(server.map((line) => line.id));
+    // 아직 POST가 끝나지 않은 줄은 서버 재조회 결과 뒤에 남겨 입력을 잃지 않는다.
+    const creatingLines = linesRef.current.filter((line) => line.temp && !serverIds.has(line.id));
+    linesRef.current = [...server, ...creatingLines];
     setLinesState(linesRef.current);
   }, [fetchRange]);
   useEffect(() => { void Promise.resolve().then(load); }, [load]);
@@ -311,7 +315,9 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.key.toLowerCase() !== "z") return;
-      if ((document.activeElement as HTMLElement | null)?.tagName === "TEXTAREA") return;
+      // 글을 쓰는 칸(내역·날짜·분류 등)에서는 그 칸의 되돌리기를 그대로 둔다 — 지운 줄이 대신 살아나지 않게.
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.isContentEditable || ["TEXTAREA", "INPUT", "SELECT"].includes(el.tagName))) return;
       const last = undoStack.current.pop();
       if (!last) return;
       e.preventDefault();

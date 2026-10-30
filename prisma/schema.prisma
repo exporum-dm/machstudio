@@ -40,7 +40,6 @@ model User {
   notificationPrefs    NotificationPref[]
   projectMemberships   ProjectMember[]
   adPerformanceImports AdPerformanceImportBatch[] @relation("AdPerformanceUploader")
-  workEntries          WorkEntry[]
   mediaAssets          MediaAsset[]
   oauthAuthorizationCodes OAuthAuthorizationCode[]
   oauthRefreshTokens      OAuthRefreshToken[]
@@ -910,7 +909,10 @@ model WorkEntry {
   id          String   @id @default(cuid())
   workspaceId String
   groupId     String?
+  /// 칸 주인. User 를 외래키로 물지 않는다 — 퇴사자 계정을 지워도 일지가 남아야 한다(2026-10-30).
   authorId    String
+  /// 칸 주인 이름(적을 때의 이름). 계정이 지워진 뒤에도 "누구 칸"인지 보이게. 화면은 살아 있는 이름을 먼저 쓴다.
+  authorName  String   @default("")
   /// NULL = 먼 미래(날짜 없이 미리 적어 둔 일). 주간 보고에서 빠진다.
   date        DateTime? @db.Date
   /// 시트의 "공통" 열 — 팀 전체 일. 누구나 고친다.
@@ -933,7 +935,6 @@ model WorkEntry {
 
   workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   group     WorkGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  author    User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, date])
   @@index([authorId, date])

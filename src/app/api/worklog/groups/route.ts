@@ -5,9 +5,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireWorkspaceMember } from "@/lib/workspace-access";
+import { isValidDay } from "@/lib/worklog";
 
-const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
-const dayOrNull = (v: unknown) => (typeof v === "string" && DAY_RE.test(v) && !Number.isNaN(Date.parse(v)) ? new Date(`${v}T00:00:00Z`) : null);
+const dayOrNull = (v: unknown) => (isValidDay(v) ? new Date(`${v}T00:00:00Z`) : null);
 const toDay = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
 
 /** dm-report-weekly-2026 시트(2026-10-16)의 행사 줄 — 프로젝트는 이름이 분명한 것만 잇는다. */
@@ -97,8 +97,19 @@ export async function PATCH(request: Request) {
     if (!name) return NextResponse.json({ error: "행사 이름을 입력해주세요" }, { status: 400 });
     data.name = name;
   }
-  if ("startDate" in body) data.startDate = dayOrNull(body.startDate);
-  if ("endDate" in body) data.endDate = dayOrNull(body.endDate);
+  // 비우기(null·"")는 지우고, 잘못된 날짜는 거절한다 — 조용히 null 로 바꾸면 기존 날짜가 사라진다.
+  if ("startDate" in body) {
+    if (typeof body.startDate === "string" && body.startDate !== "" && !isValidDay(body.startDate)) {
+      return NextResponse.json({ error: "시작일을 확인해주세요" }, { status: 400 });
+    }
+    data.startDate = dayOrNull(body.startDate);
+  }
+  if ("endDate" in body) {
+    if (typeof body.endDate === "string" && body.endDate !== "" && !isValidDay(body.endDate)) {
+      return NextResponse.json({ error: "종료일을 확인해주세요" }, { status: 400 });
+    }
+    data.endDate = dayOrNull(body.endDate);
+  }
   if ("projectId" in body) {
     const projectId = await projectInWorkspace(body.projectId, target.workspaceId);
     if (projectId === "invalid") return NextResponse.json({ error: "프로젝트를 찾을 수 없어요" }, { status: 400 });
