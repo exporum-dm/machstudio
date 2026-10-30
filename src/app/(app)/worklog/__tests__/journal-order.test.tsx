@@ -153,17 +153,14 @@ describe("일지 줄 지우기", () => {
 });
 
 describe("일지 줄 — Enter·Backspace", () => {
-  it("Enter 한 번으로 그 줄만 확정하고 끝낸다 — 새 빈 줄을 만들지 않는다", async () => {
+  it("Enter 한 번으로 확정하고 다음 빈 줄을 만든다(두 번 안 눌러도 된다)", async () => {
     mockApi([entry("a", "la", 1, "LA 배너")]);
     await renderTab();
-    const el = textareaFor("LA 배너");
-    act(() => { el.focus(); });
     const before = texts().length;
-    pressKey(el, "Enter");
+    pressKey(textareaFor("LA 배너"), "Enter");
     await flush();
-    expect(texts().length).toBe(before);
-    expect(texts()).toEqual(["LA 배너"]);
-    expect(document.activeElement).not.toBe(el);
+    expect(texts().length).toBe(before + 1);
+    expect(texts()).toEqual(expect.arrayContaining(["LA 배너", ""]));
   });
 
   it("빈 줄에서 Backspace 는 그 줄만 지우고 위 줄 글자는 그대로 둔다", async () => {

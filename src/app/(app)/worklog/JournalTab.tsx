@@ -4,8 +4,8 @@
  * 일지 — 시트(DM 업무 현황)처럼 쓴다(2026-10-18).
  *
  *  행 = 날짜(맨 위 "먼 미래", 미래가 위·과거가 아래 — 시트와 같은 순서), 열 = 공통 + 사람.
- *  "+ 적기"로 빈 줄을 만들어 바로 적고, Enter 한 번으로 그 줄만 확정하고 끝낸다(다음 줄을 만들지 않는다
- *  — 2026-10-30). ● 를 누르거나 Ctrl+Enter → 취소선(완료).
+ *  "+ 적기"로 빈 줄을 만들어 바로 적고, Enter 한 번으로 확정하면서 바로 아래에 새 빈 줄을 만든다(두 번 안 눌러도
+ *  된다 — 2026-10-30). ● 를 누르거나 Ctrl+Enter → 취소선(완료).
  *  "[LA] 배너 교체" 처럼 머리표로 시작하면 행사(아니면 분류)가 붙는다.
  *  시트 칸을 통째로 붙여 넣으면 줄마다 나뉜다(여러 줄을 한 번에 넣을 땐 이걸 쓴다). 줄을 끌어 다른 날·먼 미래·공통으로 옮긴다.
  *  한 칸 안에선 같은 행사 줄을 한 머리표 아래 모아 보이고, 끌어 놓거나 ⋯ · Alt+↑↓ 로 순서를 바꾼다(2026-10-29).
@@ -379,6 +379,17 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
     void update(ck, { content, ...(tags ?? {}) });
   };
 
+  /** Enter — 이 줄을 확정하고 바로 아래에 새 빈 줄을 만들어 포커스한다(같은 머리표를 이어받는다). */
+  const onEnter = (ck: string, raw: string) => {
+    const line = find(ck);
+    if (!line) return;
+    commit(ck, raw);
+    const { tag } = splitWorkTag(raw);
+    const tags = tag !== null ? resolveLineTag(tag, line) : { groupId: line.groupId, category: line.category };
+    const after = find(ck);
+    if (after && canCreateIn(colOf(after))) addDraft(rowOf(after), colOf(after), after, tags);
+  };
+
   const toggleDone = (ck: string) => {
     const line = find(ck);
     if (!line || !line.content) return;
@@ -566,7 +577,7 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
           </div>
         </div>
         <p className="hidden text-[11px] text-muted-foreground sm:block">
-          {savingKeys.size ? <span className="font-medium text-violet-600 dark:text-violet-400">저장 중…</span> : "Enter로 저장"} · <Kbd>Ctrl</Kbd>+<Kbd>Enter</Kbd> 또는 ● 완료 · <Kbd>Alt</Kbd>+<Kbd>↑↓</Kbd> 순서 · <Kbd>Ctrl</Kbd>+<Kbd>Z</Kbd> 지운 줄 되돌리기 · <code className="rounded bg-secondary px-1">[LA] 할 일</code> 로 행사 지정(<button onClick={onGoGroups} className="underline">행사 관리</button>)
+          {savingKeys.size ? <span className="font-medium text-violet-600 dark:text-violet-400">저장 중…</span> : "Enter로 저장 + 다음 줄"} · <Kbd>Ctrl</Kbd>+<Kbd>Enter</Kbd> 또는 ● 완료 · <Kbd>Alt</Kbd>+<Kbd>↑↓</Kbd> 순서 · <Kbd>Ctrl</Kbd>+<Kbd>Z</Kbd> 지운 줄 되돌리기 · <code className="rounded bg-secondary px-1">[LA] 할 일</code> 로 행사 지정(<button onClick={onGoGroups} className="underline">행사 관리</button>)
         </p>
       </div>
 
@@ -677,6 +688,7 @@ export default function JournalTab({ workspaceId, groups, onGoGroups }: { worksp
               onFocused={() => setFocus(null)}
               onCommit={(v) => commit(l.ck, v)}
               onCategory={(category) => void update(l.ck, { category })}
+              onEnter={(v) => onEnter(l.ck, v)}
               onToggle={() => toggleDone(l.ck)}
               onBackspaceEmpty={() => backspaceEmpty(l.ck)}
               onArrow={(dir) => neighbor(l.ck, dir)}
@@ -724,7 +736,7 @@ function RowHead({ day, today }: { day: string; today: string }) {
 }
 
 function LineRow({
-  line, header, editable, showAuthor, byline, focus, onFocused, onCommit, onCategory, onToggle, onBackspaceEmpty, onArrow, onPaste, onMenu, onDragStart, onDragEnd,
+  line, header, editable, showAuthor, byline, focus, onFocused, onCommit, onCategory, onEnter, onToggle, onBackspaceEmpty, onArrow, onPaste, onMenu, onDragStart, onDragEnd,
   acceptsDrop, onDropLine, onShift,
 }: {
   byline?: string | null;
@@ -736,6 +748,7 @@ function LineRow({
   onFocused: () => void;
   onCommit: (v: string) => void;
   onCategory: (category: string) => void;
+  onEnter: (v: string) => void;
   onToggle: () => void;
   onBackspaceEmpty: () => void;
   onArrow: (dir: -1 | 1) => void;
@@ -786,8 +799,7 @@ function LineRow({
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       if (!el.value.trim()) return;
-      // 이 줄만 확정하고 끝낸다 — 다음 빈 줄을 만들지 않는다. blur 가 onCommit 을 그대로 부른다.
-      el.blur();
+      onEnter(el.value);
       return;
     }
     if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
