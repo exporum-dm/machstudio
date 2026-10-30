@@ -28,7 +28,14 @@ export interface FaqViewCtx {
   onSelectCategory?: (category: string) => void;
 }
 
-/** ABOUT — 인트로 카피 + 스크롤 큐 */
+/**
+ * ABOUT — 인트로 카피 + 스크롤 큐.
+ *
+ * 제목·본문을 PC/모바일 두 벌로 그린다 — 줄바꿈이 필요한 위치가 폭에 따라 달라서(운영자가
+ * 직접 입력), 한쪽을 CSS 로 숨기고 미디어쿼리(≤760px, 타임테이블과 같은 기준점)로 바꿔 끼운다.
+ * 숨긴 쪽은 display:none 이라 접근성 트리·SEO 텍스트 중복이 없다(스크린리더가 안 읽는다).
+ * 모바일 문구를 안 쓴 웨비나는 모델에서 이미 PC 값으로 폴백돼 있어 두 블록이 같은 글자를 그린다.
+ */
 export function renderIntro(m: LandingModel): HTMLElement | null {
   if (!m.showIntro) return null;
   return h(
@@ -37,8 +44,19 @@ export function renderIntro(m: LandingModel): HTMLElement | null {
     h(
       "div",
       { class: "intro-copy rv" },
-      h("h2", { id: m.sectionId("lnd-about-title") }, m.introTitle),
-      m.introBody && h("p", null, m.introBody),
+      h(
+        "h2",
+        { id: m.sectionId("lnd-about-title") },
+        h("span", { class: "intro-pc" }, m.introTitle),
+        h("span", { class: "intro-mobile" }, m.introTitleMobile),
+      ),
+      (m.introBody || m.introBodyMobile) &&
+        h(
+          "p",
+          null,
+          m.introBody && h("span", { class: "intro-pc" }, m.introBody),
+          m.introBodyMobile && h("span", { class: "intro-mobile" }, m.introBodyMobile),
+        ),
     ),
     h("span", { class: "scroll-cue", "aria-hidden": "true" }),
   );

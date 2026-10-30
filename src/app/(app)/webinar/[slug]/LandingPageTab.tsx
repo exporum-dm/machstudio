@@ -54,7 +54,7 @@ interface EditorState {
   subtitle: string;
   venue: string;
   ctaLabel: string;
-  intro: { enabled: boolean; title: string; body: string };
+  intro: { enabled: boolean; title: string; body: string; titleMobile: string; bodyMobile: string };
   /** 라이트·다크 두 모드의 배경 키컬러 */
   colors: LandingColors;
   /** 섹션별 배경 모드 */
@@ -552,30 +552,57 @@ export default function LandingPageTab({
           {/* 소개 */}
           <SectionCard
             title="소개"
-            hint="히어로 다음의 한 문단 — 비우면 웨비나 설명이 그대로 들어가요."
+            hint="히어로 다음의 한 문단 — 비우면 웨비나 설명이 그대로 들어가요. PC·모바일은 줄바꿈이 필요한 위치가 다를 수 있어 따로 적어요(모바일 칸을 비우면 PC와 같은 문구가 나가요)."
             enabled={state.intro.enabled}
             onToggle={(v) => patch({ intro: { ...state.intro, enabled: v } })}
           >
-            <div>
-              <label htmlFor={`${uid}-intro-title`} className={labelCls}>제목</label>
-              <input
-                id={`${uid}-intro-title`}
-                className={inputCls}
-                value={state.intro.title}
-                onChange={(e) => patch({ intro: { ...state.intro, title: e.target.value } })}
-                placeholder={(webinar.description ?? "").split("\n")[0] || "소개 제목"}
-              />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor={`${uid}-intro-title`} className={labelCls}>제목 · PC (줄바꿈 = 줄 나눔)</label>
+                <textarea
+                  id={`${uid}-intro-title`}
+                  className={`${inputCls} resize-none`}
+                  rows={2}
+                  value={state.intro.title}
+                  onChange={(e) => patch({ intro: { ...state.intro, title: e.target.value } })}
+                  placeholder={(webinar.description ?? "").split("\n")[0] || "소개 제목"}
+                />
+              </div>
+              <div>
+                <label htmlFor={`${uid}-intro-title-mobile`} className={labelCls}>제목 · 모바일</label>
+                <textarea
+                  id={`${uid}-intro-title-mobile`}
+                  className={`${inputCls} resize-none`}
+                  rows={2}
+                  value={state.intro.titleMobile}
+                  onChange={(e) => patch({ intro: { ...state.intro, titleMobile: e.target.value } })}
+                  placeholder={state.intro.title || (webinar.description ?? "").split("\n")[0] || "소개 제목"}
+                />
+              </div>
             </div>
-            <div>
-              <label htmlFor={`${uid}-intro-body`} className={labelCls}>본문 (줄바꿈 유지)</label>
-              <textarea
-                id={`${uid}-intro-body`}
-                className={`${inputCls} resize-y`}
-                rows={3}
-                value={state.intro.body}
-                onChange={(e) => patch({ intro: { ...state.intro, body: e.target.value } })}
-                placeholder={webinar.description ?? ""}
-              />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor={`${uid}-intro-body`} className={labelCls}>본문 · PC (줄바꿈 유지)</label>
+                <textarea
+                  id={`${uid}-intro-body`}
+                  className={`${inputCls} resize-y`}
+                  rows={3}
+                  value={state.intro.body}
+                  onChange={(e) => patch({ intro: { ...state.intro, body: e.target.value } })}
+                  placeholder={webinar.description ?? ""}
+                />
+              </div>
+              <div>
+                <label htmlFor={`${uid}-intro-body-mobile`} className={labelCls}>본문 · 모바일 (줄바꿈 유지)</label>
+                <textarea
+                  id={`${uid}-intro-body-mobile`}
+                  className={`${inputCls} resize-y`}
+                  rows={3}
+                  value={state.intro.bodyMobile}
+                  onChange={(e) => patch({ intro: { ...state.intro, bodyMobile: e.target.value } })}
+                  placeholder={state.intro.body || webinar.description || ""}
+                />
+              </div>
             </div>
           </SectionCard>
 

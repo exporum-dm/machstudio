@@ -13,8 +13,11 @@ export interface PrMention {
   collectedAt: string;
   author?: string;
   metrics?: { views?:number; likes?:number; comments?:number; shares?:number; saves?:number };
-  origin?: "search" | "reference";
+  comments?: { author?:string; text:string; likes?:number }[];
+  origin?: "search" | "reference" | "naver-api";
 }
+
+export interface ExcludedMentionRule { title:string; excerpt:string; source:string; channel:PrMention["channel"] }
 
 export interface PressRelease {
   id: string;

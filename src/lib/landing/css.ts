@@ -375,6 +375,9 @@ export const LANDING_CSS = `
   font-size: clamp(15px, 1.8vw, 21px); line-height: 1.85; letter-spacing: -.02em;
   white-space: pre-line; word-break: keep-all;
 }
+/* PC·모바일 줄바꿈 위치가 달라야 할 때 운영자가 따로 쓴 문구 — 폭에 따라 한쪽만 보인다.
+   기준점은 .intro 가 레이아웃을 바꾸는 760px(아래 반응형 블록)과 같다. */
+.lnd .intro .intro-mobile { display: none; }
 .lnd .scroll-cue {
   position: absolute; left: 50%; bottom: 44px;
   width: 22px; height: 22px;
@@ -572,8 +575,12 @@ export const LANDING_CSS = `
 /* 아바타·이름(왼쪽) + 로고(오른쪽 끝). 좁은 화면에서 셋이 한 줄에 안 들어가면 줄바꿈하고,
    그때도 margin-left:auto 가 남아 로고는 자기 줄의 오른쪽에 붙는다. */
 .lnd .lnd-modal-speaker-head { display: flex; align-items: center; flex-wrap: wrap; gap: 13px; }
-/* 팝업 로고 — 어두운 글래스 배경이라 흰 판을 깐다(투명 PNG 가 대부분). */
-${sessionLogoCss(".lnd .lnd-modal-logo", { plate: true })}
+/* 팝업 로고 — 어두운 글래스 배경이라 흰 판을 깐다(투명 PNG 가 대부분). 여기선 로고가 한 번에
+   하나만 보이므로(타임테이블처럼 여러 줄이 나란히 맞아야 하는 자리가 아니다) 폭은 고정 슬롯이
+   아니라 로고 자체 비율대로 — fixedWidth:false 라 흰 판이 로고 크기에 꼭 맞게 줄어든다. */
+${sessionLogoCss(".lnd .lnd-modal-logo", { plate: true, fixedWidth: false })}
+/* margin-left:auto 로 줄의 오른쪽 끝까지 민다 — 판이 로고 크기로 줄어든 덕에 그 끝이
+   아래 약력 구분선(.lnd-modal-bio 의 border-top)과 같은 오른쪽 여백에서 맞아떨어진다. */
 .lnd .lnd-modal-logo { margin-left: auto; }
 .lnd .lnd-modal-avatar { width: 52px; height: 52px; border-radius: 999px; overflow: hidden; flex-shrink: 0; display: grid; place-items: center; background: var(--primary-soft, #2a3040); color: #fff; font-weight: 800; font-size: 20px; }
 .lnd .lnd-modal-avatar img { width: 100%; height: 100%; object-fit: cover; }
@@ -685,8 +692,12 @@ ${sessionLogoCss(".lnd .lnd-modal-logo", { plate: true })}
 .lnd .schedule-speaker .sep { opacity: .38; font-weight: 400; }
 .lnd .schedule-speaker .co { font-weight: 500; }
 /* 세션 로고 — 규격은 webinar-logo.ts 한 곳에서 온다(랜딩·대기·시청이 같은 크기여야 한다).
-   밝은 타임테이블 행에서는 흰 판을 끈다 — 흰 배경에 흰 판은 네모 테두리로만 보인다. */
-${sessionLogoCss(".lnd .schedule-logo")}
+   밝은 타임테이블 행에서는 흰 판을 끈다 — 흰 배경에 흰 판은 네모 테두리로만 보인다.
+   fixedWidth:false — 줄마다 로고가 하나씩이고 justify-content:space-between 으로 오른쪽
+   끝에 붙는다. 고정 슬롯(기본값)이면 로고 자체는 그 슬롯 왼쪽에 붙어 그려져서, 슬롯 오른쪽
+   끝은 줄마다 맞아도 **로고 모양**은 줄마다 다른 자리에서 끝나 보였다(실측 민원).
+   슬롯을 로고 크기로 줄이면 로고 자체의 오른쪽 끝이 슬롯 끝과 같아져 모든 줄이 맞는다. */
+${sessionLogoCss(".lnd .schedule-logo", { fixedWidth: false })}
 /* 펼침 영역 오른쪽 — 상세 본문과 나란히. flex:none 이라야 긴 본문에 눌려 찌그러지지 않는다. */
 .lnd .schedule-logo { flex: none; margin-top: 12px; }
 /* 반전된 휴식 행에서도 로고가 보이게 흰 판을 깐다(투명 PNG 가 대부분). */
@@ -897,6 +908,8 @@ ${sessionLogoCss(".lnd .schedule-logo")}
   .lnd .hero-cta { left: 50%; right: auto; bottom: 36px; width: min(100%, 320px); transform: translateX(-50%); }
   .lnd .hero-cta:hover { transform: translate(-50%, -2px); }
   .lnd .intro { min-height: 480px; padding-inline: 20px; }
+  .lnd .intro .intro-pc { display: none; }
+  .lnd .intro .intro-mobile { display: inline; }
   .lnd .scroll-cue { bottom: 28px; }
   .lnd .section { width: min(100% - 28px, var(--max)); }
   .lnd .session-cards { gap: 14px; }

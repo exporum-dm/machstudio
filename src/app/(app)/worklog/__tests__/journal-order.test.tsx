@@ -50,6 +50,11 @@ function mockApi(entries: WorkEntryDto[], opts: { deleteStatus?: number } = {}) 
       return new Response(JSON.stringify({ entry: { ...current, ...body } }), { status: 200 });
     }
     if (method === "DELETE") return new Response(JSON.stringify({ ok: opts.deleteStatus === undefined }), { status: opts.deleteStatus ?? 200 });
+    if (method === "POST") {
+      return new Response(JSON.stringify({
+        entry: { id: `new-${calls.length}`, authorName: "나", createdById: (body?.authorId as string | undefined) ?? "u1", createdAt: new Date().toISOString() },
+      }), { status: 200 });
+    }
     return new Response("{}", { status: 200 });
   }));
   return calls;
@@ -72,6 +77,11 @@ async function openMenu(content: string) {
   const row = [...todayCell().querySelectorAll("textarea")].find((t) => t.value === content)!.closest(".group\\/line")!;
   const btn = row.querySelector('button[aria-label="줄 설정"]') as HTMLButtonElement;
   act(() => { btn.click(); });
+}
+const textareaFor = (content: string) =>
+  [...todayCell().querySelectorAll("textarea")].find((t) => t.value === content) as HTMLTextAreaElement;
+function pressKey(el: EventTarget, key: string, opts: Partial<KeyboardEventInit> = {}) {
+  act(() => { el.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...opts })); });
 }
 const menuButton = (label: string) =>
   [...document.body.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === label || b.textContent?.trim() === label) as HTMLButtonElement;
@@ -126,5 +136,42 @@ describe("일지 줄 지우기", () => {
     act(() => { menuButton("지우기").click(); });
     await flush();
     expect(texts()).toEqual(["LA 배너"]);
+  });
+
+  it("Ctrl+Z 로 지운 줄을 되살린다", async () => {
+    const calls = mockApi([entry("a", "la", 1, "LA 배너"), entry("b", "la", 2, "LA 릴스")]);
+    await renderTab();
+    await openMenu("LA 릴스");
+    act(() => { menuButton("지우기").click(); });
+    await flush();
+    expect(texts()).toEqual(["LA 배너"]);
+    pressKey(window, "z", { ctrlKey: true });
+    await flush();
+    expect(texts()).toEqual(expect.arrayContaining(["LA 배너", "LA 릴스"]));
+    expect(calls.some((c) => c.method === "POST" && c.body?.content === "LA 릴스")).toBe(true);
+  });
+});
+
+describe("일지 줄 — Enter·Backspace", () => {
+  it("Enter 한 번으로 그 줄만 확정하고 끝낸다 — 새 빈 줄을 만들지 않는다", async () => {
+    mockApi([entry("a", "la", 1, "LA 배너")]);
+    await renderTab();
+    const el = textareaFor("LA 배너");
+    act(() => { el.focus(); });
+    const before = texts().length;
+    pressKey(el, "Enter");
+    await flush();
+    expect(texts().length).toBe(before);
+    expect(texts()).toEqual(["LA 배너"]);
+    expect(document.activeElement).not.toBe(el);
+  });
+
+  it("빈 줄에서 Backspace 는 그 줄만 지우고 위 줄 글자는 그대로 둔다", async () => {
+    const calls = mockApi([entry("a", "la", 1, "LA 배너"), entry("b", "la", 2, "")]);
+    await renderTab();
+    pressKey(textareaFor(""), "Backspace");
+    await flush();
+    expect(texts()).toEqual(["LA 배너"]);
+    expect(calls.some((c) => c.method === "DELETE" && c.url.includes("id=b"))).toBe(true);
   });
 });

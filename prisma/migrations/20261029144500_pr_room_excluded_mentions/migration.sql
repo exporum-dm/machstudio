@@ -1,0 +1,1 @@
+ALTER TABLE "PrRoom" ADD COLUMN "excludedMentionUrls" JSONB NOT NULL DEFAULT '[]';

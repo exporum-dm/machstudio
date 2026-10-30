@@ -700,6 +700,19 @@ ${ON_ACCENT_JS}  function theme() {
     mktLab.appendChild(consentSpan(form.marketingText || "[선택] 마케팅 정보 수신에 동의합니다", form.marketingBody || "", mktCb));
     formEl.appendChild(mktLab);
 
+    /* 제3자 제공 동의 — 쓰는 웨비나만(thirdPartyEnabled) 렌더한다. */
+    var tpCb = null;
+    if (form.thirdPartyEnabled === true) {
+      var tpLab = el("label", "mw-check");
+      tpCb = document.createElement("input");
+      tpCb.type = "checkbox";
+      tpCb.checked = form.thirdPartyDefaultChecked === true;
+      tpCb.setAttribute("data-mw-key", "__thirdParty");
+      tpLab.appendChild(tpCb);
+      tpLab.appendChild(consentSpan(form.thirdPartyText || "[선택] 개인정보 제3자 제공에 동의합니다", form.thirdPartyBody || "", tpCb));
+      formEl.appendChild(tpLab);
+    }
+
     /* 허니팟 — 화면 밖 배치, 봇만 채운다 */
     var hp = document.createElement("input");
     hp.type = "text";
@@ -758,6 +771,7 @@ ${ON_ACCENT_JS}  function theme() {
       payload.customFields = customBody;
       payload.agreePrivacy = true;
       payload.agreeMarketing = mktCb.checked;
+      payload.agreeThirdParty = tpCb ? tpCb.checked : false;
       payload._hp = hp.value || "";
       payload._utm = buildUtmEnvelope();
 

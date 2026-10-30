@@ -19,6 +19,7 @@ interface RegistrationInput {
   industry?: string | null;
   agreeMarketing?: boolean;
   agreePrivacy?: boolean;
+  agreeThirdParty?: boolean;
   memo?: string | null;
 }
 
@@ -84,6 +85,7 @@ function normalizeInput(input: RegistrationInput) {
     industry: clean(input.industry),
     agreeMarketing: Boolean(input.agreeMarketing),
     agreePrivacy: input.agreePrivacy !== false,
+    agreeThirdParty: Boolean(input.agreeThirdParty),
     memo: clean(input.memo),
   };
 }
@@ -197,7 +199,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       // UI(RegistrantsTab)가 쓰는 필드만 — journey JSON·userAgent·UTM 12컬럼 등 미사용 컬럼 전송 방지(페이지당 최대 200행).
       select: {
         id: true, name: true, phone: true, email: true, company: true, department: true,
-        jobTitle: true, industry: true, agreeMarketing: true, agreePrivacy: true, memo: true,
+        jobTitle: true, industry: true, agreeMarketing: true, agreePrivacy: true, agreeThirdParty: true, memo: true,
         connectedSeconds: true, focusSeconds: true, stayMinutes: true,
         isActive: true, submittedAt: true, enteredAt: true, lastPingAt: true, presencePingAt: true,
         // 유입 경로 — 상세 패널이 "이 리드가 어디서 왔나" 를 보여준다(저장만 하고 화면엔 없던 값).

@@ -87,6 +87,9 @@ export interface LandingModel {
   statusInfo: LandingStatusInfo;
   introTitle: string;
   introBody: string;
+  /** 모바일 뷰포트에서 보여줄 문구 — 폴백은 모델에서 끝난다(비면 introTitle/introBody 와 같다). */
+  introTitleMobile: string;
+  introBodyMobile: string;
   sessionCards: LandingSession[];
   timetableRows: LandingSession[];
   faqCategories: string[];

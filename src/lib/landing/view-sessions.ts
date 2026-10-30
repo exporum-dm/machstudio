@@ -325,11 +325,13 @@ export function createSessionDialog(
           h(
             "div",
             { class: "lnd-modal-speaker-head" },
-            hasSpeakerInfo &&
+            // 큰 연사 사진(lnd-modal-photo)이 이미 왼쪽에 떠 있으면 이 줄의 작은 사진은 중복이다
+            // — photo 가 있을 땐 아바타 자체를 생략한다(사진이 없을 때만 이름 이니셜로 자리를 채운다).
+            hasSpeakerInfo && !photo &&
               h(
                 "span",
                 { class: "lnd-modal-avatar", "aria-hidden": "true" },
-                photo ? h("img", { src: transformedImageUrl(photo, IMAGE_PRESETS.modalAvatar), alt: "" }) : sp.name.trim().charAt(0) || "·",
+                sp.name.trim().charAt(0) || "·",
               ),
             hasSpeakerInfo &&
               h(

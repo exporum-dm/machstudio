@@ -97,6 +97,17 @@ export interface WebinarRegistrationFormConfig {
   /** 폼 진입 시 동의 체크박스를 기본으로 체크해둘지 — 사용자가 직접 만지면 그 값이 우선한다 */
   privacyDefaultChecked: boolean;
   marketingDefaultChecked: boolean;
+  /**
+   * 개인정보 제3자 제공 동의 — 대회 신청 폼(competition-config.ts)과 같은 이유로 기본 꺼짐이다.
+   * privacy/marketing 과 달리 **쓰는 웨비나만** 켠다(제공받는 제3자가 없으면 문구 자체가 거짓이
+   * 된다) — 그래서 이 항목만 enabled 토글을 따로 둔다.
+   */
+  thirdPartyEnabled: boolean;
+  thirdPartyText: string;
+  thirdPartyBody: string;
+  thirdPartyBodyMode: "text" | "link";
+  thirdPartyLinkUrl: string;
+  thirdPartyDefaultChecked: boolean;
   submitLabel: string;
   successCta: WebinarLinkCtaConfig;
   /**
@@ -403,7 +414,15 @@ export interface LandingPageConfig {
   colors: LandingColors;
   /** 섹션별 배경 모드 */
   sectionBg: LandingSectionBgMap;
-  intro: { enabled: boolean; title: string; body: string };
+  intro: {
+    enabled: boolean;
+    title: string;
+    body: string;
+    /** 모바일 전용 제목 — 비우면 title 을 그대로 쓴다(PC·모바일 줄바꿈 위치가 달라야 할 때만 채운다). */
+    titleMobile: string;
+    /** 모바일 전용 본문 — 비우면 body 를 그대로 쓴다. */
+    bodyMobile: string;
+  };
   /** detailPopup: 세션 카드 클릭 시 연사 상세(주제·내용·사진·소속·약력) 팝업 열기 */
   sessions: { enabled: boolean; detailPopup: boolean };
   timetable: { enabled: boolean };
@@ -556,7 +575,13 @@ export function normalizeLandingPageConfig(
       acc[s.key] = sectionBg[s.key] === "light" ? "light" : fallback;
       return acc;
     }, {} as LandingSectionBgMap),
-    intro: { enabled: bool(intro.enabled, true), title: str(intro.title), body: str(intro.body) },
+    intro: {
+      enabled: bool(intro.enabled, true),
+      title: str(intro.title),
+      body: str(intro.body),
+      titleMobile: str(intro.titleMobile),
+      bodyMobile: str(intro.bodyMobile),
+    },
     sessions: { enabled: bool(obj(lp.sessions).enabled, true), detailPopup: bool(obj(lp.sessions).detailPopup, true) },
     timetable: { enabled: bool(obj(lp.timetable).enabled, true) },
     audience: {
@@ -745,6 +770,12 @@ export function normalizeRegistrationForm(
     marketingLinkUrl: typeof raw?.marketingLinkUrl === "string" ? raw.marketingLinkUrl : "",
     privacyDefaultChecked: raw?.privacyDefaultChecked === true,
     marketingDefaultChecked: raw?.marketingDefaultChecked === true,
+    thirdPartyEnabled: raw?.thirdPartyEnabled === true,
+    thirdPartyText: typeof raw?.thirdPartyText === "string" ? raw.thirdPartyText : "[선택] 개인정보 제3자 제공에 동의합니다",
+    thirdPartyBody: typeof raw?.thirdPartyBody === "string" ? raw.thirdPartyBody : "",
+    thirdPartyBodyMode: raw?.thirdPartyBodyMode === "link" ? "link" : "text",
+    thirdPartyLinkUrl: typeof raw?.thirdPartyLinkUrl === "string" ? raw.thirdPartyLinkUrl : "",
+    thirdPartyDefaultChecked: raw?.thirdPartyDefaultChecked === true,
     submitLabel: typeof raw?.submitLabel === "string" ? raw.submitLabel : "사전 등록하기",
     successCta: {
       enabled: successCtaRaw.enabled === true,

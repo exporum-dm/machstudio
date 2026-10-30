@@ -138,6 +138,10 @@ export function buildLandingModel(webinar: LandingWebinar, opts: BuildLandingMod
   const descLines = (webinar.description ?? "").split("\n");
   const introBodyDefault = (descLines[0]?.trim() === introTitle.trim() ? descLines.slice(1) : descLines).join("\n").trim();
   const introBody = lp.intro.body.trim() || introBodyDefault;
+  // 모바일 전용 문구는 PC·모바일에서 줄바꿈 위치가 달라야 할 때만 따로 채운다 — 비어 있으면
+  // PC 값을 그대로 물려받는다(기존 웨비나가 모바일 칸을 안 써도 지금 화면 그대로 보이게).
+  const introTitleMobile = lp.intro.titleMobile.trim() || introTitle;
+  const introBodyMobile = lp.intro.bodyMobile.trim() || introBody;
 
   const showIntro = lp.intro.enabled && Boolean(introTitle || introBody);
   const showAudience = lp.audience.enabled && lp.audience.items.length > 0;
@@ -204,6 +208,8 @@ export function buildLandingModel(webinar: LandingWebinar, opts: BuildLandingMod
     statusInfo,
     introTitle,
     introBody,
+    introTitleMobile,
+    introBodyMobile,
     sessionCards,
     timetableRows,
     faqCategories,

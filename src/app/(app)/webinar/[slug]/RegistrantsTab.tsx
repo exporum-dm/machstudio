@@ -73,6 +73,7 @@ interface Registration {
   industry: string | null;
   agreeMarketing: boolean;
   agreePrivacy: boolean;
+  agreeThirdParty: boolean;
   memo: string | null;
   stayMinutes: number;
   connectedSeconds: number;
@@ -140,6 +141,7 @@ interface RegistrationDraft {
 
 interface RegistrationDetailDraft extends RegistrationDraft {
   agreePrivacy: boolean;
+  agreeThirdParty: boolean;
 }
 
 const emptyDraft: RegistrationDraft = {
@@ -748,6 +750,7 @@ export default function RegistrantsTab({ webinarId }: { webinarId: string }) {
       industry: registration.industry ?? "",
       agreeMarketing: registration.agreeMarketing,
       agreePrivacy: registration.agreePrivacy,
+      agreeThirdParty: registration.agreeThirdParty,
       // memo 컬럼은 { memo, customFields } JSON 이다 — 편집 칸에는 운영자 메모(note)만 넣는다.
       // 예전엔 JSON 원문이 그대로 들어가 저장 시 커스텀 답변까지 덮어썼다.
       memo: parseMemo(registration.memo).note,
@@ -1275,6 +1278,10 @@ export default function RegistrantsTab({ webinarId }: { webinarId: string }) {
                 <label className="flex items-center gap-2 text-sm text-muted-foreground">
                   <input type="checkbox" checked={detailDraft.agreePrivacy} onChange={(e) => setDetailDraft((p) => p ? { ...p, agreePrivacy: e.target.checked } : p)} className="accent-violet-500" />
                   개인정보 수집 동의
+                </label>
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <input type="checkbox" checked={detailDraft.agreeThirdParty} onChange={(e) => setDetailDraft((p) => p ? { ...p, agreeThirdParty: e.target.checked } : p)} className="accent-violet-500" />
+                  개인정보 제3자 제공 동의
                 </label>
               </div>
 

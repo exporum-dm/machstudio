@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { analyzeMention, buildPressRelease, isCollectionDue } from "../model";
-import { extractReferenceLinks, isRelevantMention, parseNaverNews, parseSocialPage } from "../collect";
+import { isRelevantMention, isSimilarToExcluded, parseNaverNews, parseSocialPage, publicComments } from "../collect";
 
 describe("홍보실 조사", () => {
   it("설정한 주기가 지난 경우에만 조사한다", () => {
@@ -11,15 +11,24 @@ describe("홍보실 조사", () => {
   it("부정 이슈를 보수적으로 올린다", () => expect(analyzeMention("운영 부실 논란")).toMatchObject({ sentiment: "negative", status: "issue" }));
 });
 
-it("참고 문서의 SNS 링크와 인스타 반응 수치를 읽는다",()=>{
-  expect(extractReferenceLinks('x https://www.instagram.com/p/ABC123/ y')).toEqual(["https://www.instagram.com/p/ABC123/"]);
+it("인스타 반응 수치를 읽는다",()=>{
   expect(parseSocialPage("https://www.instagram.com/p/ABC123/",'<meta property="og:description" content="99 likes, 3 comments - koreaexpo_global on October 25, 2026: &quot;Korea Expo LA highlights&quot;.">')).toMatchObject({author:"koreaexpo_global",metrics:{likes:99,comments:3}});
+});
+
+it("공개 댓글을 작성자와 좋아요 수까지 읽는다",()=>{
+  expect(publicComments('{"text":"Great event!","username":"visitor","comment_like_count":4}')).toEqual([{text:"Great event!",author:"visitor",likes:4}]);
 });
 
 it("행사명이 없는 비슷한 축제 결과는 제외한다",()=>{
   const queries=["코리아 엑스포 LA","Korea Expo LA","Korea Expo"];
   expect(isRelevantMention("Korea Expo LA 2026 Day 2",queries)).toBe(true);
   expect(isRelevantMention("Food and Art Festival 2026 Suncheon",queries)).toBe(false);
+});
+
+it("제외한 오탐과 주제가 비슷한 새 결과도 제외한다",()=>{
+  const rules=[{title:"순천 푸드앤아트 페스티벌 무료 체험",excerpt:"순천만 국가정원 축제",source:"TikTok",channel:"sns" as const}];
+  expect(isSimilarToExcluded({title:"순천 푸드앤아트 페스티벌 프로그램 안내",excerpt:"순천만 국가정원에서 진행",channel:"sns"},rules,["코리아 엑스포 LA"])).toBe(true);
+  expect(isSimilarToExcluded({title:"코리아 엑스포 LA K뷰티 개막",excerpt:"미국 바이어 상담",channel:"sns"},rules,["코리아 엑스포 LA"])).toBe(false);
 });
 
 it("질문 답변으로 보도자료 전체 원고를 만든다",()=>{
@@ -29,7 +38,7 @@ it("질문 답변으로 보도자료 전체 원고를 만든다",()=>{
 
 describe("네이버 뉴스 검색",()=>{
   it("검색 결과 링크와 제목을 읽는다",()=>{
-    const rows=parseNaverNews('<a href="https://news.example.com/1"><b>코리아 엑스포 LA</b> 성료 보도자료 새 창 열림</a>');
-    expect(rows[0]).toMatchObject({title:"코리아 엑스포 LA 성료 보도자료",source:"네이버 뉴스"});
+    const rows=parseNaverNews('<a href="https://news.example.com/1" data-heatmap-target=".tit"><span class="sds-comps-text sds-comps-text-type-headline1"><mark>코리아 엑스포 LA</mark> &#039;성료&#039;</span><span>새 창 열림</span></a><a href="https://news.example.com/1" data-heatmap-target=".body"><span>본문 요약</span></a>');
+    expect(rows).toHaveLength(1);expect(rows[0]).toMatchObject({title:"코리아 엑스포 LA '성료'",source:"네이버 뉴스"});
   });
 });
