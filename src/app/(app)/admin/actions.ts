@@ -286,6 +286,11 @@ export async function deleteUserAction(formData: FormData) {
 
   await prisma.$transaction([
     ...logWrites,
+    // 업무일지는 계정과 함께 지우지 않는다 — 칸에 보일 이름만 지금 이름으로 맞춰 두고 남긴다(2026-10-30).
+    prisma.workEntry.updateMany({
+      where: { authorId: targetUserId },
+      data: { authorName: targetUser.name || targetUser.email.split("@")[0] },
+    }),
     prisma.user.delete({ where: { id: targetUserId } }),
   ]);
 

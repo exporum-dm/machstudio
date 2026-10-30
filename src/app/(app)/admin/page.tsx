@@ -890,7 +890,7 @@ export default async function SuperAdminPage({ searchParams }: { searchParams?: 
                             <div>
                               <h4 className="text-xs font-semibold text-muted-foreground">삭제 전 확인</h4>
                               <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                                앱 데이터 + Supabase Auth 계정이 함께 삭제됩니다. 되돌릴 수 없습니다.
+                                앱 데이터 + Supabase Auth 계정이 함께 삭제됩니다(업무일지는 이름과 함께 남아요). 되돌릴 수 없습니다.
                               </p>
                               <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                                 <span>UTM {adminUser._count.utmLinks}</span>

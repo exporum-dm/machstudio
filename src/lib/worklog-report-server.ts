@@ -66,10 +66,15 @@ export async function loadReportEntries(workspaceId: string, reportDate: string)
   const { last, next } = reportWindows(reportDate);
   const entries = await prisma.workEntry.findMany({
     where: { workspaceId, date: { gte: new Date(`${last.start}T00:00:00Z`), lte: new Date(`${next.end}T00:00:00Z`) } },
-    include: { author: { select: { name: true, email: true } } },
     orderBy: [{ date: "asc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
   });
-  const names = new Map(entries.map((e) => [e.authorId, e.author.name || e.author.email.split("@")[0]]));
+  // 지금 이름이 우선, 계정이 지워졌으면 줄에 적어 둔 이름(퇴사자 줄도 보고서에 남는다).
+  const users = await prisma.user.findMany({
+    where: { id: { in: [...new Set(entries.map((e) => e.authorId))] } },
+    select: { id: true, name: true, email: true },
+  });
+  const live = new Map(users.map((u) => [u.id, u.name || u.email.split("@")[0]]));
+  const names = new Map(entries.map((e) => [e.authorId, live.get(e.authorId) ?? (e.authorName || "떠난 팀원")]));
   const inputs: WorkEntryInput[] = entries.map((e) => ({
     id: e.id, groupId: e.groupId, authorId: e.authorId, date: day(e.date)!, common: e.common,
     // 시트처럼 취소선만 긋는다 — 안 그은 줄은 보고일 기준으로 진행/예정을 다시 정한다(미리 적어 둔 일이 날짜가 지나면 진행·이월).
