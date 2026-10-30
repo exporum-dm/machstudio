@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { analyzeMention, buildPressRelease, isCollectionDue } from "../model";
+import { analyzeMention, buildClaudeResearchPrompt, buildPressRelease, parseClaudeResearch } from "../model";
 import { isRelevantMention, isSimilarToExcluded, parseNaverNews, parseSocialPage, publicComments } from "../collect";
 
 describe("홍보실 조사", () => {
-  it("설정한 주기가 지난 경우에만 조사한다", () => {
-    const now = new Date("2026-10-29T00:00:00Z");
-    expect(isCollectionDue({ collectEveryDays: 3, lastCollectedAt: "2026-10-26T00:00:00Z" }, now)).toBe(true);
-    expect(isCollectionDue({ collectEveryDays: 3, lastCollectedAt: "2026-10-27T00:00:00Z" }, now)).toBe(false);
-  });
   it("부정 이슈를 보수적으로 올린다", () => expect(analyzeMention("운영 부실 논란")).toMatchObject({ sentiment: "negative", status: "issue" }));
+});
+
+it("Claude 조사문과 결과 가져오기를 왕복한다", () => {
+  expect(buildClaudeResearchPrompt({ eventNames: ["코리아 엑스포 LA"], lastCollectedAt: null })).toContain("코리아 엑스포 LA");
+  expect(parseClaudeResearch('```json\n[{"title":"행사 개막","url":"https://example.com/post","source":"Example","channel":"press","publishedAt":"2026-10-30"}]\n```')).toMatchObject([{ title: "행사 개막", url: "https://example.com/post", channel: "press" }]);
 });
 
 it("인스타 반응 수치를 읽는다",()=>{

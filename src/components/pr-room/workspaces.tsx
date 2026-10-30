@@ -16,7 +16,10 @@ import { toast } from "sonner";
 import { Btn, Field, FINISH, R, Segmented } from "@/components/ui/primitives";
 import { api } from "@/components/brief/types";
 import {
+  analyzeMention,
+  buildClaudeResearchPrompt,
   buildPressRelease,
+  parseClaudeResearch,
   releaseLabel,
   type PressAnswers,
   type PressRelease,
@@ -26,8 +29,8 @@ import {
 
 interface Room {
   id: string;
-  collectEveryDays: number;
   lastCollectedAt: string | null;
+  project: { name: string };
   keywords: unknown;
   referenceUrls: unknown;
   excludedMentionUrls: unknown;
@@ -45,9 +48,6 @@ const dateTime = (value: string | null) =>
         timeStyle: "short",
       })
     : "아직 조사 전";
-const nextCollection = (value: string | null, days: number) =>
-  value ? dateTime(new Date(new Date(value).getTime() + days * 86_400_000).toISOString()) : "첫 조사 후 계산";
-
 function useRoom(projectId: string) {
   const [data, setData] = useState<Loaded | null>(null);
   const [error, setError] = useState("");
@@ -92,7 +92,7 @@ async function save(projectId: string, body: Record<string, unknown>) {
 export function MentionWorkspace({ projectId }: { projectId: string }) {
   const { data, setData, error, load } = useRoom(projectId);
   const [tab, setTab] = useState<
-    "mentions" | "response" | "report" | "settings"
+    "mentions" | "ai" | "response" | "report" | "settings"
   >("mentions");
   const [running, setRunning] = useState(false);
   const [runSummary, setRunSummary] = useState("");
@@ -178,14 +178,16 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
             조사 결과 기준 · {dateTime(data.room.lastCollectedAt)}
           </p>
         </div>
-        <Btn tone="key" disabled={!data.canWrite || running} onClick={collect}>
-          {running ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <RefreshCw className="h-4 w-4" />
-          )}
-          새 언급 업데이트
-        </Btn>
+        <div className="flex flex-wrap gap-2">
+          <Btn tone="ghost" disabled={!data.canWrite} onClick={() => setTab("ai")}>
+            <WandSparkles className="h-4 w-4" />
+            Claude로 조사
+          </Btn>
+          <Btn tone="key" disabled={!data.canWrite || running} onClick={collect}>
+            {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            무료 검색 업데이트
+          </Btn>
+        </div>
       </div>
       {runSummary && (
         <p className="rounded-lg bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
@@ -214,6 +216,7 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
         label="언급 조사 메뉴"
         options={[
           { value: "mentions", label: "수집 결과" },
+          { value: "ai", label: "AI 웹 조사" },
           { value: "response", label: "이슈 대응" },
           { value: "report", label: "분석 리포트" },
           { value: "settings", label: "조사 설정" },
@@ -227,6 +230,8 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
           exclude={excludeMention}
           archive={archiveMention}
         />
+      ) : tab === "ai" ? (
+        <AiResearchWorkspace projectId={projectId} data={data} setData={setData} mentions={mentions} />
       ) : tab === "response" ? (
         <ResponseList
           mentions={mentions}
@@ -238,6 +243,96 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
       ) : (
         <MentionSettings projectId={projectId} data={data} setData={setData} />
       )}
+    </div>
+  );
+}
+
+function AiResearchWorkspace({
+  projectId,
+  data,
+  setData,
+  mentions,
+}: {
+  projectId: string;
+  data: Loaded;
+  setData: (data: Loaded) => void;
+  mentions: PrMention[];
+}) {
+  const [value, setValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const keywords = Array.isArray(data.room.keywords)
+    ? data.room.keywords.filter((x): x is string => typeof x === "string" && Boolean(x.trim()))
+    : [];
+  const eventNames = keywords.length ? keywords : [data.room.project.name];
+  const excludedUrls = new Set(Array.isArray(data.room.excludedMentionUrls) ? data.room.excludedMentionUrls.filter((x): x is string => typeof x === "string") : []);
+  const excludedRules = Array.isArray(data.room.excludedMentionRules) ? data.room.excludedMentionRules as ExcludedMentionRule[] : [];
+  const prompt = buildClaudeResearchPrompt({
+    eventNames,
+    lastCollectedAt: data.room.lastCollectedAt,
+    knownUrls: mentions.map((x) => x.url),
+    excludedRules,
+  });
+  const start = () => {
+    window.open("https://claude.ai/new", "_blank", "noopener,noreferrer");
+    navigator.clipboard.writeText(prompt)
+      .then(() => toast.success("조사문을 복사했어요. 열린 Claude에 붙여 넣으세요."))
+      .catch(() => toast.error("조사문을 복사하지 못했어요."));
+  };
+  const importResults = async () => {
+    setSaving(true);
+    try {
+      const known = new Set(mentions.map((x) => x.url));
+      const rows = parseClaudeResearch(value).filter((x) => !known.has(x.url) && !excludedUrls.has(x.url));
+      const now = new Date().toISOString();
+      const added: PrMention[] = rows.map((row) => ({
+        id: crypto.randomUUID(),
+        ...row,
+        ...(!row.sentiment ? analyzeMention(`${row.title} ${row.excerpt}`) : { sentiment: row.sentiment, status: row.sentiment === "negative" ? "issue" : "new", riskLevel: row.sentiment === "negative" ? "attention" : "watch" }),
+        responseNote: "",
+        collectedAt: now,
+        origin: "claude",
+      }));
+      setData(await save(projectId, { mentions: [...added, ...mentions], lastCollectedAt: now }));
+      setValue("");
+      toast.success(`Claude 조사 결과 ${added.length}건을 가져왔어요.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "결과를 가져오지 못했어요.");
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="grid max-w-5xl gap-4 lg:grid-cols-2">
+      <section className={`${R.panel} ${FINISH.s1} bg-card p-5`}>
+        <span className="text-xs font-medium text-violet-700">1단계</span>
+        <h3 className="mt-1 font-semibold">Claude에서 웹 조사 시작</h3>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          {eventNames.join(" · ")}을 기준으로 실제 원문 URL이 있는 뉴스와 SNS 언급을 조사합니다. 기존 결과와 제외 사례도 조사문에 함께 전달합니다.
+        </p>
+        <Btn className="mt-4" tone="key" onClick={start}>
+          <WandSparkles className="h-4 w-4" />
+          조사문 복사하고 Claude 열기
+        </Btn>
+        <details className="mt-4 rounded-xl bg-secondary/50 p-3 text-sm">
+          <summary className="cursor-pointer font-medium">Claude에 보낼 조사문 확인</summary>
+          <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap text-xs leading-5 text-muted-foreground">{prompt}</pre>
+        </details>
+      </section>
+      <section className={`${R.panel} ${FINISH.s1} bg-card p-5`}>
+        <span className="text-xs font-medium text-violet-700">2단계</span>
+        <h3 className="mt-1 font-semibold">조사 결과 가져오기</h3>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">Claude가 출력한 JSON 전체를 아래에 붙여 넣으세요. 기존 URL과 제외한 URL은 자동으로 건너뜁니다.</p>
+        <textarea
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          className={`mt-3 min-h-64 w-full bg-background p-3 font-mono text-xs leading-5 ${R.control}`}
+          placeholder='[{"title":"행사 관련 기사", "url":"https://...", ...}]'
+        />
+        <Btn className="mt-3" tone="key" disabled={!data.canWrite || saving || !value.trim()} onClick={importResults}>
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+          결과 가져오기
+        </Btn>
+      </section>
     </div>
   );
 }
@@ -522,27 +617,6 @@ function MentionSettings({
       className={`${R.panel} ${FINISH.s1} max-w-2xl space-y-5 bg-card p-5`}
     >
       <label className="block text-sm font-medium">
-        조사 주기
-        <select
-          disabled={!data.canWrite}
-          className={`${control} mt-2 block w-full`}
-          value={data.room.collectEveryDays}
-          onChange={async (e) =>
-            setData(
-              await save(projectId, {
-                collectEveryDays: Number(e.target.value),
-              }),
-            )
-          }
-        >
-          {[1, 2, 3, 5, 7, 14, 30].map((n) => (
-            <option key={n} value={n}>
-              {n}일에 한 번
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="block text-sm font-medium">
         행사명·검색어
         <Field
           className="mt-2"
@@ -572,8 +646,7 @@ function MentionSettings({
         설정 저장
       </Btn>
       <p className="text-xs text-muted-foreground">
-        최근 조사 · {dateTime(data.room.lastCollectedAt)}<br/>
-        다음 자동 조사 예정 · {nextCollection(data.room.lastCollectedAt,data.room.collectEveryDays)}
+        최근 조사 · {dateTime(data.room.lastCollectedAt)} · 자동 수집 없이 버튼을 눌렀을 때만 조사합니다.
       </p>
     </section>
   );
