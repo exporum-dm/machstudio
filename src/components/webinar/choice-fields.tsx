@@ -169,11 +169,9 @@ export function MultiChoiceField({
           value={otherAnswer}
           onChange={(e) => {
             const kept = picked.filter((p) => options.includes(p));
-            /* 복수 선택 값은 ", " 로 합쳐 한 문자열에 저장된다 — 자유입력에 쉼표가 있으면
-               항목 하나가 둘로 세어져 최대 개수 검증이 정상 답변을 거절한다.
-               안내 문구가 아니라 입력 시점에 막는다(AGENTS 공통: 소스에서 정규화). */
-            const clean = e.target.value.replace(/,/g, " ");
-            setPicked(clean.trim() ? [...kept, clean] : kept);
+            // 쉼표가 있어도 괜찮다 — joinMultiValue 가 구분자와 섞이지 않게 큰따옴표로 감싼다.
+            const next = e.target.value;
+            setPicked(next.trim() ? [...kept, next] : kept);
           }}
           placeholder="직접 입력해주세요"
           className={publicForm ? "mw-input" : "w-full px-3 py-2.5 text-sm bg-transparent focus:outline-none"}

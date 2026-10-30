@@ -189,7 +189,7 @@ export function renderJoin(m: LandingModel): HTMLElement | null {
       "p",
       { class: "deadline rv" },
       h("b", null, m.dateStr),
-      " 라이브 시작 · 사전 등록 후 입장 안내를 보내드려요",
+      ` ${m.lp.join.note.trim() || "라이브 시작 · 사전 등록 후 입장 안내를 보내드려요"}`,
     ),
   );
 }

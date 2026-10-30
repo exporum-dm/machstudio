@@ -513,12 +513,7 @@ ${ON_ACCENT_JS}  function theme() {
               otherText.placeholder = "직접 입력해주세요";
               otherText.style.display = "none";
               otherText.setAttribute("aria-label", field.label + " 직접 입력");
-              /* 값은 ", " 로 합쳐 저장된다 — 자유입력의 쉼표는 항목 경계로 오해되어
-                 최대 개수 검증이 정상 답변을 거절한다. 입력 시점에 막는다. */
-              otherText.addEventListener("input", function() {
-                var clean = otherText.value.replace(/,/g, " ");
-                if (otherText.value !== clean) otherText.value = clean;
-              });
+              // 쉼표를 써도 된다 — __mwRead 가 제출 시점에 구분자와 안 섞이게 인용해 담는다.
               input.appendChild(otherText);
               otherBox.addEventListener("change", function() {
                 otherText.style.display = otherBox.checked ? "" : "none";
@@ -527,12 +522,21 @@ ${ON_ACCENT_JS}  function theme() {
               });
             }
             if (mMax) input.appendChild(el("div", "mw-hint", "최대 " + mMax + "개까지 선택할 수 있어요"));
-            /* 값 읽기를 엔트리에 붙인다 — 아래 수집 루프가 el.value 하나만 읽기 때문이다. */
+            /* 값 읽기를 엔트리에 붙인다 — 아래 수집 루프가 el.value 하나만 읽기 때문이다.
+               항목에 쉼표(구분자)나 큰따옴표가 있으면 CSV 필드 인용 규칙대로 큰따옴표로 감싼다 —
+               webinar-config.ts 의 joinMultiValue 와 같은 규칙이다(인라인이라 손으로 다시 적는다).
+               안 지키면 register 라우트의 splitMultiValue 가 항목 하나를 둘로 세어 최대 개수
+               검증을 정상 답변인데도 거절한다. */
             input.__mwRead = function() {
               var out = [];
               for (var r = 0; r < boxes.length; r++) if (boxes[r].checked) out.push(boxes[r].value);
               if (otherBox && otherBox.checked && String(otherText.value || "").trim()) out.push(String(otherText.value).trim());
-              return out.join(", ");
+              var quoted = [];
+              for (var qi = 0; qi < out.length; qi++) {
+                var qv = out[qi];
+                quoted.push((qv.indexOf(",") >= 0 || qv.indexOf('"') >= 0) ? ('"' + qv.replace(/"/g, '""') + '"') : qv);
+              }
+              return quoted.join(", ");
             };
           } else if (field.type === "select") {
             input = document.createElement("select");

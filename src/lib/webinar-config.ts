@@ -130,19 +130,56 @@ export const FIELD_TYPES: readonly WebinarFieldType[] = ["text", "email", "tel",
  * 그리고 CSV export·등록자 상세·임베드 로더가 전부 값을 문자열로 다룬다. 그 계약을 깨지 않고
  * 복수 선택을 담으려면 합친 문자열이 맞다.
  *
- * 구분자는 ", " — 사람이 CSV 에서 그대로 읽을 수 있어야 한다. 선택지 자체에 쉼표가 들어가면
- * 되읽을 때 쪼개지지만, 그건 **개수 검증에만** 쓰이고 저장된 원문은 그대로 보존된다.
+ * 구분자는 ", " — 사람이 CSV 에서 그대로 읽을 수 있어야 한다. 쉼표 없는 절대다수 항목은
+ * 예전처럼 그냥 나열된다(모양이 안 바뀐다). 항목 자체에 쉼표(또는 큰따옴표)가 있으면 그
+ * 항목만 CSV 필드 인용 규칙대로 큰따옴표로 감싼다("서울, 경기" 처럼) — 그래야 구분자(쉼표)와
+ * 항목 안의 쉼표가 섞이지 않고 왕복(join → split)이 항상 원래 배열로 돌아온다.
+ * 이 규칙이 사는 곳이 3개 면이다 — 여기(공개 폼·register 검증)와 임베드 로더
+ * (webinar-loader-script.ts 의 __mwRead, 인라인이라 같은 규칙을 손으로 다시 적어 둔다).
+ * 세 곳이 갈라지면 "로더로 등록하면 최대 개수 검증에서 거부되는데 폼으로는 되는" 식으로 샌다.
  */
 export const MULTI_VALUE_SEPARATOR = ", ";
 
+/** 항목에 구분자(쉼표)나 인용 문자가 있을 때만 감싼다 — 나머지는 지금까지와 같은 모양. */
+function quoteMultiValueItem(v: string): string {
+  return v.includes(",") || v.includes('"') ? `"${v.replace(/"/g, '""')}"` : v;
+}
+
 export function joinMultiValue(values: readonly string[]): string {
-  return values.map((v) => v.trim()).filter(Boolean).join(MULTI_VALUE_SEPARATOR);
+  return values.map((v) => v.trim()).filter(Boolean).map(quoteMultiValueItem).join(MULTI_VALUE_SEPARATOR);
 }
 
 export function splitMultiValue(value: unknown): string[] {
-  return typeof value === "string"
-    ? value.split(",").map((v) => v.trim()).filter(Boolean)
-    : [];
+  if (typeof value !== "string" || !value) return [];
+  const out: string[] = [];
+  const n = value.length;
+  let i = 0;
+  while (i < n) {
+    if (value[i] === '"') {
+      // 인용된 항목 — 닫는 따옴표까지 읽고, 두 번 연속된 따옴표는 하나로(escape) 되돌린다.
+      let item = "";
+      i += 1;
+      while (i < n) {
+        if (value[i] === '"') {
+          if (value[i + 1] === '"') { item += '"'; i += 2; continue; }
+          i += 1;
+          break;
+        }
+        item += value[i];
+        i += 1;
+      }
+      out.push(item);
+    } else {
+      // 인용되지 않은 항목은 쉼표를 담지 않는다(join 시점에 이미 인용됐다) — 다음 쉼표까지가 항목 전체.
+      let end = value.indexOf(",", i);
+      if (end === -1) end = n;
+      out.push(value.slice(i, end).trim());
+      i = end;
+    }
+    if (value[i] === ",") i += 1;
+    if (value[i] === " ") i += 1;
+  }
+  return out.filter(Boolean);
 }
 
 /** 선택지를 쓰는 유형 — 옵션 0개 게이트·기타 허용·최대 개수가 여기 걸린다. */
@@ -410,6 +447,18 @@ export interface LandingPageConfig {
   /** 일시 옆 라벨 (예: ONLINE LIVE) */
   venue: string;
   ctaLabel: string;
+  /**
+   * 히어로 배경 미디어(이미지·동영상) 위 어두운 스크림의 세기 — 0~100.
+   * 100 이 지금까지의 기본 디자인(위 50%~아래 82% 불투명도)이고, 운영자가 낮추면 그 두 값에
+   * 같은 비율로 곱해져 더 밝아진다(그라데이션 모양 — 아래로 갈수록 어두움 — 은 그대로 유지).
+   * 미디어가 없는 히어로(그라디언트 배경)에는 스크림 자체가 없어 영향을 안 준다.
+   */
+  heroOverlayOpacity: number;
+  /**
+   * 히어로 대형 타이틀의 자간 — 글자 크기 대비 퍼센트(예: -5.5 = -5.5%, letter-spacing: -0.055em
+   * 와 같다). 음수면 좁게, 양수면 넓게. 기본 -5.5 가 지금까지의 디자인이다.
+   */
+  heroTitleTracking: number;
   /** 라이트·다크 두 모드의 배경 키컬러 */
   colors: LandingColors;
   /** 섹션별 배경 모드 */
@@ -436,7 +485,17 @@ export interface LandingPageConfig {
   programs: { enabled: boolean; items: LandingProgramItem[] };
   /** 혜택 — 머리글이 곧 카피라 편집 가능하다(audience 와 같은 이유). 비우면 기본 문구. */
   highlights: { enabled: boolean; title: string; items: LandingHighlightItem[] };
-  join: { enabled: boolean; steps: LandingJoinStep[] };
+  join: {
+    enabled: boolean;
+    steps: LandingJoinStep[];
+    /**
+     * 스텝 아래 마감 안내 줄의 꼬리 문구 — 굵은 날짜(자동 계산) 뒤에 붙는다.
+     * 비우면 기본 문구("라이브 시작 · 사전 등록 후 입장 안내를 보내드려요")가 나간다.
+     * 날짜 자체는 항상 자동으로 계산돼 굵게 붙는다 — 운영자가 날짜를 손으로 맞출 일이
+     * 없게(일정이 바뀌어도 이 문구만 틀어지지 않는다).
+     */
+    note: string;
+  };
   faq: { enabled: boolean; items: LandingFaqItem[] };
   /**
    * 스폰서 — 페이지 최하단의 로고 벽. 머리글은 편집 가능하고(후원사·주최 및 후원 등
@@ -540,6 +599,16 @@ export function normalizeLandingPageConfig(
     : null;
 
   const hex = (v: unknown, def: string) => (typeof v === "string" && LANDING_HEX.test(v.trim()) ? v.trim().toLowerCase() : def);
+  /**
+   * 범위를 벗어난(또는 못 믿을) 값은 기본값으로 — 공개 CSS 에 그대로 들어가는 숫자라 안 믿는다.
+   * 숫자·숫자문자열만 받는다 — Number(null)·Number([]) 는 둘 다 0(유한수)이라, 타입을 먼저
+   * 걸러내지 않으면 "값이 아예 없음" 이 "0을 입력함" 으로 둔갑한다(실측).
+   */
+  const clampNum = (v: unknown, def: number, min: number, max: number) => {
+    if (typeof v !== "number" && (typeof v !== "string" || v.trim() === "")) return def;
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def;
+  };
   const colors = obj(lp.colors);
   const sectionBg = obj(lp.sectionBg) as Partial<LandingSectionBgMap>;
 
@@ -563,6 +632,8 @@ export function normalizeLandingPageConfig(
        그 웨비나엔 반영되지 않는다 — 이 파일이 종료 화면 문구에 대해 이미 적어 둔 규칙과 같다. */
     venue: str(lp.venue),
     ctaLabel: str(lp.ctaLabel),
+    heroOverlayOpacity: clampNum(lp.heroOverlayOpacity, 100, 0, 100),
+    heroTitleTracking: clampNum(lp.heroTitleTracking, -5.5, -20, 20),
     colors: {
       lightBg: hex(colors.lightBg, DEFAULT_LANDING_COLORS.lightBg),
       darkBg: hex(colors.darkBg, DEFAULT_LANDING_COLORS.darkBg),
@@ -616,6 +687,8 @@ export function normalizeLandingPageConfig(
       steps: Array.isArray(join.steps)
         ? rows(join.steps, (r) => ({ title: str(r.title), description: str(r.description) }), (r) => r.title.trim() !== "")
         : DEFAULT_LANDING_JOIN_STEPS,
+      // 빈 값은 그대로 통과 — 뷰가 기본 문구로 폴백한다(audience·highlights 머리글과 같은 규칙).
+      note: str(join.note),
     },
     faq: {
       enabled: bool(faq.enabled, true),

@@ -308,9 +308,13 @@ export const LANDING_CSS = `
 }
 .lnd .hero-media { position: absolute; inset: 0; z-index: 1; overflow: hidden; }
 .lnd .hero-media img, .lnd .hero-media video { width: 100%; height: 100%; object-fit: cover; }
+/* 불투명도는 운영자가 조절한다(--lnd-hero-overlay, 기본 1 = 지금까지의 디자인).
+   두 끝값에 같은 비율로 곱해 그라데이션 모양(아래로 갈수록 어두움)은 그대로 둔다. */
 .lnd .hero-media.has-media::after {
   content: ""; position: absolute; inset: 0;
-  background: linear-gradient(180deg, rgba(4, 6, 11, .5), rgba(4, 6, 11, .82));
+  background: linear-gradient(180deg,
+    rgba(4, 6, 11, calc(.5 * var(--lnd-hero-overlay, 1))),
+    rgba(4, 6, 11, calc(.82 * var(--lnd-hero-overlay, 1))));
 }
 .lnd .hero-inner {
   position: relative; z-index: 2; align-self: stretch; justify-self: center;
@@ -327,7 +331,9 @@ export const LANDING_CSS = `
 /* 임베드에선 호스트에 h1 이 이미 있어 히어로 제목만 h2 로 낮춘다 — 시각은 동일하게 */
 .lnd .hero h1,
 .lnd .hero h2 {
-  font-size: clamp(44px, 7vw, 92px); font-weight: 900; letter-spacing: -.055em;
+  font-size: clamp(44px, 7vw, 92px); font-weight: 900;
+  /* 자간은 운영자가 조절한다(--lnd-hero-tracking, 퍼센트 단위 — 기본 -5.5 가 -.055em 과 같다). */
+  letter-spacing: calc(var(--lnd-hero-tracking, -5.5) * 0.01em);
   line-height: .98; text-transform: uppercase; text-wrap: balance; word-break: keep-all;
 }
 .lnd .hero h1 span, .lnd .hero h2 span { display: block; }
