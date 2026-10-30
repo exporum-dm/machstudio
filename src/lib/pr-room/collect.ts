@@ -3,7 +3,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { safeFetchText } from "@/lib/brief/link-preview";
 import { googleNewsUrl, parseFeed } from "@/lib/brief/sources";
-import { analyzeMention, isCollectionDue, type ExcludedMentionRule, type PrMention } from "./model";
+import { analyzeMention, type ExcludedMentionRule, type PrMention } from "./model";
 
 const SOCIAL_SOURCES = [
   { domain: "instagram.com", channel: "sns" as const, label: "Instagram" },
@@ -262,7 +262,7 @@ export async function collectPrRoom(roomId: string, now = new Date()) {
   const queries = keywords.length ? keywords : [room.project.name];
   const excluded = new Set(Array.isArray(room.excludedMentionUrls) ? room.excludedMentionUrls.filter((x):x is string=>typeof x==="string") : []);
   const excludedRules=(Array.isArray(room.excludedMentionRules)?room.excludedMentionRules.filter((x)=>Boolean(x)&&typeof x==="object"&&typeof (x as unknown as ExcludedMentionRule).title==="string"):[]) as unknown as ExcludedMentionRule[];
-  const days = Math.max(7, room.collectEveryDays + 4);
+  const days = 30;
   const counts: Record<string, number> = {};
   const errors: string[] = [];
   const tasks = queries.slice(0, 5).flatMap((query) => [
@@ -358,15 +358,4 @@ export async function collectPrRoom(roomId: string, now = new Date()) {
     data: { mentions, lastCollectedAt: now },
   });
   return { roomId, added: added.length, counts, errors };
-}
-
-export async function collectDuePrRooms(now = new Date()) {
-  const rooms = await prisma.prRoom.findMany({
-    select: { id: true, collectEveryDays: true, lastCollectedAt: true },
-  });
-  const results = [];
-  for (const room of rooms)
-    if (isCollectionDue(room, now))
-      results.push(await collectPrRoom(room.id, now));
-  return results;
 }

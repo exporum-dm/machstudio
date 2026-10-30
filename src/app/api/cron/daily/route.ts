@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { collectAllBriefs } from "@/lib/brief/collect";
-import { collectDuePrRooms } from "@/lib/pr-room/collect";
 
 // 브리프 수집이 바깥 사이트 여러 곳을 읽으므로 기본 시간 제한보다 넉넉히.
 export const maxDuration = 60;
@@ -67,13 +66,6 @@ export async function GET(request: Request) {
     }));
   } catch (e) {
     result.briefCollect = { error: e instanceof Error ? e.message : String(e) };
-  }
-
-  // 5) 프로젝트 언급·반응 조사 — 브리프 수집과 별도이며 프로젝트별 설정 주기를 따른다.
-  try {
-    result.prRoomCollect = await collectDuePrRooms();
-  } catch (e) {
-    result.prRoomCollect = { error: e instanceof Error ? e.message : String(e) };
   }
 
   return NextResponse.json({ ok: true, ...result });
