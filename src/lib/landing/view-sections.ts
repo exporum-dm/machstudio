@@ -185,12 +185,17 @@ export function renderJoin(m: LandingModel): HTMLElement | null {
         ),
       ),
     ),
-    h(
-      "p",
-      { class: "deadline rv" },
-      h("b", null, m.dateStr),
-      ` ${m.lp.join.note.trim() || "라이브 시작 · 사전 등록 후 입장 안내를 보내드려요"}`,
-    ),
+    // note 를 쓰면 그 줄 전체가 그 문구로 바뀐다(자동 날짜 접두 없음) — 운영자가 날짜를
+    // 포함할지 말지, 어떻게 쓸지까지 전부 정할 수 있게. 비우면 예전처럼 날짜가 자동으로
+    // 굵게 붙는 기본 문구가 나간다(기존 웨비나 외관 그대로).
+    m.lp.join.note.trim()
+      ? h("p", { class: "deadline rv" }, m.lp.join.note.trim())
+      : h(
+          "p",
+          { class: "deadline rv" },
+          h("b", null, m.dateStr),
+          " 라이브 시작 · 사전 등록 후 입장 안내를 보내드려요",
+        ),
   );
 }
 

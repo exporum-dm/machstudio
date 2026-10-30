@@ -5,6 +5,7 @@
 // 섹션은 "토글 ON + 실제 내용 있음"일 때만 공개 페이지에 노출된다(빈 껍데기 방지 — 읽기에서 걸러짐).
 
 import { useId, useRef, useState } from "react";
+import { formatKst } from "@/lib/datetime";
 import { ExternalLink, Clapperboard, Ban, Loader2, UploadCloud, Link2, Image as ImageIcon, ImagePlus } from "lucide-react";
 import { toast } from "sonner";
 import { useAutosave } from "@/components/ui/use-autosave";
@@ -41,6 +42,8 @@ interface Webinar {
   name: string;
   description: string | null;
   config: Record<string, unknown>;
+  /** How to Join 마감 문구의 기본값 미리보기(날짜)에 쓴다 — build-model.ts 의 dateStr 과 같은 계산. */
+  liveStartAt: string;
 }
 
 type HeroMediaType = "none" | "image" | "video";
@@ -254,8 +257,20 @@ export default function LandingPageTab({
   const sponsorFileRef = useRef<HTMLInputElement>(null);
   const sponsorTargetKey = useRef<string | null>(null);
   const [sponsorUploadingKey, setSponsorUploadingKey] = useState<string | null>(null);
+  /**
+   * 자간 입력 칸의 **화면에 보이는 글자** — state.heroTitleTracking(숫자)과 분리해서 든다.
+   * type="number" + value={숫자} 로 직접 묶으면 음수 입력이 거의 안 된다: "-" 한 글자만
+   * 친 순간 그 문자열은 유효한 숫자가 아니라서 number input 의 value IDL 이 스펙상 그 글자를
+   * 빈 문자열로 되돌리고, React 가 그 빈 값을 즉시 되그려 "-" 가 지워진 것처럼 보인다(실측:
+   * 0을 지워도 바로 0으로 돌아와 직접 타이핑이 안 되고 스피너로만 조절 가능했다).
+   * 화면 글자는 자유롭게 두고, 그 글자가 유효한 숫자로 읽힐 때만 실제 값을 갱신한다.
+   */
+  const [trackingDraft, setTrackingDraft] = useState(() => String(state.heroTitleTracking));
 
   const patch = (updates: Partial<EditorState>) => setState((prev) => ({ ...prev, ...updates }));
+
+  // How to Join 마감 줄 — 비워 두면 공개 페이지에 그대로 나가는 기본 문구(날짜는 실제 일정으로).
+  const joinDeadlinePlaceholder = `${formatKst(webinar.liveStartAt, { year: "numeric", month: "2-digit", day: "2-digit", weekday: "short", hour: "2-digit", minute: "2-digit" })} KST 라이브 시작 · 사전 등록 후 입장 안내를 보내드려요`;
 
   /**
    * 로고 업로드는 세션 로고 라우트를 그대로 쓴다 — 형식·한도·저장 경로(logos/)가 완전히 같고,
@@ -467,14 +482,22 @@ export default function LandingPageTab({
                   자간
                   <input
                     id={`${uid}-title-tracking`}
-                    type="number"
-                    step={0.5}
-                    min={-20}
-                    max={20}
-                    value={state.heroTitleTracking}
+                    type="text"
+                    inputMode="decimal"
+                    value={trackingDraft}
                     onChange={(e) => {
-                      const n = Number(e.target.value);
-                      patch({ heroTitleTracking: Number.isFinite(n) ? Math.min(20, Math.max(-20, n)) : state.heroTitleTracking });
+                      const raw = e.target.value;
+                      setTrackingDraft(raw);
+                      // 글자가 완성된 숫자로 읽힐 때만 실제 값에 반영 — "-"·"-5."처럼 입력 중인
+                      // 글자는 그대로 두고(위 draft 주석), 완성되면 바로 미리보기에 반영한다.
+                      const n = Number(raw);
+                      if (raw.trim() !== "" && Number.isFinite(n)) {
+                        patch({ heroTitleTracking: Math.min(20, Math.max(-20, n)) });
+                      }
+                    }}
+                    onBlur={() => {
+                      // 포커스를 떠날 때 "-"만 남은 경우처럼 안 끝난 글자는 마지막 실제 값으로 되돌린다.
+                      setTrackingDraft(String(state.heroTitleTracking));
                     }}
                     className={`${inputCls} w-16 min-h-8 px-2 py-1 text-[11px] tabular-nums`}
                   />
@@ -819,11 +842,8 @@ export default function LandingPageTab({
                 className={inputCls}
                 value={state.join.note}
                 onChange={(e) => patch({ join: { ...state.join, note: e.target.value } })}
-                placeholder="라이브 시작 · 사전 등록 후 입장 안내를 보내드려요"
+                placeholder={`${joinDeadlinePlaceholder} (비우면 이 문구가 그대로 나가요)`}
               />
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                날짜·시각({state.join.enabled ? "예: 2026. 08. 11. (화) 14:00 KST" : "일정"})은 항상 자동으로 앞에 굵게 붙어요 — 여기는 그 뒤에 붙는 문구만 바꿔요.
-              </p>
             </div>
           </SectionCard>
 

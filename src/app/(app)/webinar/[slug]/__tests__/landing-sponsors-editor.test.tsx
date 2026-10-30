@@ -39,7 +39,7 @@ function render(config: Record<string, unknown>) {
   act(() => {
     root?.render(
       <LandingPageTab
-        webinar={{ id: "w1", slug: "s1", name: "테스트", description: null, config }}
+        webinar={{ id: "w1", slug: "s1", name: "테스트", description: null, config, liveStartAt: "2026-08-11T05:00:00.000Z" }}
         onSilentUpdate={() => {}}
       />,
     );
