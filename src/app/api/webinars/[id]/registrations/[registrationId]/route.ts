@@ -15,6 +15,7 @@ interface RegistrationPatch {
   industry?: string | null;
   agreeMarketing?: boolean;
   agreePrivacy?: boolean;
+  agreeThirdParty?: boolean;
   memo?: string | null;
 }
 
@@ -96,6 +97,7 @@ export async function PATCH(
       industry: clean(body.industry),
       agreeMarketing: Boolean(body.agreeMarketing),
       agreePrivacy: body.agreePrivacy !== false,
+      agreeThirdParty: Boolean(body.agreeThirdParty),
       // 상세 패널의 메모 칸은 **운영자 메모(note)만** 편집한다. 등록 폼 커스텀 문항 답변은
       // 같은 컬럼의 customFields 에 들어 있으므로, 기존 값에서 그것만 살려 다시 조립한다.
       // (예전에는 textarea 내용이 컬럼을 통째로 덮어써 커스텀 답변이 사라졌다)

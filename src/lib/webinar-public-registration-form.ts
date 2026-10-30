@@ -11,6 +11,10 @@ export function buildPublicRegistrationFormPayload(config: unknown) {
     marketingBody: registrationForm.marketingBody,
     privacyDefaultChecked: registrationForm.privacyDefaultChecked,
     marketingDefaultChecked: registrationForm.marketingDefaultChecked,
+    thirdPartyEnabled: registrationForm.thirdPartyEnabled,
+    thirdPartyText: registrationForm.thirdPartyText,
+    thirdPartyBody: registrationForm.thirdPartyBody,
+    thirdPartyDefaultChecked: registrationForm.thirdPartyDefaultChecked,
     submitLabel: registrationForm.submitLabel,
     successCta: {
       enabled: registrationForm.successCta.enabled,

@@ -68,7 +68,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
       { status: 201, headers: CORS_HEADERS },
     );
   }
-  const { name, phone, email, company, department, jobTitle, industry, agreeMarketing, agreePrivacy, memo, customFields } = body;
+  const { name, phone, email, company, department, jobTitle, industry, agreeMarketing, agreePrivacy, agreeThirdParty, memo, customFields } = body;
 
   // 길이 상한 — 예전엔 사용자 입력만 무캡이라 IP 하나로 분당 수십 MB 를 DB 에 밀어넣을 수 있었고
   // 등록자 목록·CSV 도 함께 망가졌다(userAgent·UTM 은 이미 캡이 있었다).
@@ -249,6 +249,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     jobTitle: clean(jobTitle),
     industry: clean(industry),
     agreeMarketing: Boolean(agreeMarketing),
+    agreeThirdParty: Boolean(agreeThirdParty),
     agreePrivacy: true, // 위에서 === true 를 강제했다
     memo: Object.keys(memoPayload).length ? JSON.stringify(memoPayload, null, 2) : null,
     ...utmData,

@@ -192,7 +192,7 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
   // 등록 폼 상태
   const [form, setForm] = useState({
     name: "", phone: "", email: "", company: "", department: "",
-    jobTitle: "", industry: "", agreeMarketing: false, agreePrivacy: false,
+    jobTitle: "", industry: "", agreeMarketing: false, agreePrivacy: false, agreeThirdParty: false,
   });
   const [customFields, setCustomFields] = useState<Record<string, string | boolean>>({});
   const [isRegistering, setIsRegistering] = useState(false);
@@ -226,7 +226,7 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
   const [registerDone, setRegisterDone] = useState(false);
   // 동의 약관 전문 팝업 — 동의 문구 텍스트 클릭 시 (본문이 설정된 경우에만)
   const [termsModal, setTermsModal] = useState<{
-    kind: "privacy" | "marketing";
+    kind: "privacy" | "marketing" | "thirdParty";
     title: string;
     body: string;
     opener: HTMLElement;
@@ -485,11 +485,13 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
     if (!webinar || consentDefaultsAppliedRef.current) return;
     consentDefaultsAppliedRef.current = true;
     const rf = normalizeRegistrationForm(webinar.config ?? {});
-    if (!rf.privacyDefaultChecked && !rf.marketingDefaultChecked) return;
+    const thirdPartyDefault = rf.thirdPartyEnabled && rf.thirdPartyDefaultChecked;
+    if (!rf.privacyDefaultChecked && !rf.marketingDefaultChecked && !thirdPartyDefault) return;
     setForm((f) => ({
       ...f,
       agreePrivacy: f.agreePrivacy || rf.privacyDefaultChecked,
       agreeMarketing: f.agreeMarketing || rf.marketingDefaultChecked,
+      agreeThirdParty: f.agreeThirdParty || thirdPartyDefault,
     }));
   }, [webinar]);
 
@@ -1437,6 +1439,9 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
                         {([
                           { kind: "privacy" as const, text: registrationForm.privacyText, body: registrationForm.privacyBody, mode: registrationForm.privacyBodyMode, linkUrl: safeHttpUrl(registrationForm.privacyLinkUrl), checked: form.agreePrivacy, set: (v: boolean) => setForm((f) => ({ ...f, agreePrivacy: v })) },
                           { kind: "marketing" as const, text: registrationForm.marketingText, body: registrationForm.marketingBody, mode: registrationForm.marketingBodyMode, linkUrl: safeHttpUrl(registrationForm.marketingLinkUrl), checked: form.agreeMarketing, set: (v: boolean) => setForm((f) => ({ ...f, agreeMarketing: v })) },
+                          ...(registrationForm.thirdPartyEnabled
+                            ? [{ kind: "thirdParty" as const, text: registrationForm.thirdPartyText, body: registrationForm.thirdPartyBody, mode: registrationForm.thirdPartyBodyMode, linkUrl: safeHttpUrl(registrationForm.thirdPartyLinkUrl), checked: form.agreeThirdParty, set: (v: boolean) => setForm((f) => ({ ...f, agreeThirdParty: v })) }]
+                            : []),
                         ]).map((consent) => (
                           <label key={consent.kind} className="mw-check">
                             <input
@@ -1668,7 +1673,13 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
             <button
               type="button"
               onClick={() => {
-                setForm((f) => (termsModal.kind === "privacy" ? { ...f, agreePrivacy: true } : { ...f, agreeMarketing: true }));
+                setForm((f) =>
+                  termsModal.kind === "privacy"
+                    ? { ...f, agreePrivacy: true }
+                    : termsModal.kind === "marketing"
+                      ? { ...f, agreeMarketing: true }
+                      : { ...f, agreeThirdParty: true },
+                );
                 setTermsModal(null);
               }}
               className="flex-1 py-2.5 text-sm font-semibold"
