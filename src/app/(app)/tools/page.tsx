@@ -9,6 +9,7 @@
  * 공유해 둔 링크와 즐겨찾기가 깨지지 않게, 화면은 같은 컴포넌트를 쓴다.
  */
 import { BookOpen, ImageIcon, Link2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { PageTabs } from "@/components/ui/page-layout";
 import { useQueryTab } from "@/components/ui/use-query-tab";
 import UTMBuilderPage from "../utm-builder/page";
@@ -24,6 +25,7 @@ type TabId = (typeof TABS)[number]["id"];
 
 
 export default function ToolsPage() {
+  const router = useRouter();
   const [tab, select] = useQueryTab<TabId>(TABS.map(t => t.id), "utm");
 
   return (
@@ -33,7 +35,7 @@ export default function ToolsPage() {
       {tab === "media" && <MediaPage />}
       {tab === "taxonomy" && (
         <div className="p-4 sm:p-6 lg:p-8">
-          <TaxonomyTab onOpenUtm={() => { setTab("utm"); router.replace("/tools?tab=utm&manage=1", { scroll: false }); }} />
+          <TaxonomyTab onOpenUtm={() => router.push("/tools?tab=utm&manage=1", { scroll: false })} />
         </div>
       )}
     </div>
