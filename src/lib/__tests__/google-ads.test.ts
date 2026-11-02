@@ -41,4 +41,13 @@ describe("Google Ads helpers", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { status: 400 })));
     await expect(googleAdsRequest("customers/1/googleAds:search", "token")).rejects.toThrow(/Bad Request.*\{"error":\{"code":400/);
   });
+
+  it("details 가 있어도 errorCode 없이 메시지가 그대로 반복되면 원문을 여전히 붙인다 — 실측 버그", async () => {
+    // 실제로 받은 모양: details[].errors[].message 가 상위 message 와 똑같이 "Bad Request" 뿐이라,
+    // detail 이 "있다"는 이유만으로 원문을 생략하면 여전히 "Bad Request" 한 마디만 남는다.
+    process.env.GOOGLE_ADS_MANAGER_CUSTOMER_ID = "1234567890";
+    const body = JSON.stringify({ error: { code: 400, message: "Bad Request", details: [{ errors: [{ message: "Bad Request" }] }] } });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { status: 400 })));
+    await expect(googleAdsRequest("customers/1/googleAds:search", "token")).rejects.toThrow(/Bad Request.*\{"error":\{"code":400/);
+  });
 });

@@ -40,9 +40,9 @@ export async function googleAdsRequest<T>(path: string, accessToken: string, ini
     const detail = data?.error?.details?.flatMap((item) => item.errors ?? []).find((item) => item.message);
     const code = detail?.errorCode ? Object.values(detail.errorCode)[0] : undefined;
     const summary = [code, detail?.message || data?.error?.message || `Google Ads API 요청 실패 (${response.status})`].filter(Boolean).join(": ");
-    // detail(구조화된 GoogleAdsFailure)이 없으면 원문을 그대로 붙인다 — status 필드도 details 도 없는
-    // 맨 "Bad Request" 만 올 때가 있어, 그럴 땐 원문이 유일한 단서다.
-    const extra = [data?.error?.status, !detail && raw ? raw.slice(0, 500) : null].filter(Boolean).join(" · ");
+    // details 가 있어도 그 안의 메시지가 요약과 똑같을 수 있다(errorCode 없이 "Bad Request" 만 반복되는
+    // 경우가 실제로 있었다) — 그래서 원문은 detail 유무와 상관없이 항상 붙인다.
+    const extra = [data?.error?.status, raw ? raw.slice(0, 500) : null].filter(Boolean).join(" · ");
     throw new Error(extra ? `${summary} (${extra})` : summary);
   }
   return data;
