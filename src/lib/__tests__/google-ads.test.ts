@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { googleAdsRequest, googleCustomerId, signGoogleState, verifyGoogleState } from "@/lib/google-ads";
+import { googleAccessToken, googleAdsRequest, googleCustomerId, signGoogleState, verifyGoogleState } from "@/lib/google-ads";
 
 const previous = process.env.GOOGLE_ADS_CLIENT_SECRET;
 const previousManagerId = process.env.GOOGLE_ADS_MANAGER_CUSTOMER_ID;
+const previousClientId = process.env.GOOGLE_ADS_CLIENT_ID;
 afterEach(() => {
   process.env.GOOGLE_ADS_CLIENT_SECRET = previous;
   process.env.GOOGLE_ADS_MANAGER_CUSTOMER_ID = previousManagerId;
+  process.env.GOOGLE_ADS_CLIENT_ID = previousClientId;
   vi.unstubAllGlobals();
 });
 
@@ -49,5 +51,22 @@ describe("Google Ads helpers", () => {
     const body = JSON.stringify({ error: { code: 400, message: "Bad Request", details: [{ errors: [{ message: "Bad Request" }] }] } });
     vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { status: 400 })));
     await expect(googleAdsRequest("customers/1/googleAds:search", "token")).rejects.toThrow(/Bad Request.*\{"error":\{"code":400/);
+  });
+
+  it("googleAccessToken 은 CLIENT_ID/CLIENT_SECRET 이 없으면 바로 실패한다 — 호출조차 하지 않는다", async () => {
+    delete process.env.GOOGLE_ADS_CLIENT_ID;
+    process.env.GOOGLE_ADS_CLIENT_SECRET = "";
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(googleAccessToken("refresh-token")).rejects.toThrow(/GOOGLE_ADS_CLIENT_ID|GOOGLE_ADS_CLIENT_SECRET/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("googleAccessToken 은 OAuth 실패 응답의 원문도 메시지에 담는다 — error_description 이 없는 모양도 포함", async () => {
+    process.env.GOOGLE_ADS_CLIENT_ID = "client-id";
+    process.env.GOOGLE_ADS_CLIENT_SECRET = "client-secret";
+    const body = JSON.stringify({ error: { code: 400, message: "Bad Request", status: "INVALID_ARGUMENT" } });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { status: 400 })));
+    await expect(googleAccessToken("refresh-token")).rejects.toThrow(/\{"error":\{"code":400/);
   });
 });

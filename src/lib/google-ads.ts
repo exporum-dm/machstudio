@@ -24,9 +24,17 @@ export function verifyGoogleState<T>(state: string): T | null {
   try { return JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as T; } catch { return null; }
 }
 export async function googleAccessToken(refreshToken: string) {
-  const response = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ client_id: process.env.GOOGLE_ADS_CLIENT_ID || "", client_secret: process.env.GOOGLE_ADS_CLIENT_SECRET || "", refresh_token: refreshToken, grant_type: "refresh_token" }), cache: "no-store" });
-  const data = await response.json() as { access_token?: string; error_description?: string };
-  if (!response.ok || !data.access_token) throw new Error(data.error_description || "Google 액세스 토큰을 갱신하지 못했습니다.");
+  const clientId = process.env.GOOGLE_ADS_CLIENT_ID?.trim();
+  const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET?.trim();
+  if (!clientId || !clientSecret) throw new Error("GOOGLE_ADS_CLIENT_ID 또는 GOOGLE_ADS_CLIENT_SECRET 환경변수가 설정되지 않았습니다.");
+  const response = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: "refresh_token" }), cache: "no-store" });
+  const raw = await response.text();
+  let data: { access_token?: string; error?: string; error_description?: string } | null = null;
+  try { data = raw ? JSON.parse(raw) : null; } catch { /* 본문이 JSON 이 아님 — raw 를 그대로 메시지에 붙인다 */ }
+  if (!response.ok || !data?.access_token) {
+    const summary = data?.error_description || data?.error || `Google 액세스 토큰을 갱신하지 못했습니다 (${response.status})`;
+    throw new Error(raw ? `${summary} (${raw.slice(0, 500)})` : summary);
+  }
   return data.access_token;
 }
 export async function googleAdsRequest<T>(path: string, accessToken: string, init?: RequestInit) {
