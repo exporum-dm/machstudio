@@ -1,7 +1,7 @@
 // 슈퍼관리자 — 순수 환경변수 기반 체크 (클라이언트/서버 공통).
 // DB 통합 체크는 super-admin-server.ts에서 import (서버 전용).
 
-// 최고 관리자(2026-11-02 lynlea 퇴사로 교체). Vercel 의 SUPER_ADMIN_EMAILS 가 있으면 그게 우선이다.
+// 최고 관리자(2026-11-02 교체). Vercel 의 SUPER_ADMIN_EMAILS 가 있으면 그게 우선이다.
 const FALLBACK_EMAIL = "hook2@exporum.com";
 
 const ENV_VALUE = process.env.SUPER_ADMIN_EMAILS?.trim();

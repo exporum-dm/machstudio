@@ -48,9 +48,9 @@ describe("isSuperAdmin", () => {
 
   it("falls back when SUPER_ADMIN_EMAILS is unset", async () => {
     const m = await load(undefined);
-    // 최고 관리자는 hook2 — lynlea 는 퇴사(2026-11-02)로 기본값에서 빠졌다.
+    // 기본 최고 관리자는 hook2 하나뿐이다(2026-11-02).
     expect(m.isSuperAdmin("hook2@exporum.com")).toBe(true);
-    expect(m.isSuperAdmin("lynlea@exporum.com")).toBe(false);
+    expect(m.isSuperAdmin("someone@exporum.com")).toBe(false);
     expect(m.isSuperAdmin("nobody@example.com")).toBe(false);
   });
 
