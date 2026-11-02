@@ -98,6 +98,7 @@ model Workspace {
   expoSites            ExpoSite[]
   expoTemplates        ExpoTemplate[]
   mediaAssets          MediaAsset[]
+  contentItems         ContentItem[]
 }
 
 model WorkspaceMember {
@@ -192,6 +193,7 @@ model Project {
   prRoom               PrRoom?
   detailPages          DetailPage[]
   workGroups           WorkGroup[]
+  contentItems         ContentItem[]
 }
 
 model AdPerformanceImportBatch {
@@ -938,6 +940,42 @@ model WorkEntry {
 
   @@index([workspaceId, date])
   @@index([authorId, date])
+}
+
+/// 콘텐츠 캘린더 한 건 — 올릴 콘텐츠(2026-11-02). 프로젝트마다 캘린더가 있고 전체 보기는 합친다.
+model ContentItem {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  /// NULL = 프로젝트 없이 팀 공통
+  projectId    String?
+  title        String
+  /// 발행일. NULL = 날짜 미정(아이디어)
+  date         DateTime? @db.Date
+  /// "HH:MM" 또는 ""
+  time         String    @default("")
+  /// "idea" | "draft" | "review" | "scheduled" | "published" (lib/content-calendar.ts)
+  status       String    @default("idea")
+  /// 인스타그램·블로그·유튜브 … 여러 채널에 같이 올리기도 한다
+  channels     String[]  @default([])
+  /// 카드뉴스·릴스 …
+  format       String    @default("")
+  /// User 를 외래키로 물지 않는다 — 퇴사자 계정을 지워도 남아야 한다(업무일지와 같은 이유)
+  assigneeId   String?
+  /// 담당자 이름(지정할 때의 이름). 화면은 살아 있는 이름을 먼저 쓴다.
+  assigneeName String    @default("")
+  /// 카피·메모
+  body         String    @default("")
+  /// 발행한 게시물 주소
+  link         String    @default("")
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, date])
+  @@index([projectId])
 }
 
 /// 상세페이지 — 대회 공고와 같은 섹션 빌더로 만드는 독립 페이지. 아임웹에 /d/{id} 한 줄로 붙는다.
