@@ -34,4 +34,11 @@ describe("Google Ads helpers", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { status: 400 })));
     await expect(googleAdsRequest("customers/1/googleAds:search", "token")).rejects.toThrow(/Bad Request.*INVALID_ARGUMENT/);
   });
+
+  it("status·details 도 없는 맨 Bad Request 는 원문을 그대로 메시지에 붙인다", async () => {
+    process.env.GOOGLE_ADS_MANAGER_CUSTOMER_ID = "1234567890";
+    const body = JSON.stringify({ error: { code: 400, message: "Bad Request" } });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { status: 400 })));
+    await expect(googleAdsRequest("customers/1/googleAds:search", "token")).rejects.toThrow(/Bad Request.*\{"error":\{"code":400/);
+  });
 });

@@ -40,7 +40,9 @@ export async function googleAdsRequest<T>(path: string, accessToken: string, ini
     const detail = data?.error?.details?.flatMap((item) => item.errors ?? []).find((item) => item.message);
     const code = detail?.errorCode ? Object.values(detail.errorCode)[0] : undefined;
     const summary = [code, detail?.message || data?.error?.message || `Google Ads API 요청 실패 (${response.status})`].filter(Boolean).join(": ");
-    const extra = [data?.error?.status, !data && raw ? raw.slice(0, 500) : null].filter(Boolean).join(" · ");
+    // detail(구조화된 GoogleAdsFailure)이 없으면 원문을 그대로 붙인다 — status 필드도 details 도 없는
+    // 맨 "Bad Request" 만 올 때가 있어, 그럴 땐 원문이 유일한 단서다.
+    const extra = [data?.error?.status, !detail && raw ? raw.slice(0, 500) : null].filter(Boolean).join(" · ");
     throw new Error(extra ? `${summary} (${extra})` : summary);
   }
   return data;
