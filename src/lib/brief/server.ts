@@ -4,8 +4,7 @@
  * ── 권한은 URL 이 지목한 자원 기준으로 본다 ─────────────────────────────
  * (AGENTS.md "새 면을 만들 때" ②) 사이드바에서 고른 프로젝트가 아니라 **요청한 브리프가 속한
  * 프로젝트**로 판정한다. 규칙은 홈페이지(requireProjectAccess)와 같다:
- *   · 워크스페이스 OWNER·ADMIN → 읽기·쓰기
- *   · MEMBER → 그 프로젝트에 배정돼 있어야 보이고, 쓰기는 EDITOR·ADMIN 만
+ *   · 그 프로젝트의 워크스페이스 멤버(OWNER·ADMIN·MEMBER) → 읽기·쓰기. 프로젝트 배정은 보지 않는다(2026-11-02)
  *   · 그 밖 → 404 (브리프 id 로 존재 여부를 떠볼 수 없게)
  */
 import { customAlphabet } from "nanoid";
@@ -15,8 +14,6 @@ import { createClient } from "@/lib/supabase/server";
 import { getPublicAppOrigin } from "@/lib/app-url";
 import type { BriefPreset } from "./sources";
 
-type WorkspaceRole = "OWNER" | "ADMIN" | "MEMBER";
-type ProjectRole = "VIEWER" | "EDITOR" | "ADMIN";
 
 const notFound = () => NextResponse.json({ error: "찾을 수 없어요" }, { status: 404 });
 
@@ -40,28 +37,14 @@ export async function guardProject(projectId: string, { write }: { write: boolea
   });
   if (!project) return { ok: false, response: notFound() };
 
-  const [membership, projectMember] = await Promise.all([
-    prisma.workspaceMember.findUnique({
-      where: { userId_workspaceId: { userId: user.id, workspaceId: project.workspaceId } },
-      select: { role: true },
-    }),
-    prisma.projectMember.findUnique({
-      where: { userId_projectId: { userId: user.id, projectId } },
-      select: { role: true },
-    }),
-  ]);
-  const wsRole = (membership?.role ?? null) as WorkspaceRole | null;
-  const pjRole = (projectMember?.role ?? null) as ProjectRole | null;
-
-  const isAdmin = wsRole === "OWNER" || wsRole === "ADMIN";
-  const canRead = isAdmin || (wsRole === "MEMBER" && pjRole !== null);
-  if (!canRead) return { ok: false, response: notFound() };
-
-  const canWrite = isAdmin || pjRole === "EDITOR" || pjRole === "ADMIN";
-  if (write && !canWrite) {
-    return { ok: false, response: NextResponse.json({ error: "편집 권한이 없어요" }, { status: 403 }) };
-  }
-  return { ok: true, userId: user.id, workspaceId: project.workspaceId, canWrite };
+  const membership = await prisma.workspaceMember.findUnique({
+    where: { userId_workspaceId: { userId: user.id, workspaceId: project.workspaceId } },
+    select: { role: true },
+  });
+  if (!membership) return { ok: false, response: notFound() };
+  // 워크스페이스 멤버면 배정 없이 모든 프로젝트를 보고 고친다 — write 요청도 통과(2026-11-02).
+  void write;
+  return { ok: true, userId: user.id, workspaceId: project.workspaceId, canWrite: true };
 }
 
 /** 브리프 단위 관문 — 브리프가 속한 프로젝트로 판정한다. */

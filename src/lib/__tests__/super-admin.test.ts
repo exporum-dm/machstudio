@@ -48,14 +48,16 @@ describe("isSuperAdmin", () => {
 
   it("falls back when SUPER_ADMIN_EMAILS is unset", async () => {
     const m = await load(undefined);
-    expect(m.isSuperAdmin("lynlea@exporum.com")).toBe(true);
+    // 최고 관리자는 hook2 — lynlea 는 퇴사(2026-11-02)로 기본값에서 빠졌다.
+    expect(m.isSuperAdmin("hook2@exporum.com")).toBe(true);
+    expect(m.isSuperAdmin("lynlea@exporum.com")).toBe(false);
     expect(m.isSuperAdmin("nobody@example.com")).toBe(false);
   });
 
   it("treats falsy env as fallback", async () => {
     const m = await load("");
     // Empty string means use fallback path.
-    expect(m.isSuperAdmin("lynlea@exporum.com")).toBe(true);
+    expect(m.isSuperAdmin("hook2@exporum.com")).toBe(true);
   });
 
   it("exposes isSuperAdminEmail alias", async () => {

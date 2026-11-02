@@ -29,7 +29,6 @@ export async function POST(request: Request) {
   const [draft, previous] = await Promise.all([
     buildDraftReport(workspaceId!, body.date, {
       metrics: body.metrics === true,
-      viewer: { userId: access.userId, isAdmin: access.isAdmin },
     }),
     loadPreviousReports(workspaceId!, body.date, 3),
   ]);

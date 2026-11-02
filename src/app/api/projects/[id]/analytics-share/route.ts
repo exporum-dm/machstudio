@@ -24,11 +24,9 @@ async function authorize(projectId: string) {
     }),
   ]);
 
-  const canManage =
-    !!workspaceMember &&
-    (workspaceMember.role === "OWNER" ||
-      workspaceMember.role === "ADMIN" ||
-      projectMember?.role === "ADMIN");
+  // 워크스페이스 멤버면 누구나 공유 링크를 관리한다(2026-11-02 — 프로젝트 배정 구분을 없앴다).
+  void projectMember;
+  const canManage = !!workspaceMember;
 
   if (!canManage) {
     return { error: NextResponse.json({ error: "공유 관리 권한 없음" }, { status: 403 }) };
