@@ -4,12 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { FIELD_CLS, FINISH, R } from "@/components/ui/primitives";
 import { kstDateTimeLocalInput, kstDateTimeLocalToIso } from "@/lib/datetime";
-import {
-  COMPETITION_PHASE_META,
-  COMPETITION_PHASE_OVERRIDES,
-  resolveCompetitionStatus,
-  type RoundTiming,
-} from "@/lib/competition-status";
+import type { RoundTiming } from "@/lib/competition-status";
 import { NOTICE_LANGUAGES } from "@/lib/notice/config";
 import type { CompetitionDetail } from "./page";
 
@@ -20,7 +15,7 @@ interface Props {
   patch: (body: Record<string, unknown>, successMessage?: string) => Promise<boolean>;
 }
 
-export default function BasicInfoTab({ competition, rounds, patch }: Props) {
+export default function BasicInfoTab({ competition, patch }: Props) {
   const [name, setName] = useState(competition.name);
   const [description, setDescription] = useState(competition.description ?? "");
   const [slug, setSlug] = useState(competition.slug);
@@ -28,7 +23,6 @@ export default function BasicInfoTab({ competition, rounds, patch }: Props) {
   const [closeAt, setCloseAt] = useState(competition.recruitCloseAt ? kstDateTimeLocalInput(competition.recruitCloseAt) : "");
   const [saving, setSaving] = useState(false);
 
-  const status = resolveCompetitionStatus({ ...competition, rounds });
 
   const save = async () => {
     if (!name.trim()) { toast.error("대회 이름을 입력해주세요"); return; }
@@ -108,40 +102,7 @@ export default function BasicInfoTab({ competition, rounds, patch }: Props) {
         </div>
       </section>
 
-      <section className={`bg-background p-5 ${R.panel} ${FINISH.s1}`}>
-        <h2 className="text-sm font-semibold">단계</h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          기본은 접수 기간에 따른 자동 판정이에요. 현장에서 즉시 바꿔야 할 때만 수동으로 고정하세요.
-        </p>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="text-xs text-muted-foreground">현재</span>
-          <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${COMPETITION_PHASE_META[status.phase].tone}`}>
-            {COMPETITION_PHASE_META[status.phase].label}
-          </span>
-          {status.isOverridden && <span className="text-[11px] text-muted-foreground">(수동 고정됨)</span>}
-        </div>
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          <button
-            onClick={() => patch({ phaseOverride: null }, "자동 판정으로 되돌렸어요")}
-            className={`px-3 py-1.5 text-xs transition-colors ${R.control} ${
-              competition.phaseOverride === null ? "bg-violet-500 text-white" : "bg-secondary text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            자동
-          </button>
-          {COMPETITION_PHASE_OVERRIDES.map((phase) => (
-            <button
-              key={phase}
-              onClick={() => patch({ phaseOverride: phase }, `${COMPETITION_PHASE_META[phase].label} 단계로 고정했어요`)}
-              className={`px-3 py-1.5 text-xs transition-colors ${R.control} ${
-                competition.phaseOverride === phase ? "bg-violet-500 text-white" : "bg-secondary text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {COMPETITION_PHASE_META[phase].label}
-            </button>
-          ))}
-        </div>
-      </section>
+
 
       <div className="flex justify-end">
         <button

@@ -28,9 +28,11 @@ const spring = { type: "spring", stiffness: 420, damping: 32 } as const;
 export default function AwardsTab({
   competition,
   patch,
+  onPublishedChange,
 }: {
   competition: CompetitionDetail;
   patch: (body: Record<string, unknown>, successMessage?: string) => Promise<boolean>;
+  onPublishedChange: (value: string | null) => void;
 }) {
   const [awards, setAwards] = useState<AwardRow[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -106,7 +108,7 @@ export default function AwardsTab({
         publishedAt={publishedAt}
         dirty={dirty}
         assignedCount={awards.filter((a) => a.entryId).length}
-        onChange={setPublishedAt}
+        onChange={(value) => { setPublishedAt(value); onPublishedChange(value); }}
       />
 
       <FinalOrderCard competition={competition} />

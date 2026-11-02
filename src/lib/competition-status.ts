@@ -42,6 +42,11 @@ export const COMPETITION_PHASE_META: Record<CompetitionPhase, { label: string; t
   closed: { label: "종료", tone: "bg-secondary text-muted-foreground" },
 };
 
+/** 결과 발표·종료 대회는 기록으로 남기고 운영 대시보드에서는 내린다. */
+export function isActiveCompetitionPhase(phase: CompetitionPhase): boolean {
+  return phase !== "closed" && phase !== "announced";
+}
+
 /**
  * 대회를 만들 때 넣어 두는 라운드 기본 이름.
  *
@@ -67,6 +72,7 @@ export interface CompetitionStatusInput {
   recruitOpenAt?: Date | string | null;
   recruitCloseAt?: Date | string | null;
   phaseOverride?: string | null;
+  resultPublishedAt?: Date | string | null;
   /**
    * 라운드 일정(선택). 있으면 접수 마감 뒤의 단계를 라운드로 판정한다 — 없으면 접수가 끝난 뒤로는
    * 영원히 "예선" 이었다. 본선 투표가 열렸는데도 예선으로 보였다(2026-10-18 LA K-POP).
@@ -89,7 +95,7 @@ function toDate(value: Date | string | null | undefined): Date | null {
 
 /**
  * 접수 마감 뒤의 자동 단계 — 본선 투표가 시작됐으면 본선, 예선 투표가 끝났고 본선 전이면 심사 중,
- * 그 밖에는 예선. 발표·종료는 운영자가 정한다(수동 전환).
+ * 본선 투표 종료 후에는 심사 중. 결과 공개는 발표 완료, 종료는 운영자가 정한다.
  */
 function phaseFromRounds(rounds: RoundTiming[] | undefined, now: Date): CompetitionPhase {
   if (!rounds?.length) return "prelim";
@@ -97,6 +103,9 @@ function phaseFromRounds(rounds: RoundTiming[] | undefined, now: Date): Competit
   const final = rounds.find((r) => r.kind === "final");
   const prelim = rounds.find((r) => r.kind === "prelim");
   const finalOpen = toDate(final?.voteOpenAt ?? null);
+  const finalClose = toDate(final?.voteCloseAt ?? null);
+  // 투표 종료는 대회 종료와 다르다. 결과를 정리할 심사 단계로 넘긴다.
+  if (finalClose && t > finalClose.getTime() && (!finalOpen || finalClose >= finalOpen)) return "judging";
   if (final && finalOpen && t >= finalOpen.getTime()) return "final";
   const prelimClose = toDate(prelim?.voteCloseAt ?? null);
   if (prelimClose && t > prelimClose.getTime()) return "judging";
@@ -138,7 +147,9 @@ export function resolveCompetitionStatus(
   const t = now.getTime();
 
   let auto: CompetitionPhase;
-  if (openAt && t < openAt.getTime()) auto = "upcoming";
+  const publishedAt = toDate(input.resultPublishedAt);
+  if (publishedAt && t >= publishedAt.getTime()) auto = "announced";
+  else if (openAt && t < openAt.getTime()) auto = "upcoming";
   else if (closeAt && t > closeAt.getTime()) auto = phaseFromRounds(input.rounds, now);
   else if (openAt || closeAt) auto = "recruiting";
   // 기간을 아무것도 안 정했으면 아직 준비 중으로 본다 — 빈 값이 곧 "모두에게 열림"이 되면 안 된다.

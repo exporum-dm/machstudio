@@ -10,13 +10,13 @@ import { tabsFor } from "../tabs";
 describe("tabsFor", () => {
   const ids = (mode: string) => tabsFor(mode).map((t) => t.id);
 
-  /** 2026-10-08: 현황(통계) 탭이 맨 앞에 생기고, 기본 정보는 등록자 DB 뒤로 갔다 — 두 방식 공통. */
-  it("연동형은 기존 탭 구성 그대로 — 등록 폼 탭만 안 보인다", () => {
-    expect(ids("capture")).toEqual(["overview", "records", "info", "fields", "script", "install", "settings", "data-mgmt", "activity"]);
+  /** 2026-10-08: 현황은 맨 앞에 두고 설정·접수·분석·관리를 업무 순서로 잇는다. */
+  it("연동형은 현황→설정·설치→응답→관리 순서로 모든 탭을 유지한다", () => {
+    expect(ids("capture")).toEqual(["overview", "info", "fields", "script", "install", "records", "activity", "settings", "data-mgmt"]);
   });
 
   it("빌더형은 스크립트·필드 매핑·설치 대신 등록 폼 · 현장 체크인 · 만족도 조사", () => {
-    expect(ids("builder")).toEqual(["overview", "records", "analysis", "info", "form", "checkin", "survey", "settings", "data-mgmt", "activity"]);
+    expect(ids("builder")).toEqual(["overview", "info", "form", "records", "checkin", "survey", "analysis", "activity", "settings", "data-mgmt"]);
   });
 
   /** mode 는 DB 에서 제약 없는 String 이다 — 모르는 값이 오면 기존 동작으로 떨어져야 한다. */

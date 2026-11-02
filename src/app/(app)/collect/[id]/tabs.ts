@@ -14,18 +14,18 @@ import { Activity, BarChart3, ClipboardCheck, PieChart, Code2, HardDriveDownload
  */
 export const TABS = [
   { id: "overview", label: "현황", icon: BarChart3 },
-  { id: "records", label: "응답 목록", icon: Table2 },
-  { id: "analysis", label: "응답 분석", icon: PieChart },
   { id: "info", label: "기본 정보", icon: Info },
   { id: "form", label: "등록 폼", icon: Settings2 },
-  { id: "checkin", label: "현장 체크인", icon: ScanLine },
-  { id: "survey", label: "만족도 조사", icon: ClipboardCheck },
   { id: "fields", label: "필드", icon: Settings2 },
   { id: "script", label: "스크립트", icon: Code2 },
   { id: "install", label: "설치", icon: Wrench },
+  { id: "records", label: "응답 목록", icon: Table2 },
+  { id: "checkin", label: "현장 체크인", icon: ScanLine },
+  { id: "survey", label: "만족도 조사", icon: ClipboardCheck },
+  { id: "analysis", label: "응답 분석", icon: PieChart },
+  { id: "activity", label: "활동", icon: Activity },
   { id: "settings", label: "설정", icon: Shield },
   { id: "data-mgmt", label: "데이터 관리", icon: HardDriveDownload },
-  { id: "activity", label: "활동", icon: Activity },
 ] as const satisfies ReadonlyArray<{ id: string; label: string; icon: LucideIcon }>;
 
 export type Tab = typeof TABS[number]["id"];

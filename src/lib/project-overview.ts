@@ -10,15 +10,13 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { normalizeCollectForm, resolveRegistrationStatus } from "@/lib/collect-form-config";
-import { resolveCompetitionStatus, type CompetitionPhase } from "@/lib/competition-status";
+import { isActiveCompetitionPhase, resolveCompetitionStatus, type CompetitionPhase } from "@/lib/competition-status";
 import { resolveWebinarStatus, type WebinarStatus } from "@/lib/webinar-status";
 import { isDueForNightlySync } from "@/lib/ad-sync/shared";
 
 const DAY_MS = 86_400_000;
 /** 사전등록 폼이 "진행 중" 으로 남는 기간 — 마지막 등록이 이보다 오래면 끝난 행사로 본다(연동형). */
 const COLLECT_RECENT_DAYS = 30;
-/** 발표가 끝난 대회도 며칠은 결과 문의가 들어온다 — 그 뒤엔 첫 화면에서 내린다. */
-const ANNOUNCED_KEEP_DAYS = 14;
 
 export interface OverviewCollectSource {
   id: string;
@@ -217,14 +215,7 @@ export async function buildProjectOverview(workspaceId: string, projectId: strin
 
   // ── 대회 ──────────────────────────────────────────────────────────
   const compWithPhase = competitions.map((c) => ({ ...c, phase: resolveCompetitionStatus(c, now).phase }));
-  const compKeep = compWithPhase.filter((c) => {
-    if (c.phase === "closed") return false;
-    if (c.phase === "announced") {
-      const at = c.resultPublishedAt?.getTime();
-      return !!at && now.getTime() - at < ANNOUNCED_KEEP_DAYS * DAY_MS;
-    }
-    return true;
-  });
+  const compKeep = compWithPhase.filter((c) => isActiveCompetitionPhase(c.phase));
   const compIds = compKeep.map((c) => c.id);
   const [entryGroups, voteRows] = compIds.length
     ? await Promise.all([
