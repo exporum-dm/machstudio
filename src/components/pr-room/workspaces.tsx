@@ -439,7 +439,7 @@ function ManualMentionForm({
         collectedAt: now,
         ...analyzeMention(`${title} ${excerpt}`),
       };
-      setData(await save(projectId, { mentions: [mention, ...mentions] }));
+      setData(await save(projectId, { mentions: [mention, ...mentions] }, data.room.updatedAt));
       setUrl(""); setTitle(""); setExcerpt(""); setExtra({});
       toast.success("언급을 추가했어요");
     } catch (e) {
