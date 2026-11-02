@@ -18,6 +18,7 @@ import VoteSettingsTab, { type RoundDto } from "./VoteSettingsTab";
 import JudgesTab from "./JudgesTab";
 import TallyTab from "./TallyTab";
 import AwardsTab from "./AwardsTab";
+import CompetitionLifecycle from "./CompetitionLifecycle";
 
 
 export interface CompetitionDetail {
@@ -133,6 +134,8 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ sl
         <p className="mt-1 font-mono text-xs text-muted-foreground">/{competition.slug}</p>
       </div>
 
+      <CompetitionLifecycle competition={{ ...competition, rounds }} patch={patch} />
+
       <PageTabs label="대회 메뉴" value={tab} onChange={setTab} options={TABS.map(t => ({ ...t, badge: t.id === "entries" && entryCount > 0 ? entryCount : undefined }))} />
 
       {tab === "basic" && <BasicInfoTab competition={competition} rounds={rounds} patch={patch} />}
@@ -142,7 +145,7 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ sl
       {tab === "vote" && <VoteSettingsTab competition={competition} rounds={rounds} onRoundsChange={setRounds} patch={patch} />}
       {tab === "judges" && <JudgesTab competition={competition} rounds={rounds} onRoundsChange={setRounds} />}
       {tab === "tally" && <TallyTab competition={competition} rounds={rounds} />}
-      {tab === "awards" && <AwardsTab competition={competition} patch={patch} />}
+      {tab === "awards" && <AwardsTab competition={competition} patch={patch} onPublishedChange={(resultPublishedAt) => setCompetition((prev) => prev ? { ...prev, resultPublishedAt } : prev)} />}
       {tab === "deploy" && <DeployTab competition={competition} patch={patch} />}
     </div>
   );

@@ -84,7 +84,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   // 닫힌 화면도 확인해야 하므로 강제로 여는 건 state=open 일 때만.
   const forceOpen = isPreview && url.searchParams.get("state") === "open";
 
-  const window = resolveVoteWindow(round);
+  const window = resolveCompetitionStatus(competition).phase === "closed"
+    ? { open: false, reason: "closed" as const }
+    : resolveVoteWindow(round);
   const ip = getClientIp(request);
   const config = normalizeCompetitionConfig(competition.config);
   const language = config.language;
@@ -332,7 +334,9 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   if (!round.allowVoteUndo) {
     return NextResponse.json({ error: t.undoNotAllowed }, { status: 403, headers: CORS_HEADERS });
   }
-  const window = resolveVoteWindow(round);
+  const window = resolveCompetitionStatus(competition).phase === "closed"
+    ? { open: false, reason: "closed" as const }
+    : resolveVoteWindow(round);
   if (!window.open) {
     return NextResponse.json({ error: voteWindowMessage(window.reason, language) }, { status: 403, headers: CORS_HEADERS });
   }
