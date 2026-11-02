@@ -27,7 +27,6 @@ export async function GET(request: Request) {
   const saved = searchParams.get("fresh") === "1" ? null : await loadSavedReport(workspaceId!, reportDate);
   const report = saved?.report ?? (await buildDraftReport(workspaceId!, reportDate, {
     metrics: searchParams.get("metrics") === "1",
-    viewer: { userId: access.userId, isAdmin: access.isAdmin },
   }));
   const table = reportTable(report, { hideOwners });
 

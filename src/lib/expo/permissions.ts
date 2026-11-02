@@ -9,9 +9,9 @@
  * 그래서 멤버십 행을 그대로 직렬화하지 않는다. 네 개의 boolean 만 나간다.
  *
  * ── 역할 매트릭스 ─────────────────────────────────────────────────────
- * 워크스페이스 OWNER·ADMIN 은 모든 프로젝트를 관리한다. WORKSPACE MEMBER 는
- * `ProjectMember` 행(VIEWER|EDITOR|ADMIN)이 있어야 그 프로젝트를 볼 수 있고,
- * VIEWER 는 읽기만, EDITOR 는 편집·발행, 프로젝트 ADMIN 은 사이트 관리까지 한다.
+ * 워크스페이스 OWNER·ADMIN 은 모든 프로젝트를 관리한다. 워크스페이스 MEMBER 는
+ * 배정 없이도 모든 프로젝트를 보고 편집·발행한다(2026-11-02 — 팀 안에서 닫아 둘 이유가 없어 열었다).
+ * 프로젝트 ADMIN 으로 배정된 멤버만 사이트·페이지 삭제까지 한다.
  * 워크스페이스 전역 템플릿 관리는 계속 OWNER·ADMIN 전용이다.
  */
 import type { ProjectRole, WorkspaceRole } from "@/lib/expo/auth";
@@ -38,8 +38,8 @@ export function canAccessExpoProject(
   workspaceRole: WorkspaceRole | null,
   projectRole: ProjectRole | null,
 ): boolean {
-  return workspaceRole === "OWNER" || workspaceRole === "ADMIN" ||
-    (workspaceRole === "MEMBER" && projectRole !== null);
+  void projectRole;
+  return workspaceRole === "OWNER" || workspaceRole === "ADMIN" || workspaceRole === "MEMBER";
 }
 
 export function deriveExpoPermissions(
@@ -50,11 +50,9 @@ export function deriveExpoPermissions(
     return { canEdit: true, canPublish: true, canManageSite: true, canManageTemplates: true };
   }
   if (workspaceRole !== "MEMBER") return NONE;
-  switch (projectRole) {
-    case "ADMIN": return { canEdit: true, canPublish: true, canManageSite: true, canManageTemplates: false };
-    case "EDITOR": return { canEdit: true, canPublish: true, canManageSite: false, canManageTemplates: false };
-    default: return NONE;
-  }
+  // 배정이 없거나 VIEWER 로 배정돼 있어도 편집자 — 모든 멤버가 모든 프로젝트를 고친다.
+  if (projectRole === "ADMIN") return { canEdit: true, canPublish: true, canManageSite: true, canManageTemplates: false };
+  return { canEdit: true, canPublish: true, canManageSite: false, canManageTemplates: false };
 }
 
 /**
