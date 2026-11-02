@@ -30,12 +30,20 @@ export async function googleAccessToken(refreshToken: string) {
   return data.access_token;
 }
 export async function googleAdsRequest<T>(path: string, accessToken: string, init?: RequestInit) {
-  const response = await fetch(`https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}/${path}`, { ...init, headers: { Authorization: `Bearer ${accessToken}`, "developer-token": process.env.GOOGLE_ADS_DEVELOPER_TOKEN || "", "login-customer-id": googleCustomerId(process.env.GOOGLE_ADS_MANAGER_CUSTOMER_ID || ""), "Content-Type": "application/json", ...(init?.headers || {}) }, cache: "no-store" });
-  const data = await response.json().catch(() => null) as (T & { error?: { message?: string; details?: Array<{ errors?: Array<{ message?: string; errorCode?: Record<string, string> }> }> } }) | null;
+  const loginCustomerId = googleCustomerId(process.env.GOOGLE_ADS_MANAGER_CUSTOMER_ID || "");
+  if (!loginCustomerId) throw new Error("GOOGLE_ADS_MANAGER_CUSTOMER_ID 환경변수가 설정되지 않았습니다.");
+  const response = await fetch(`https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}/${path}`, { ...init, headers: { Authorization: `Bearer ${accessToken}`, "developer-token": process.env.GOOGLE_ADS_DEVELOPER_TOKEN || "", "login-customer-id": loginCustomerId, "Content-Type": "application/json", ...(init?.headers || {}) }, cache: "no-store" });
+  const raw = await response.text();
+  let data: (T & { error?: { message?: string; status?: string; details?: Array<{ errors?: Array<{ message?: string; errorCode?: Record<string, string> }> }> } }) | null = null;
+  try { data = raw ? JSON.parse(raw) : null; } catch { /* 본문이 JSON 이 아님 — raw 를 그대로 메시지에 붙인다 */ }
   if (!response.ok || !data) {
     const detail = data?.error?.details?.flatMap((item) => item.errors ?? []).find((item) => item.message);
     const code = detail?.errorCode ? Object.values(detail.errorCode)[0] : undefined;
-    throw new Error([code, detail?.message || data?.error?.message || `Google Ads API 요청 실패 (${response.status})`].filter(Boolean).join(": "));
+    const summary = [code, detail?.message || data?.error?.message || `Google Ads API 요청 실패 (${response.status})`].filter(Boolean).join(": ");
+    // details 가 있어도 그 안의 메시지가 요약과 똑같을 수 있다(errorCode 없이 "Bad Request" 만 반복되는
+    // 경우가 실제로 있었다) — 그래서 원문은 detail 유무와 상관없이 항상 붙인다.
+    const extra = [data?.error?.status, raw ? raw.slice(0, 500) : null].filter(Boolean).join(" · ");
+    throw new Error(extra ? `${summary} (${extra})` : summary);
   }
   return data;
 }

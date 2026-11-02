@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useWorkspace } from "@/contexts/workspace";
 import ActiveToggle from "@/app/(app)/collect/_components/ActiveToggle";
 import FormBuilderTab from "./FormBuilderTab";
@@ -23,7 +23,9 @@ import InfoTab, { type VenueInfo } from "./InfoTab";
 import CheckinTab from "./CheckinTab";
 import AnalysisTab from "./AnalysisTab";
 import SurveyTab from "./SurveyTab";
-import { TABS, tabsFor, type Tab } from "./tabs";
+import { PageTabs } from "@/components/ui/page-layout";
+import { useQueryTab } from "@/components/ui/use-query-tab";
+import { tabsFor, type Tab } from "./tabs";
 import SourceOverviewTab from "./SourceOverviewTab";
 import ColumnFilterButton, { summarizeFilter } from "./ColumnFilterButton";
 import { isColumnFilterActive, type ColumnFilter, type ColumnFilterKey } from "@/lib/collect-record-filter-model";
@@ -273,11 +275,7 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
   const [source, setSource] = useState<CollectSource | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   // 대시보드 카드가 ?tab=overview 로 바로 현황을 연다. 모르는 값이면 현황(기본 탭)으로.
-  const searchParams = useSearchParams();
-  const [tab, setTab] = useState<Tab>(() => {
-    const requested = searchParams.get("tab");
-    return TABS.find((t) => t.id === requested)?.id ?? "overview";
-  });
+  const [tab, setTab] = useQueryTab<Tab>(tabsFor(source?.mode ?? "capture").map(t => t.id), "overview");
 
   // GA4 분석 연동 — 소스가 아니라 "프로젝트" 단위 설정이지만(§데이터 관리 탭 참고),
   // 데이터를 다루는 이 화면에서 바로 고칠 수 있어야 접근성이 있다.
@@ -986,20 +984,23 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
   };
 
   const handleToggleSilent = async (next: boolean) => {
-    if (!source) return;
+    if (!source) return false;
+    try {
     const res = await fetch(`/api/collect-sources/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isActive: next }),
     });
-    if (!res.ok) { toast.error("상태 변경 실패"); return; }
+    if (!res.ok) { toast.error("상태를 바꾸지 못했어요. 다시 시도해 주세요."); return false; }
     setSource((s) => s ? { ...s, isActive: next } : s);
+    return true;
+    } catch { toast.error("연결을 확인하고 다시 시도해 주세요."); return false; }
   };
 
   const handleToggle = async (next: boolean) => {
     if (!source) return;
     const prev = source.isActive;
-    await handleToggleSilent(next);
+    if (!await handleToggleSilent(next)) return;
     if (prev && !next) {
       toast("등록 폼이 비활성화됐어요", {
         description: "새 데이터 수집이 중단됩니다",
@@ -1195,7 +1196,7 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
       {/* 헤더 */}
       <div>
         <Link href="/collect" className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-3">
-          <ArrowLeft className="w-3.5 h-3.5" />등록 목록
+          <ArrowLeft className="w-3.5 h-3.5" />등록 폼 목록
         </Link>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
           <div className="flex items-center gap-3 min-w-0">
@@ -1211,7 +1212,7 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
                 </span>
               </div>
               <div className="flex items-center gap-3 mt-0.5">
-                {source.description && <p className="text-sm text-muted-foreground">{source.description}</p>}
+                {source.description && <p className="whitespace-pre-line text-sm text-muted-foreground">{source.description}</p>}
                 {source.siteUrl && (
                   <a href={source.siteUrl} target="_blank" rel="noopener noreferrer"
                     className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
@@ -1227,27 +1228,7 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
       </div>
 
       {/* 탭 */}
-      <div className="sticky top-0 z-10 flex gap-1 border-b border-border bg-background overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {tabsFor(source.mode).map(({ id: tabId, label, icon: Icon }) => {
-          const isDanger = tabId === "data-mgmt";
-          const activeColor = isDanger ? "border-red-500 text-red-500" : "border-violet-500 text-violet-500";
-          const idleColor = isDanger ? "border-transparent text-red-500/70 hover:text-red-500" : "border-transparent text-muted-foreground hover:text-foreground";
-          return (
-          <button key={tabId} onClick={() => setTab(tabId)}
-            className={`flex shrink-0 items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px whitespace-nowrap ${
-              tab === tabId ? activeColor : idleColor
-            }`}
-          >
-            <Icon className="w-3.5 h-3.5" />{label}
-            {tabId === "records" && recordsGrandTotal > 0 && (
-              <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-violet-500/10 text-violet-500">
-                {recordsGrandTotal.toLocaleString()}
-              </span>
-            )}
-          </button>
-          );
-        })}
-      </div>
+      <PageTabs label="등록 메뉴" value={tab} onChange={setTab} options={tabsFor(source.mode).map(t => ({ ...t, badge: t.id === "records" && recordsGrandTotal > 0 ? recordsGrandTotal.toLocaleString() : undefined }))} />
 
       <AnimatePresence mode="wait">
         <motion.div key={tab} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>

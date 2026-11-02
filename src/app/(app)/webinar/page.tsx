@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Video, Loader2, ChevronRight, Calendar, Users, Trash2 } from "lucide-react";
+import { PageHeader, ListSearch } from "@/components/ui/page-layout";
+import { useQueryText } from "@/components/ui/use-query-tab";
 import { toast } from "sonner";
 import { useWorkspace } from "@/contexts/workspace";
 import { kstDateTimeLocalToIso, formatKst, kstDateString } from "@/lib/datetime";
@@ -30,6 +32,8 @@ export default function WebinarPage() {
   const { workspace, currentProject, isLoading: wsLoading } = useWorkspace();
   const [webinars, setWebinars] = useState<Webinar[]>([]);
   const [cloneSources, setCloneSources] = useState<Webinar[]>([]);
+  const [query, setQuery] = useQueryText();
+  const shown = webinars.filter(item => item.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   const [isLoading, setIsLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [cloneFromId, setCloneFromId] = useState("");
@@ -153,10 +157,7 @@ export default function WebinarPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6">
       <div className="flex items-end justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-semibold">웨비나</h1>
-          <p className="text-sm text-muted-foreground mt-1.5">{currentProject.name} · 웨비나 등록 및 운영 관리</p>
-        </div>
+        <PageHeader title="웨비나" context={currentProject.name} description="등록부터 라이브 운영과 결과 분석까지 관리합니다." />
         <motion.button
           whileTap={{ scale: 0.95 }}
           onClick={() => setShowCreate(true)}
@@ -267,6 +268,7 @@ export default function WebinarPage() {
         )}
       </AnimatePresence>
 
+      {webinars.length > 0 && <ListSearch value={query} onChange={setQuery} label="웨비나 검색" count={shown.length} />}
       {/* 목록 */}
       {isLoading ? (
         <div className="flex items-center justify-center h-40">
@@ -280,9 +282,9 @@ export default function WebinarPage() {
           <p className="text-sm text-muted-foreground">아직 웨비나가 없어요</p>
           <p className="text-xs text-muted-foreground/60 mt-1">웨비나를 추가해 사전등록, 라이브 페이지, 어드민을 한 곳에서 관리하세요</p>
         </div>
-      ) : (
+      ) : shown.length === 0 ? <div className="py-12 text-center"><p className="text-sm text-muted-foreground">검색 결과가 없어요.</p><button type="button" onClick={() => setQuery("")} className="mt-3 rounded-lg px-3 py-2 text-sm hover:bg-secondary">검색 초기화</button></div> : (
         <div className="space-y-2">
-          {webinars.map((webinar) => {
+          {shown.map((webinar) => {
             // 상태 머신 기준(statusOverride 반영) — 허브·운영 콘솔과 동일 라벨
             const status = resolveWebinarStatus(webinar).status;
             const meta = WEBINAR_STATUS_META[status];

@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Implement only in `/Users/lynlea/mach studio/.worktrees/stk-homepage-cms-design` on `codex/stk-homepage-cms-design`; do not touch the stale root checkout or its untracked files.
+- Implement only in `<repo>/.worktrees/stk-homepage-cms-design` on `codex/stk-homepage-cms-design`; do not touch the stale root checkout or its untracked files.
 - The approved design is `docs/superpowers/specs/2026-09-01-stk-imweb-homepage-cms-design.md`; changes to its product decisions require user approval before implementation.
 - Initial content scope is the STK main page `/214` only. The engine remains generic; the STK-specific behavior lives in the `stk-home-v1` preset and six plugins.
 - Mach owns Hero, six exhibitions, For Exhibitors/For Visitors, Speakers, Sponsors & Partners, and Final CTA. Header/navigation, TechCon highlight, newsroom Board, Stibee newsletter, footer, and Channel Talk remain native Imweb content.
@@ -1529,12 +1529,12 @@ Expected: preset/importer are absent.
 Use these read-only sources:
 
 ```text
-Hero       /Users/lynlea/.codex/attachments/89b235b3-0c8c-44ba-9c8d-8c04a7879447/pasted-text.txt
-Exhibition /Users/lynlea/.codex/attachments/b54b1abc-39b1-4906-bad5-9b367ddd0e2b/pasted-text.txt
-Audience   /Users/lynlea/.codex/attachments/530788e2-7712-4ad9-8e81-a6a9fc0219fc/pasted-text.txt
-Speakers   /Users/lynlea/.codex/attachments/cc0ec5d6-bcd7-4c0e-bc5d-5c30c589006e/pasted-text.txt
-Sponsors   /Users/lynlea/.codex/attachments/b2c08fc6-c6b9-4f8a-961b-40c594f7149a/pasted-text.txt
-Final CTA  /Users/lynlea/.codex/attachments/713161ee-08f9-4651-baff-7c4afdd163ae/pasted-text.txt
+Hero       <attachment>/pasted-text.txt
+Exhibition <attachment>/pasted-text.txt
+Audience   <attachment>/pasted-text.txt
+Speakers   <attachment>/pasted-text.txt
+Sponsors   <attachment>/pasted-text.txt
+Final CTA  <attachment>/pasted-text.txt
 ```
 
 Exclude the newsletter source `e6b9523e-f66c-469f-b897-ff18c252a413`; it remains Imweb/Stibee-owned.

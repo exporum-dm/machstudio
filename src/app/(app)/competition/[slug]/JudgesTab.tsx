@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Check, Copy, KeyRound, Loader2, Plus, RefreshCw, Trash2, Users } from "lucide-react";
+import { getPublicAppOrigin } from "@/lib/app-url";
 import { toast } from "sonner";
 import { InlineError } from "@/components/ui/inline-error";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -250,10 +251,8 @@ function JudgeRow({
   onChangeRound: (kind: JudgeRoundKind) => void;
 }) {
   const [copied, setCopied] = useState(false);
-  // 이번 승인 범위 밖인 심사위원 초대 링크는 현재 host 동작을 유지한다.
-  // eslint-disable-next-line no-restricted-syntax
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
-  const link = `${origin}/j/${judge.accessToken}`;
+  const origin = getPublicAppOrigin();
+  const link = origin ? `${origin}/j/${judge.accessToken}` : "";
 
   return (
     <div className={`bg-background p-3 ${R.surface} ${FINISH.s2}`}>
@@ -289,6 +288,7 @@ function JudgeRow({
         </div>
 
         <button
+          disabled={!link}
           onClick={async () => {
             try {
               await navigator.clipboard.writeText(link);

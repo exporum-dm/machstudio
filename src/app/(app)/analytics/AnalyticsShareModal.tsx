@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Copy, Loader2, Lock, RefreshCw, Share2, X } from "lucide-react";
+import { getPublicAppOrigin } from "@/lib/app-url";
 import { toast } from "sonner";
 
 interface ShareState {
@@ -26,10 +27,8 @@ export function AnalyticsShareModal({ open, onClose, projectId, projectName }: P
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
 
-  const shareUrl = state?.shareToken
-    // 이번 승인 범위 밖인 분석 공유 링크는 현재 열어 둔 host 동작을 유지한다.
-    // eslint-disable-next-line no-restricted-syntax
-    ? `${typeof window !== "undefined" ? window.location.origin : ""}/share/analytics/${state.shareToken}`
+  const shareUrl = state?.shareToken && getPublicAppOrigin()
+    ? `${getPublicAppOrigin()}/share/analytics/${state.shareToken}`
     : "";
 
   const load = useCallback(async () => {

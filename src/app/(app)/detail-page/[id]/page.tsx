@@ -2,8 +2,9 @@
 
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
 import { ArrowLeft, Check, Code2, Copy, ExternalLink, FileText, Loader2 } from "lucide-react";
+import { PageTabs } from "@/components/ui/page-layout";
+import { useQueryTab } from "@/components/ui/use-query-tab";
 import { toast } from "sonner";
 import { FINISH, R } from "@/components/ui/primitives";
 import { InlineError } from "@/components/ui/inline-error";
@@ -31,14 +32,13 @@ const TABS = [
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
-const spring = { type: "spring" as const, stiffness: 420, damping: 34 };
 
 export default function DetailPageEditorPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [page, setPage] = useState<DetailPageDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
-  const [tab, setTab] = useState<TabId>("edit");
+  const [tab, setTab] = useQueryTab<TabId>(TABS.map(t => t.id), "edit");
 
   const fetchPage = useCallback(async () => {
     setLoading(true);
@@ -110,30 +110,7 @@ export default function DetailPageEditorPage({ params }: { params: Promise<{ id:
         </div>
       </div>
 
-      <div className="sticky top-0 z-10 flex flex-wrap gap-1 border-b border-border bg-background">
-        {TABS.map(({ id: tabId, label, icon: Icon }) => {
-          const active = tab === tabId;
-          return (
-            <button
-              key={tabId}
-              onClick={() => setTab(tabId)}
-              className={`relative flex items-center gap-1.5 px-3 py-2 text-sm transition-colors ${
-                active ? "text-violet-600 dark:text-violet-400" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {label}
-              {active && (
-                <motion.span
-                  layoutId="detail-page-tab"
-                  transition={spring}
-                  className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-violet-500"
-                />
-              )}
-            </button>
-          );
-        })}
-      </div>
+      <PageTabs label="상세페이지 메뉴" value={tab} onChange={setTab} options={TABS} />
 
       {/* 편집 탭은 숨기기만 한다 — 설치 코드를 보러 갔다 와도 저장 안 한 편집이 날아가지 않게. */}
       <div hidden={tab !== "edit"}>

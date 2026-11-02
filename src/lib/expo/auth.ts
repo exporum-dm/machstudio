@@ -129,15 +129,17 @@ export type WorkspaceRole = "OWNER" | "ADMIN" | "MEMBER";
 export type ProjectRole = "VIEWER" | "EDITOR" | "ADMIN";
 
 /**
- * A workspace MEMBER sees a project only through an explicit project membership.
- * Return 404 for a missing assignment so that a project id cannot be enumerated.
+ * 워크스페이스 멤버면 그 워크스페이스의 모든 프로젝트를 본다(2026-11-02, 배정 불필요).
+ * 워크스페이스 밖이면 404 — 프로젝트 id 로 존재 여부를 떠볼 수 없게.
  */
 export function requireProjectAccess(
   workspaceRole: WorkspaceRole | null,
   projectRole: ProjectRole | null,
 ): ExpoAuthResult<true> {
-  if (workspaceRole === "OWNER" || workspaceRole === "ADMIN") return ok(true as const);
-  return workspaceRole === "MEMBER" && projectRole !== null ? ok(true as const) : fail("not-found");
+  void projectRole;
+  return workspaceRole === "OWNER" || workspaceRole === "ADMIN" || workspaceRole === "MEMBER"
+    ? ok(true as const)
+    : fail("not-found");
 }
 
 /**

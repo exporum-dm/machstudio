@@ -46,7 +46,7 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/api/show/") ||
     pathname.startsWith("/api/public") ||
     pathname.startsWith("/api/v1/") || // PAT Bearer 인증을 라우트 자체에서 검증하는 외부 API
-    pathname === "/mcp" || // PAT Bearer 인증을 사용하는 원격 MCP 서버
+    pathname === "/mcp" || pathname.startsWith("/mcp/") || // PAT Bearer 인증을 사용하는 원격 MCP 서버(프로젝트 하나로 묶인 /mcp/{projectId} 포함)
     pathname.startsWith("/api/shorten-url") ||
     pathname.startsWith("/api/health") ||
     pathname.startsWith("/share") ||

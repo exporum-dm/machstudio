@@ -81,8 +81,12 @@ describe("자원 소유 — 남의 것은 404", () => {
 });
 
 describe("프로젝트 배정", () => {
-  it("배정되지 않은 워크스페이스 MEMBER 는 존재를 알 수 없다", () => {
-    const result = requireProjectAccess("MEMBER", null);
+  it("워크스페이스 MEMBER 는 배정 없이도 접근한다(2026-11-02)", () => {
+    expect(requireProjectAccess("MEMBER", null).ok).toBe(true);
+  });
+
+  it("워크스페이스 밖의 사람은 존재를 알 수 없다", () => {
+    const result = requireProjectAccess(null, null);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.failure.kind).toBe("not-found");
   });

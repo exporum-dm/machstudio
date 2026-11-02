@@ -46,7 +46,13 @@ type AdminSearchParams = Promise<{
   q?: string | string[];
   view?: string | string[];
   message?: string | string[];
+  /** 목록에 보여 줄 개수 — "더보기" 를 누를 때마다 늘어난다 */
+  limit?: string | string[];
 }>;
+
+/** 사용자·워크스페이스·프로젝트·수집 소스 목록을 한 번에 몇 개씩 보여 줄지. */
+const LIST_PAGE = 20;
+const LIST_MAX = 500;
 
 const adminViews: Array<{
   id: AdminView;
@@ -335,6 +341,27 @@ function SubmitButton({
   );
 }
 
+/**
+ * 목록 아래 "더보기" — 예전엔 목록마다 최근 7개만 읽고 나머지로 갈 길이 없었다(검색해야만 보였다).
+ * 서버 화면이라 링크로 개수를 늘린다(?limit=). 검색어는 그대로 이어 간다.
+ */
+function MoreLink({ view, query, shown, total, limit }: { view: AdminView; query: string; shown: number; total: number; limit: number }) {
+  if (shown >= total) return null;
+  const next = Math.min(limit + LIST_PAGE, LIST_MAX);
+  const qs = new URLSearchParams({ view, limit: String(next), ...(query ? { q: query } : {}) });
+  return (
+    <div className="border-t border-border py-4 text-center">
+      {limit >= LIST_MAX ? (
+        <p className="text-xs text-muted-foreground">{total.toLocaleString()}개 중 {shown.toLocaleString()}개까지 보여요 — 검색으로 좁혀 주세요.</p>
+      ) : (
+        <a href={`/admin?${qs}`} className="inline-flex items-center rounded-lg bg-secondary px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary/70">
+          더보기 ({shown.toLocaleString()} / {total.toLocaleString()})
+        </a>
+      )}
+    </div>
+  );
+}
+
 function EmptyText({ children }: { children: ReactNode }) {
   return <p className="border-t border-border py-8 text-center text-xs text-muted-foreground">{children}</p>;
 }
@@ -416,6 +443,7 @@ export default async function SuperAdminPage({ searchParams }: { searchParams?: 
   const params = searchParams ? await searchParams : {};
   const query = firstParam(params.q).trim();
   const currentView = normalizeView(firstParam(params.view));
+  const limit = Math.min(LIST_MAX, Math.max(LIST_PAGE, Number.parseInt(firstParam(params.limit), 10) || LIST_PAGE));
   const message = firstParam(params.message).trim();
   const selectedView = adminViews.find((view) => view.id === currentView) ?? adminViews[0];
 
@@ -480,7 +508,7 @@ export default async function SuperAdminPage({ searchParams }: { searchParams?: 
     prisma.user.findMany({
       where: userWhere,
       orderBy: { createdAt: "desc" },
-      take: 7,
+      take: limit,
       select: {
         id: true,
         email: true,
@@ -535,7 +563,7 @@ export default async function SuperAdminPage({ searchParams }: { searchParams?: 
     prisma.workspace.findMany({
       where: workspaceWhere,
       orderBy: { updatedAt: "desc" },
-      take: 7,
+      take: limit,
       select: {
         id: true,
         name: true,
@@ -559,7 +587,7 @@ export default async function SuperAdminPage({ searchParams }: { searchParams?: 
     prisma.project.findMany({
       where: projectWhere,
       orderBy: { updatedAt: "desc" },
-      take: 7,
+      take: limit,
       select: {
         id: true,
         name: true,
@@ -579,7 +607,7 @@ export default async function SuperAdminPage({ searchParams }: { searchParams?: 
     prisma.collectSource.findMany({
       where: sourceWhere,
       orderBy: { updatedAt: "desc" },
-      take: 7,
+      take: limit,
       select: {
         id: true,
         name: true,
@@ -606,6 +634,14 @@ export default async function SuperAdminPage({ searchParams }: { searchParams?: 
       },
     }),
     getAuthUserMap(),
+  ]);
+
+  // 더보기 버튼에 "몇 개 중 몇 개" 를 보이려고 — 검색 조건까지 같은 수.
+  const [userTotal, workspaceTotal, projectTotal, sourceTotal] = await Promise.all([
+    prisma.user.count({ where: userWhere }),
+    prisma.workspace.count({ where: workspaceWhere }),
+    prisma.project.count({ where: projectWhere }),
+    prisma.collectSource.count({ where: sourceWhere }),
   ]);
 
   const envChecks = [
@@ -955,6 +991,7 @@ export default async function SuperAdminPage({ searchParams }: { searchParams?: 
                     );
                   })
                 )}
+                <MoreLink view="users" query={query} shown={adminUsers.length} total={userTotal} limit={limit} />
               </section>
             )}
 
@@ -1021,6 +1058,7 @@ export default async function SuperAdminPage({ searchParams }: { searchParams?: 
                     </article>
                   ))
                 )}
+                <MoreLink view="workspaces" query={query} shown={workspaces.length} total={workspaceTotal} limit={limit} />
               </section>
             )}
 
@@ -1067,6 +1105,7 @@ export default async function SuperAdminPage({ searchParams }: { searchParams?: 
                         </article>
                       ))
                     )}
+                    <MoreLink view="projects" query={query} shown={projects.length} total={projectTotal} limit={limit} />
                   </div>
                 </div>
 
@@ -1112,6 +1151,7 @@ export default async function SuperAdminPage({ searchParams }: { searchParams?: 
                         </article>
                       ))
                     )}
+                    <MoreLink view="projects" query={query} shown={collectSources.length} total={sourceTotal} limit={limit} />
                   </div>
                 </div>
               </section>

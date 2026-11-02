@@ -1,5 +1,7 @@
 "use client";
 
+import { cn } from "@/lib/utils";
+
 /**
  * 만들기 화면의 시각 프리미티브 — 표면·입력·컨트롤.
  *
@@ -300,7 +302,7 @@ export const Field = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
       <input
         ref={ref}
         aria-invalid={invalid || undefined}
-        className={`${invalid ? FIELD_CLS_DANGER : FIELD_CLS} ${className}`}
+        className={cn(invalid ? FIELD_CLS_DANGER : FIELD_CLS, className)}
         {...rest}
       />
     );
@@ -315,7 +317,7 @@ export const FieldArea = forwardRef<
     <textarea
       ref={ref}
       aria-invalid={invalid || undefined}
-      className={`${invalid ? FIELD_CLS_DANGER : FIELD_CLS} resize-y leading-relaxed ${className}`}
+      className={cn(invalid ? FIELD_CLS_DANGER : FIELD_CLS, "resize-y leading-relaxed", className)}
       {...rest}
     />
   );
@@ -324,7 +326,7 @@ export const FieldArea = forwardRef<
 export const FieldSelect = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(
   function FieldSelect({ className = "", children, ...rest }, ref) {
     return (
-      <select ref={ref} className={`${FIELD_CLS} ${className}`} {...rest}>
+      <select ref={ref} className={cn(FIELD_CLS, className)} {...rest}>
         {children}
       </select>
     );

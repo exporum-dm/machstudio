@@ -8,14 +8,14 @@
 import { Activity, BarChart3, ClipboardCheck, PieChart, Code2, HardDriveDownload, Info, ScanLine, Settings2, Shield, Table2, Wrench, type LucideIcon } from "lucide-react";
 
 /**
- * "현황"(통계)과 "등록자 DB"(명단)를 나눠 둔다 — 예전엔 프로젝트 대시보드가 사전등록 통계를 들고
+ * "현황"(통계)과 "등록자 DB"(명단)를 나눠 둔다 — 예전엔 프로젝트 대시보드가 등록 통계를 들고
  * 있었고 수집 데이터 탭 위에도 요약 카드가 얹혀 있었다. 대시보드가 메뉴 전체 요약으로 바뀌며
  * (2026-10-08) 통계는 폼마다 여기서 본다. 현황이 맨 앞이자 기본 탭이다.
  */
 export const TABS = [
   { id: "overview", label: "현황", icon: BarChart3 },
-  { id: "records", label: "등록자 DB", icon: Table2 },
-  { id: "analysis", label: "결과 분석", icon: PieChart },
+  { id: "records", label: "응답 목록", icon: Table2 },
+  { id: "analysis", label: "응답 분석", icon: PieChart },
   { id: "info", label: "기본 정보", icon: Info },
   { id: "form", label: "등록 폼", icon: Settings2 },
   { id: "checkin", label: "현장 체크인", icon: ScanLine },

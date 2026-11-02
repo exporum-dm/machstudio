@@ -1,0 +1,12 @@
+.git
+node_modules
+.next
+.env*
+.mcp.json
+.deploy-worktrees
+test-results
+src/generated/prisma
+.agents
+exports
+tmp
+coverage

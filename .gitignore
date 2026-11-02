@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/test-results/workbench-browser/
 
 # next.js
 /.next/

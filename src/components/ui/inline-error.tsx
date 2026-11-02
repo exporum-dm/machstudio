@@ -18,14 +18,15 @@ export function InlineError({
   className?: string;
 }) {
   return (
-    <div className={`flex flex-col items-center justify-center py-16 text-center ${className}`}>
-      <AlertCircle className="mb-3 h-9 w-9 text-muted-foreground/30" />
+    <div role="status" aria-live="polite" className={`flex flex-col items-center justify-center py-16 text-center ${className}`}>
+      <AlertCircle className="mb-3 h-9 w-9 text-muted-foreground/50" aria-hidden />
       <p className="text-sm font-medium">{message}</p>
       {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
       {onRetry && (
         <button
+          type="button"
           onClick={onRetry}
-          className="mt-4 inline-flex items-center gap-1.5 rounded-xl border border-border px-3.5 py-2 text-xs font-medium transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
+          className="mt-4 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium shadow-[inset_0_0_0_1px_var(--border)] transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <RefreshCw className="h-3.5 w-3.5" />
           다시 시도

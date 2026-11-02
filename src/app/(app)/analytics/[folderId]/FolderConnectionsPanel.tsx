@@ -9,6 +9,7 @@ import { AD_DETAIL_METRIC_COLUMNS, type AdDetailMetricColumn } from "@/lib/meta-
 type MediaAccount = { platform: string; accountId: string; accountName: string };
 type MetaAccount = { id: string; name: string; currency?: string; timezone_name?: string };
 type GoogleAccount = { id: string; name: string; currency?: string; timezone?: string };
+type GoogleMeta = { lastSyncedAt: string | null; lastSyncError: string | null; accountsError: string | null };
 
 // DB에는 UTC로 저장되지만 이 앱의 날짜는 KST 달력일 기준 — naive slice(0,10)은 자정 부근에 하루 밀린다.
 function kstDateOnly(value: string) {
@@ -48,6 +49,7 @@ export function FolderConnectionsPanel({
   const [selectedId, setSelectedId] = useState("");
   const [googleAvailable, setGoogleAvailable] = useState<GoogleAccount[]>([]);
   const [googleConnected, setGoogleConnected] = useState<boolean | null>(null);
+  const [googleMeta, setGoogleMeta] = useState<GoogleMeta>({ lastSyncedAt: null, lastSyncError: null, accountsError: null });
   const [googleSelectedId, setGoogleSelectedId] = useState("");
   const [googleSyncing, setGoogleSyncing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -67,7 +69,11 @@ export function FolderConnectionsPanel({
     if (!response.ok) toast.error(data?.error || "Meta 광고 계정을 불러오지 못했습니다.");
     else { setAvailable(data.accounts ?? []); setConnected(data.connected === true); }
     if (!googleResponse.ok) toast.error(googleData?.error || "Google Ads 계정을 불러오지 못했습니다.");
-    else { setGoogleAvailable(googleData.accounts ?? []); setGoogleConnected(googleData.connected === true); }
+    else {
+      setGoogleAvailable(googleData.accounts ?? []);
+      setGoogleConnected(googleData.connected === true);
+      setGoogleMeta({ lastSyncedAt: googleData.lastSyncedAt ?? null, lastSyncError: googleData.lastSyncError ?? null, accountsError: googleData.accountsError ?? null });
+    }
     setLoading(false);
   }, [folderId]);
 
@@ -148,6 +154,7 @@ export function FolderConnectionsPanel({
     const response = await fetch(`/api/ad-performance/folders/${folderId}/google-sync`, { method: "POST" });
     const data = await response.json().catch(() => null);
     setGoogleSyncing(false);
+    await load(); // 성공/실패 모두 lastSyncError·lastSyncedAt 을 새로 읽어와 카드에 보여준다
     if (!response.ok) return toast.error(data?.error || "Google Ads 데이터를 동기화하지 못했습니다.");
     toast.success(`Google Ads 성과 ${Number(data.rowCount || 0).toLocaleString()}건을 동기화했습니다.`);
   }
@@ -211,6 +218,9 @@ export function FolderConnectionsPanel({
     <section className="max-w-2xl rounded-2xl bg-secondary/35 p-5">
       <div className="flex items-start justify-between gap-3"><div className="flex items-start gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-amber-500/15 font-bold text-amber-600">G</span><div><h3 className="text-sm font-semibold">Google Ads 계정 추가</h3><p className="mt-1 text-xs text-muted-foreground">Google 로그인 한 번으로 관리자 계정의 광고 계정을 선택합니다.</p></div></div>{googleConnected && accounts.some(item => item.platform === "GOOGLE") && <button type="button" onClick={() => void syncGoogle()} disabled={googleSyncing} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-amber-500 px-3 text-xs font-semibold text-white shadow-sm disabled:opacity-40"><RefreshCw className={`h-3.5 w-3.5 ${googleSyncing ? "animate-spin" : ""}`} />Google 동기화</button>}</div>
       {loading ? <div className="mt-4 flex h-10 items-center"><Loader2 className="h-4 w-4 animate-spin" /></div> : !googleConnected ? <a href={`/api/google-ads/connect?folderId=${encodeURIComponent(folderId)}`} className="mt-4 inline-flex h-10 items-center justify-center rounded-xl bg-amber-500 px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-amber-600">Google 계정 연결</a> : <div className="mt-4 flex flex-col gap-2 sm:flex-row"><select value={googleSelectedId} onChange={event => setGoogleSelectedId(event.target.value)} className="h-10 min-w-0 flex-1 rounded-xl bg-background px-3 text-sm shadow-sm outline-none focus:ring-2 focus:ring-amber-400"><option value="">광고 계정을 선택해주세요</option>{googleSelectable.map(item => <option key={item.id} value={item.id}>{item.name} · {item.id}{item.currency ? ` · ${item.currency}` : ""}</option>)}</select><button type="button" disabled={!googleSelectedId || saving} onClick={addGoogle} className="h-10 rounded-xl bg-amber-500 px-4 text-xs font-semibold text-white shadow-sm disabled:opacity-40">계정 추가</button></div>}
+      {googleConnected && googleMeta.lastSyncedAt && <p className="mt-2 text-[11px] text-muted-foreground">마지막 동기화 {new Date(googleMeta.lastSyncedAt).toLocaleString("ko-KR")}</p>}
+      {googleConnected && googleMeta.lastSyncError && <p className="mt-1.5 whitespace-pre-wrap break-all text-xs text-amber-600">동기화 오류: {googleMeta.lastSyncError}</p>}
+      {googleConnected && googleMeta.accountsError && <p className="mt-1.5 whitespace-pre-wrap break-all text-xs text-amber-600">계정 목록 조회 오류: {googleMeta.accountsError}</p>}
     </section>
   </div>;
 }

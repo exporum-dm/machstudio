@@ -6,6 +6,7 @@ import {
   Plus, Trash2, GripVertical, Link2, Loader2, BarChart3,
   Star, CircleDot, ListChecks, Gauge, AlignLeft, Copy, ChevronDown, ChevronRight, ArrowLeft, Info, X, Smartphone, CalendarClock, CircleCheckBig, ClipboardList, MousePointerClick, Target,
 } from "lucide-react";
+import { getPublicAppOrigin } from "@/lib/app-url";
 import { toast } from "sonner";
 import { useAutosave } from "@/components/ui/use-autosave";
 import { useReportAutosave } from "@/components/ui/autosave-scope";
@@ -547,9 +548,9 @@ function SurveyEditor({
   };
 
   const copyLink = async () => {
-    // 이번 승인 범위 밖인 설문 공유 링크는 현재 host 동작을 유지한다.
-    // eslint-disable-next-line no-restricted-syntax
-    const url = `${window.location.origin}/webinar/${slug}/survey/${survey.id}`;
+    const origin = getPublicAppOrigin();
+    if (!origin) { toast.error("공개 주소 설정을 확인해 주세요."); return; }
+    const url = `${origin}/webinar/${slug}/survey/${survey.id}`;
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);

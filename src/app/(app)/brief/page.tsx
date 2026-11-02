@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { FileText, Loader2, Megaphone, Newspaper, Radar, Sparkles } from "lucide-react";
+import { FileText, Loader2, Newspaper, Radar, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { useWorkspace } from "@/contexts/workspace";
 import { Btn, FieldSelect, FINISH, R, Segmented } from "@/components/ui/primitives";
@@ -10,16 +10,32 @@ import { PickTab } from "@/components/brief/PickTab";
 import { DashboardTab } from "@/components/brief/DashboardTab";
 import { PublicTab } from "@/components/brief/PublicTab";
 import { SourcesTab } from "@/components/brief/SourcesTab";
+import { PageHeader, PageTabs } from "@/components/ui/page-layout";
+import { useQueryTab } from "@/components/ui/use-query-tab";
 import { MentionWorkspace, PressWorkspace } from "@/components/pr-room/workspaces";
 
 type RoomTab="monitor"|"press"|"brief";type BriefTab="pick"|"dashboard"|"public"|"sources";
 interface PresetOption{key:string;label:string;description:string;name:string}
 
-export default function PrRoomPage(){const{currentProject}=useWorkspace();const projectId=currentProject?.id??"";const[roomTab,setRoomTab]=useState<RoomTab>("monitor");if(!projectId)return <div className="p-6 text-sm text-muted-foreground">왼쪽에서 프로젝트를 먼저 골라 주세요.</div>;return <div className="space-y-5 p-4 sm:p-6"><header><h1 className="flex items-center gap-2 text-xl font-semibold"><Megaphone className="h-5 w-5 text-violet-600"/>홍보실</h1><p className="mt-1 text-sm text-muted-foreground">행사 반응 조사, 보도자료 작성, 뉴스 브리프 발행을 각각 관리합니다.</p></header><nav className="grid max-w-3xl grid-cols-3 gap-2" aria-label="홍보실 업무"><RoomButton active={roomTab==="monitor"} icon={Radar} title="언급·반응 조사" detail="보도·SNS·댓글" onClick={()=>setRoomTab("monitor")}/><RoomButton active={roomTab==="press"} icon={FileText} title="보도자료" detail="질문 답변으로 원고 작성" onClick={()=>setRoomTab("press")}/><RoomButton active={roomTab==="brief"} icon={Newspaper} title="브리프" detail="뉴스 큐레이션·발행" onClick={()=>setRoomTab("brief")}/></nav>{roomTab==="monitor"?<MentionWorkspace key={projectId} projectId={projectId}/>:roomTab==="press"?<PressWorkspace key={projectId} projectId={projectId}/>:<BriefWorkspace key={projectId} projectId={projectId}/>}</div>}
+const ROOM_TABS = [
+  { id: "monitor", label: "언급·반응 조사", icon: Radar },
+  { id: "press", label: "보도자료", icon: FileText },
+  { id: "brief", label: "브리프", icon: Newspaper },
+] as const;
 
-function RoomButton({active,icon:Icon,title,detail,onClick}:{active:boolean;icon:typeof Radar;title:string;detail:string;onClick:()=>void}){return <button type="button" onClick={onClick} className={`rounded-xl p-3 text-left shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${active?"bg-violet-600 text-white shadow-md":"bg-card hover:-translate-y-0.5 hover:shadow-md"}`}><span className="flex items-center gap-2 text-sm font-semibold"><Icon className="h-4 w-4"/>{title}</span><span className={`mt-1 block text-xs ${active?"text-violet-100":"text-muted-foreground"}`}>{detail}</span></button>}
+export default function PrRoomPage() {
+  const { currentProject } = useWorkspace();
+  const projectId = currentProject?.id ?? "";
+  const [roomTab, setRoomTab] = useQueryTab<RoomTab>(ROOM_TABS.map(t => t.id), "monitor", "room");
+  if (!projectId) return <div className="p-6 text-sm text-muted-foreground">왼쪽에서 프로젝트를 먼저 골라 주세요.</div>;
+  return <div className="space-y-5 p-4 sm:p-6 lg:p-8">
+    <PageHeader title="홍보실" context={currentProject?.name} description="온라인 반응을 조사하고 보도자료와 뉴스 브리프를 만듭니다." />
+    <PageTabs label="홍보실 업무" value={roomTab} onChange={setRoomTab} options={ROOM_TABS} sticky={false} />
+    {roomTab === "monitor" ? <MentionWorkspace key={projectId} projectId={projectId} /> : roomTab === "press" ? <PressWorkspace key={projectId} projectId={projectId} /> : <BriefWorkspace key={projectId} projectId={projectId} />}
+  </div>;
+}
 
-function BriefWorkspace({projectId}:{projectId:string}){const[briefs,setBriefs]=useState<BriefRow[]|null>(null);const[presets,setPresets]=useState<PresetOption[]>([]);const[creating,setCreating]=useState(false);const[canWrite,setCanWrite]=useState(false);const[briefId,setBriefId]=useState("");const[tab,setTab]=useState<BriefTab>("pick");const[brief,setBrief]=useState<BriefRow|null>(null);const[items,setItems]=useState<BriefItem[]>([]);const[issues,setIssues]=useState<BriefIssueRow[]>([]);const[error,setError]=useState("");
+function BriefWorkspace({projectId}:{projectId:string}){const[briefs,setBriefs]=useState<BriefRow[]|null>(null);const[presets,setPresets]=useState<PresetOption[]>([]);const[creating,setCreating]=useState(false);const[canWrite,setCanWrite]=useState(false);const[briefId,setBriefId]=useState("");const[tab,setTab]=useQueryTab<BriefTab>(["pick","dashboard","public","sources"],"pick","briefTab");const[brief,setBrief]=useState<BriefRow|null>(null);const[items,setItems]=useState<BriefItem[]>([]);const[issues,setIssues]=useState<BriefIssueRow[]>([]);const[error,setError]=useState("");
   useEffect(()=>{let cancelled=false;(async()=>{try{const res=await api<{canWrite:boolean;briefs:BriefRow[];suggestedPreset:string|null;presets:PresetOption[]}>(`/api/briefs?projectId=${encodeURIComponent(projectId)}`);let list=res.briefs;const suggested=res.presets.find(p=>p.key===res.suggestedPreset);if(!list.length&&res.canWrite&&suggested){setCreating(true);const made=await api<{brief:BriefRow}>("/api/briefs",{method:"POST",body:JSON.stringify({projectId,name:suggested.name,slug:"the-action",intro:"이번주 바로 확인해야 할 실용 정보를 보내드립니다!",preset:suggested.key})});list=[made.brief]}if(cancelled)return;setBriefs(list);setPresets(res.presets);setCanWrite(res.canWrite);setBriefId(list[0]?.id??"")}catch(e){if(!cancelled){setError((e as Error).message);setBriefs([])}}finally{if(!cancelled)setCreating(false)}})();return()=>{cancelled=true}},[projectId]);
   const fetchDetail=useCallback(()=>api<{canWrite:boolean;brief:BriefRow;items:BriefItem[];issues:BriefIssueRow[]}>(`/api/briefs/${briefId}`),[briefId]);const apply=useCallback((r:Awaited<ReturnType<typeof fetchDetail>>)=>{setBrief(r.brief);setItems(r.items);setIssues(r.issues);setCanWrite(r.canWrite);setError("")},[]);const reload=useCallback(async()=>{if(briefId)apply(await fetchDetail())},[briefId,fetchDetail,apply]);useEffect(()=>{if(!briefId)return;let cancelled=false;fetchDetail().then(r=>!cancelled&&apply(r)).catch(e=>!cancelled&&setError((e as Error).message));return()=>{cancelled=true}},[briefId,fetchDetail,apply]);
   const create=async(p:PresetOption|null)=>{setCreating(true);try{const r=await api<{brief:BriefRow}>("/api/briefs",{method:"POST",body:JSON.stringify(p?{projectId,name:p.name,intro:"이번주 바로 확인해야 할 실용 정보를 보내드립니다!",preset:p.key}:{projectId,name:"브리프"})});setBriefs([r.brief]);setBriefId(r.brief.id);setTab(p?"pick":"sources")}catch(e){toast.error((e as Error).message)}finally{setCreating(false)}};

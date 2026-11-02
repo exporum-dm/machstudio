@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/activity";
 import { ensureAppUser } from "@/lib/app-user";
+import { isSuperAdminEmail } from "@/lib/super-admin";
+import { autoJoinCompanyWorkspace, ensureSuperAdminEverywhere } from "@/lib/auto-join";
 
 // 현재 워크스페이스 + 프로젝트 목록
 export async function GET() {
@@ -13,21 +15,26 @@ export async function GET() {
   /* 여기가 DB User 행을 보장하는 자리다 — 앱 화면을 열면 WorkspaceProvider 가 이 라우트를
      반드시 부르고, 이미 user 행을 읽고 있었다(isSuperAdmin). 없을 때만 만들므로 평상시
      쿼리 수는 그대로다. 왜 로그인 시점에 만들어야 하는지는 ensureAppUser 주석 참고. */
-  const [memberships, dbUser] = await Promise.all([
-    prisma.workspaceMember.findMany({
-      where: { userId: user.id, workspace: { deletedAt: null } },
-      include: { workspace: { include: { projects: { where: { deletedAt: null }, orderBy: { createdAt: "asc" } } } } },
-      orderBy: { joinedAt: "asc" },
-    }),
-    ensureAppUser(user),
-  ]);
+  const loadMemberships = () => prisma.workspaceMember.findMany({
+    where: { userId: user.id, workspace: { deletedAt: null } },
+    include: { workspace: { include: { projects: { where: { deletedAt: null }, orderBy: { createdAt: "asc" } } } } },
+    orderBy: { joinedAt: "asc" },
+  });
+  const [initialMemberships, dbUser] = await Promise.all([loadMemberships(), ensureAppUser(user)]);
+  let memberships = initialMemberships;
 
   // env 기반 root 어드민 또는 DB 플래그
-  const isSuperAdmin = (() => {
-    const envEmails = (process.env.SUPER_ADMIN_EMAILS ?? "lynlea@exporum.com").split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
-    if (user.email && envEmails.includes(user.email.toLowerCase())) return true;
-    return dbUser?.isSuperAdmin === true;
-  })();
+  // 이메일 목록은 super-admin.ts 한 곳에서만 정한다 — 여기 따로 적어 두면 사람이 바뀔 때 한쪽만 고쳐진다.
+  const isSuperAdmin = isSuperAdminEmail(user.email) || dbUser?.isSuperAdmin === true;
+
+  // 회사 메일(@exporum.com)로 처음 들어온 사람은 초대 없이 회사 워크스페이스에 넣는다(2026-11-02).
+  if (memberships.length === 0 && dbUser && (await autoJoinCompanyWorkspace(user))) {
+    memberships = await loadMemberships();
+  }
+  // 최고 관리자는 모든 워크스페이스에 들어간다 — 빠진 곳이 있으면 ADMIN 으로 넣는다(새 워크스페이스 포함).
+  if (isSuperAdmin && dbUser && (await ensureSuperAdminEverywhere(user.id))) {
+    memberships = await loadMemberships();
+  }
 
   if (memberships.length === 0) return NextResponse.json({ workspace: null, workspaces: [], projects: [], isSuperAdmin });
 
