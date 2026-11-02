@@ -5,9 +5,11 @@ import {
   AlertTriangle,
   Archive,
   Clipboard,
+  Download,
   ExternalLink,
   FileText,
   Loader2,
+  Plus,
   RefreshCw,
   WandSparkles,
   Trash2,
@@ -238,13 +240,16 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
         { id: "response", label: "이슈 대응" }, { id: "report", label: "분석 리포트" }, { id: "settings", label: "조사 설정" },
       ]} />
       {tab === "mentions" ? (
-        <MentionList
-          mentions={mentions}
-          canWrite={data.canWrite}
-          patch={patchMention}
-          exclude={excludeMention}
-          archive={archiveMention}
-        />
+        <div className="space-y-4">
+          <ManualMentionForm projectId={projectId} data={data} setData={setData} mentions={mentions} />
+          <MentionList
+            mentions={mentions}
+            canWrite={data.canWrite}
+            patch={patchMention}
+            exclude={excludeMention}
+            archive={archiveMention}
+          />
+        </div>
       ) : tab === "ai" ? (
         <AiResearchWorkspace projectId={projectId} data={data} setData={setData} mentions={mentions} reload={load} />
       ) : tab === "response" ? (
@@ -364,6 +369,131 @@ function AiResearchWorkspace({
         </Btn>
       </section>
     </div>
+  );
+}
+
+/**
+ * 로그인 장벽 때문에 자동 조사·Claude 조사 둘 다 못 찾는 글(비공개 Threads 댓글 등)을
+ * 사람이 직접 보고 와서 URL 하나로 등록하는 경로. 제목·메모는 자동으로 채워보되
+ * (로그인 필요한 페이지면 대부분 실패) 항상 직접 입력·수정할 수 있다.
+ */
+function ManualMentionForm({
+  projectId,
+  data,
+  setData,
+  mentions,
+}: {
+  projectId: string;
+  data: Loaded;
+  setData: (data: Loaded) => void;
+  mentions: PrMention[];
+}) {
+  const [url, setUrl] = useState("");
+  const [channel, setChannel] = useState<"press" | "sns">("sns");
+  const [title, setTitle] = useState("");
+  const [excerpt, setExcerpt] = useState("");
+  const [extra, setExtra] = useState<{ source?: string; author?: string; metrics?: PrMention["metrics"]; comments?: PrMention["comments"] }>({});
+  const [fetching, setFetching] = useState(false);
+  const [adding, setAdding] = useState(false);
+
+  const fetchPreview = async () => {
+    setFetching(true);
+    try {
+      const r = await api<{ preview: { title: string; excerpt: string; source: string; channel: PrMention["channel"]; author?: string; metrics?: PrMention["metrics"]; comments?: PrMention["comments"] } | null }>(
+        "/api/pr-room/preview-url",
+        { method: "POST", body: JSON.stringify({ projectId, url: url.trim() }) },
+      );
+      if (!r.preview) {
+        toast.info("자동으로 못 가져왔어요 — 로그인이 필요한 페이지일 수 있어요. 제목·메모를 직접 입력해주세요.");
+        return;
+      }
+      setTitle(r.preview.title);
+      setExcerpt(r.preview.excerpt);
+      if (r.preview.channel === "press" || r.preview.channel === "sns") setChannel(r.preview.channel);
+      setExtra({ source: r.preview.source, author: r.preview.author, metrics: r.preview.metrics, comments: r.preview.comments });
+      toast.success("제목·메모를 채웠어요 — 필요하면 수정하세요.");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setFetching(false);
+    }
+  };
+
+  const addMention = async () => {
+    setAdding(true);
+    try {
+      const now = new Date().toISOString();
+      const mention: PrMention = {
+        id: crypto.randomUUID(),
+        title: title.trim() || url.trim(),
+        url: url.trim(),
+        source: extra.source || (channel === "sns" ? "SNS" : new URL(url.trim()).hostname.replace(/^www\./, "")),
+        channel,
+        excerpt: excerpt.trim(),
+        author: extra.author,
+        metrics: extra.metrics,
+        comments: extra.comments,
+        origin: "manual",
+        responseNote: "",
+        publishedAt: null,
+        collectedAt: now,
+        ...analyzeMention(`${title} ${excerpt}`),
+      };
+      setData(await save(projectId, { mentions: [mention, ...mentions] }, data.room.updatedAt));
+      setUrl(""); setTitle(""); setExcerpt(""); setExtra({});
+      toast.success("언급을 추가했어요");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  if (!data.canWrite) return null;
+  return (
+    <section className={`${R.panel} ${FINISH.s1} bg-card p-4`}>
+      <h3 className="text-sm font-semibold">언급 직접 추가</h3>
+      <p className="mt-1 text-xs text-muted-foreground">
+        자동 조사·Claude 조사가 못 찾는 글(로그인 뒤 Threads 댓글 등)을 직접 보고 왔을 때 URL로 등록하세요.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <input
+          className={`${control} min-w-64 flex-1`}
+          placeholder="https://www.threads.net/..."
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+        />
+        <select className={control} value={channel} onChange={(e) => setChannel(e.target.value as "press" | "sns")}>
+          <option value="sns">SNS</option>
+          <option value="press">뉴스·보도</option>
+        </select>
+        <Btn tone="ghost" disabled={!/^https?:\/\//i.test(url.trim()) || fetching} onClick={fetchPreview}>
+          {fetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          URL에서 가져오기
+        </Btn>
+      </div>
+      <input
+        className={`${control} mt-2 w-full`}
+        placeholder="제목"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+      />
+      <textarea
+        className={`mt-2 min-h-20 w-full bg-background p-2 text-sm leading-6 ${R.control}`}
+        placeholder="메모 — 어떤 내용이었는지, 왜 부정적이었는지 등"
+        value={excerpt}
+        onChange={(e) => setExcerpt(e.target.value)}
+      />
+      <Btn
+        className="mt-2"
+        tone="key"
+        disabled={!/^https?:\/\//i.test(url.trim()) || !title.trim() || adding}
+        onClick={addMention}
+      >
+        {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+        목록에 추가
+      </Btn>
+    </section>
   );
 }
 

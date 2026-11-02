@@ -14,7 +14,7 @@ const SOCIAL_SOURCES = [
   { domain: "tiktok.com", channel: "sns" as const, label: "TikTok" },
 ];
 
-interface Found {
+export interface Found {
   title: string;
   url: string;
   source: string;
@@ -140,6 +140,36 @@ export function parseSocialPage(url: string, html: string): Found | null {
 }
 
 async function enrichRows(rows:Found[]){const enriched:Found[]=[];for(let i=0;i<rows.length;i+=24){const batch=await Promise.all(rows.slice(i,i+24).map(async row=>{const r=await safeFetchText(row.url,{maxBytes:1_200_000,timeoutMs:8_000});if(!r)return row;const social=parseSocialPage(r.finalUrl,r.text);if(/instagram\.com|tiktok\.com/i.test(r.finalUrl)&&social)return{...row,...social,publishedAt:social.publishedAt??row.publishedAt};const source=meta(r.text,"og:site_name")||row.source;const author=meta(r.text,"author")||meta(r.text,"article:author")||decodeText(r.text.match(/"author"\s*:\s*\{[^}]*"name"\s*:\s*"([^"]+)"/i)?.[1]??"");const title=meta(r.text,"og:title")||meta(r.text,"twitter:title")||row.title;return{...row,title:cleanText(title),url:r.finalUrl,source,author:author||row.author,excerpt:metaDescription(r.text)||row.excerpt}}));enriched.push(...batch)}return enriched}
+
+/**
+ * 사람이 직접 찾은 언급(로그인 뒤에만 보이는 Threads 글 등)을 URL 하나로 등록할 때, 제목·요약을
+ * 최대한 자동으로 채워준다. 로그인 장벽·봇 차단 등으로 못 읽으면 null — 그땐 사람이 직접 입력한다.
+ */
+export async function previewMentionUrl(url: string): Promise<Found | null> {
+  let host: string;
+  try { host = new URL(url).hostname; } catch { return null; }
+  const social = SOCIAL_SOURCES.find((s) => host.includes(s.domain));
+  const r = await safeFetchText(url, { maxBytes: 1_200_000, timeoutMs: 8_000 });
+  if (!r) return null;
+  if (/instagram\.com|tiktok\.com/i.test(r.finalUrl)) {
+    const parsed = parseSocialPage(r.finalUrl, r.text);
+    if (parsed) return { ...parsed, url: r.finalUrl };
+  }
+  const source = meta(r.text, "og:site_name") || social?.label || host.replace(/^www\./, "");
+  const author = meta(r.text, "author") || meta(r.text, "article:author") || decodeText(r.text.match(/"author"\s*:\s*\{[^}]*"name"\s*:\s*"([^"]+)"/i)?.[1] ?? "");
+  const title = meta(r.text, "og:title") || meta(r.text, "twitter:title") || "";
+  const excerpt = metaDescription(r.text);
+  if (!title && !excerpt) return null;
+  return {
+    title: cleanText(title) || host,
+    url: r.finalUrl,
+    source,
+    channel: social?.channel ?? "press",
+    publishedAt: null,
+    excerpt,
+    author: author || undefined,
+  };
+}
 
 export function parseNaverNews(html: string, query = ""): Found[] {
   const rows: Found[] = [];
