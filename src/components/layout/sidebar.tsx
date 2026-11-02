@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, BarChart3, LogOut,
-  ChevronDown, Plus, FolderOpen, Check, Loader2, Settings2, Settings, Database, Video, Pencil, Trash2, ShieldCheck, Menu, Trophy, Newspaper, FileText, NotebookPen, Wrench,
+  ChevronDown, Plus, FolderOpen, Check, Loader2, Settings2, Settings, Database, Video, Pencil, Trash2, ShieldCheck, Menu, Trophy, Newspaper, FileText, NotebookPen, Wrench, CalendarDays,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/contexts/workspace";
@@ -45,6 +45,7 @@ export const navItems: NavItem[] = [
   { href: "/competition", icon: Trophy, label: "대회" },
   { href: "/detail-page", icon: FileText, label: "웹사이트", aliases: ["/homepage"] },
   { href: "/brief", icon: Newspaper, label: "홍보실" },
+  { href: "/content-calendar", icon: CalendarDays, label: "콘텐츠 캘린더" },
   { href: "/worklog", icon: NotebookPen, label: "업무일지" },
   // UTM 빌더·미디어·이벤트 택소노미를 한 메뉴의 탭으로(2026-10-17). 예전 주소도 그대로 열린다.
   { href: "/tools", icon: Wrench, label: "도구", aliases: ["/utm-builder", "/media"] },
