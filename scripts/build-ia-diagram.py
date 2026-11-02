@@ -2,6 +2,7 @@
 """mach studio 정보구조 지도 SVG 생성.
 손으로 rect 200개를 쓰면 반드시 어긋나므로 좌표를 계산한다."""
 import io
+import os
 
 W = 2280
 M = 48
@@ -595,5 +596,5 @@ e(f'<text x="{M}" y="{H-16:.0f}" font-family="{FONT}" font-size="11.5" fill="{FA
   f'문서 전문: docs/INFORMATION-ARCHITECTURE.md — 면 목록·라우트 인덱스·정본 모듈 지도 포함</text>')
 e("</svg>")
 
-io.open("/Users/lynlea/mach studio/docs/information-architecture.svg", "w", encoding="utf-8").write("\n".join(out))
+io.open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "information-architecture.svg"), "w", encoding="utf-8").write("\n".join(out))
 print("높이", int(H), "· 노드", len(out))

@@ -391,7 +391,7 @@ Expected: 타입 오류 0개, 전체 테스트 PASS.
 
 ```bash
 set -a
-source '/Users/lynlea/mach studio/.env.local'
+source '<repo>/.env.local'
 set +a
 npm run build
 ```
