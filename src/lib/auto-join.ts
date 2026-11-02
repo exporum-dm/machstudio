@@ -49,3 +49,28 @@ export async function autoJoinCompanyWorkspace(user: AuthUserLike): Promise<bool
     return false;
   }
 }
+
+/**
+ * 최고 관리자는 모든 워크스페이스에 들어간다(2026-11-02) — 새로 생기는 워크스페이스까지.
+ *
+ * 화면·API 의 권한 검사는 전부 "그 워크스페이스 멤버인가"로 한다. 검사마다 최고 관리자 예외를 다는 대신
+ * 빠진 워크스페이스에 ADMIN 멤버로 넣는다 — 한 곳만 고치면 모든 메뉴가 그대로 열린다.
+ * 이미 OWNER·ADMIN·MEMBER 로 들어가 있는 곳은 건드리지 않는다. 넣었으면 true.
+ */
+export async function ensureSuperAdminEverywhere(userId: string): Promise<boolean> {
+  try {
+    const missing = await prisma.workspace.findMany({
+      where: { deletedAt: null, members: { none: { userId } } },
+      select: { id: true },
+    });
+    if (missing.length === 0) return false;
+    await prisma.workspaceMember.createMany({
+      data: missing.map((w) => ({ userId, workspaceId: w.id, role: "ADMIN" as const })),
+      skipDuplicates: true,
+    });
+    return true;
+  } catch (err) {
+    console.error("[auto-join] super admin membership failed:", userId, err instanceof Error ? err.message : err);
+    return false;
+  }
+}

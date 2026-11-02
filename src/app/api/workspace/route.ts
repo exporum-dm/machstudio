@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/activity";
 import { ensureAppUser } from "@/lib/app-user";
 import { isSuperAdminEmail } from "@/lib/super-admin";
-import { autoJoinCompanyWorkspace } from "@/lib/auto-join";
+import { autoJoinCompanyWorkspace, ensureSuperAdminEverywhere } from "@/lib/auto-join";
 
 // 현재 워크스페이스 + 프로젝트 목록
 export async function GET() {
@@ -29,6 +29,10 @@ export async function GET() {
 
   // 회사 메일(@exporum.com)로 처음 들어온 사람은 초대 없이 회사 워크스페이스에 넣는다(2026-11-02).
   if (memberships.length === 0 && dbUser && (await autoJoinCompanyWorkspace(user))) {
+    memberships = await loadMemberships();
+  }
+  // 최고 관리자는 모든 워크스페이스에 들어간다 — 빠진 곳이 있으면 ADMIN 으로 넣는다(새 워크스페이스 포함).
+  if (isSuperAdmin && dbUser && (await ensureSuperAdminEverywhere(user.id))) {
     memberships = await loadMemberships();
   }
 
