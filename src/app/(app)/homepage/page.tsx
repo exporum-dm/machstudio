@@ -1,3 +1,4 @@
+import { PageHeader, WebsiteNavigation } from "@/components/ui/page-layout";
 import { Suspense } from "react";
 import { ExpoProjectListLoader } from "@/components/expo/ExpoProjectListLoader";
 
@@ -14,11 +15,9 @@ export const dynamic = "force-dynamic";
 
 export default function HomepageListPage() {
   return (
-    <div className="mx-auto max-w-3xl px-5 py-8 lg:px-8">
-      <h1 className="text-xl font-semibold tracking-tight">홈페이지</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        전시 홈페이지의 페이지를 만들고, 완성된 것부터 하나씩 실제 사이트로 옮깁니다.
-      </p>
+    <div className="space-y-5 p-4 sm:p-6 lg:p-8">
+      <WebsiteNavigation />
+      <PageHeader title="홈페이지" description="페이지를 구성하고 미리보기로 확인한 뒤 완성된 페이지를 발행합니다." />
       {/* useSearchParams 를 쓰는 로더라 경계가 필요하다. */}
       <Suspense fallback={null}>
         <ExpoProjectListLoader />

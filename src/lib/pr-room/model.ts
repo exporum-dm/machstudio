@@ -1,3 +1,5 @@
+import JSON5 from "json5";
+
 export interface PrMention {
   id: string;
   title: string;
@@ -57,7 +59,10 @@ export function buildClaudeResearchPrompt({
   return `웹 검색을 사용해 아래 행사의 온라인 언급을 조사해 주세요.
 
 행사명과 검색어: ${names.join(" / ")}
-조사 시작 기준: ${since}
+조사 범위: 행사 관련 자료가 검색되는 전체 기간. 마지막 수집 기준(${since}) 이전에 놓친 자료도 포함하세요.
+
+행사명의 한글·영문·약칭·띄어쓰기 변형과 공식 해시태그를 각각 검색하고, 개최 도시·연도·주최자와 조합해 동명이벤트를 구분하세요. 뉴스, 블로그·커뮤니티, SNS·동영상 채널별로 나누어 여러 검색어로 조사하세요. 공식 계정뿐 아니라 참가사·참관객·기자의 게시물도 찾으세요. 제목에 행사명이 없더라도 본문에서 해당 행사와의 직접 관련성을 확인하면 포함하세요.
+가능하면 검증된 고유 URL 50건 이상을 목표로 하되 개수를 채우려고 자료를 만들지 마세요. 10~20건의 대표 사례에서 멈추지 말고 검색어와 채널을 바꿔 추가 조사하세요. 응답 길이가 부족하면 선택 필드와 요약을 줄이고, 배열이 잘리지 않게 완성한 뒤 다음 응답에서 기존 URL을 제외하고 계속 조사할 수 있게 하세요.
 
 뉴스·보도자료와 공개된 Instagram, Facebook, Threads, X, LinkedIn, TikTok, YouTube, 블로그·커뮤니티를 행사명 정확 일치 위주로 검색하세요. 행사와 직접 관련되지 않은 동명이벤트와 일반적인 엑스포·축제 자료는 제외하세요. 검색 결과 페이지가 아니라 실제 원문 URL만 사용하고, 확인하지 못한 제목·작성자·날짜·수치는 만들지 마세요. 같은 원문의 재게시와 중복 URL은 하나만 남기세요.
 
@@ -67,13 +72,31 @@ ${knownUrls.slice(0, 300).join("\n") || "없음"}
 이전에 무관하다고 제외한 사례(비슷한 내용도 제외):
 ${excludedRules.slice(0, 50).map((x) => `- [${x.channel}] ${x.title} / ${x.excerpt}`).join("\n") || "없음"}
 
-설명이나 마크다운 없이 JSON 배열만 출력하세요. 각 항목은 아래 형식입니다. 공개 확인이 안 되는 선택 필드는 생략하세요.
+설명이나 마크다운 없이 유효한 JSON 배열만 출력하세요. 속성명과 문자열은 반드시 큰따옴표로 감싸고, 마지막 항목 뒤에 쉼표를 넣지 마세요. 각 항목은 아래 형식입니다. channel과 sentiment는 |로 연결된 예시 중 하나의 값만 사용하세요. 날짜를 모르면 문자열이 아닌 null을 쓰고, 확인하지 못한 수치와 선택 필드는 생략하세요.
 [{"title":"원문 제목","url":"https://...","source":"매체 또는 플랫폼","channel":"press|sns|comment|community|web","excerpt":"확인한 내용 요약","author":"작성자 또는 기자","publishedAt":"YYYY-MM-DD 또는 null","sentiment":"positive|neutral|negative","metrics":{"views":0,"likes":0,"comments":0,"shares":0,"saves":0},"comments":[{"author":"작성자","text":"댓글 원문","likes":0}]}]`;
 }
 
 export function parseClaudeResearch(value: string): ClaudeResearchMention[] {
-  const text = value.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-  const parsed: unknown = JSON.parse(text);
+  const text = value.trim();
+  const fenced = [...text.matchAll(/```(?:json5?|javascript|js)?\s*\n?([\s\S]*?)```/gi)];
+  const candidates = fenced.length ? fenced.map((match) => match[1].trim()) : [text];
+  let parsed: unknown;
+  try {
+    const values = candidates.map((candidate): unknown => JSON5.parse(candidate));
+    parsed = values.flatMap((value) => {
+      if (Array.isArray(value)) return value;
+      if (value && typeof value === "object") {
+        const object = value as Record<string, unknown>;
+        for (const key of ["mentions", "results", "items", "data"]) {
+          if (Array.isArray(object[key])) return object[key];
+        }
+        if (typeof object.url === "string") return [object];
+      }
+      throw new Error("array required");
+    });
+  } catch {
+    throw new Error("조사 결과 형식을 읽지 못했어요. Claude의 JSON 코드 블록 전체를 복사해 주세요. 내용이 잘렸다면 Claude에 완전한 JSON 배열로 다시 출력해 달라고 요청해 주세요.");
+  }
   if (!Array.isArray(parsed)) throw new Error("JSON 배열 형식이 아닙니다.");
   const rows: ClaudeResearchMention[] = [];
   const seen = new Set<string>();
@@ -102,6 +125,7 @@ export function parseClaudeResearch(value: string): ClaudeResearchMention[] {
       rows.push({ title, url: parsedUrl.href, source, channel, excerpt: typeof item.excerpt === "string" ? item.excerpt.trim() : "", publishedAt: published, ...(typeof item.author === "string" ? { author: item.author.trim() } : {}), ...(sentiment ? { sentiment } : {}), ...(metrics && Object.keys(metrics).length ? { metrics } : {}), ...(comments?.length ? { comments } : {}) });
     } catch { continue; }
   }
+  if (parsed.length && !rows.length) throw new Error("가져올 수 있는 항목이 없어요. 각 항목의 title(제목), url(원문 주소), source(매체)를 확인해 주세요.");
   return rows;
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from "react";
 
 interface Project {
   id: string;
@@ -26,6 +26,7 @@ interface Workspace {
 }
 
 interface WorkspaceContextType {
+  expoHomepageEnabled?: boolean;
   workspace: Workspace | null;
   workspaces: Workspace[];
   projects: Project[];
@@ -47,13 +48,14 @@ interface WorkspaceContextType {
 
 const WorkspaceContext = createContext<WorkspaceContextType | null>(null);
 
-export function WorkspaceProvider({ children }: { children: ReactNode }) {
+export function WorkspaceProvider({ children, expoHomepageEnabled = false }: { children: ReactNode; expoHomepageEnabled?: boolean }) {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [currentProject, setCurrentProjectState] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const switchSequence = useRef(0);
 
   const setCurrentProject = (project: Project) => {
     setCurrentProjectState(project);
@@ -117,20 +119,25 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const switchWorkspace = useCallback(async (ws: Workspace) => {
+    const sequence = ++switchSequence.current;
     localStorage.setItem("currentWorkspaceId", ws.id);
     localStorage.removeItem("currentProjectId");
     setWorkspace(ws);
+    setProjects([]);
+    setCurrentProjectState(null);
     try {
       const [wsListRes, wsRes] = await Promise.all([
         fetch("/api/workspace"),
         fetch(`/api/workspace/${ws.id}`),
       ]);
+      if (sequence !== switchSequence.current) return;
       if (wsListRes.ok) {
         const listData = await wsListRes.json();
         setWorkspaces(listData.workspaces ?? []);
       }
       if (!wsRes.ok) return;
       const data = await wsRes.json();
+      if (sequence !== switchSequence.current) return;
       applyProjects(data.projects ?? []);
     } catch {
       // 네트워크 오류 — 전환 자체(선택된 워크스페이스, localStorage)는 이미 반영됐고
@@ -192,6 +199,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   return (
     <WorkspaceContext.Provider value={{
+      expoHomepageEnabled,
       workspace, workspaces, projects, currentProject,
       setCurrentProject, switchWorkspace, refreshProjects, refreshWorkspaces, isLoading,
       loadError, loadWorkspaces,

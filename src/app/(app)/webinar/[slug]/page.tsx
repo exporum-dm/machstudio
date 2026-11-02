@@ -19,9 +19,10 @@ import {
   Trash2,
   Video,
 } from "lucide-react";
+import { getPublicAppOrigin } from "@/lib/app-url";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { btnCls, FINISH, R } from "@/components/ui/primitives";
+import { btnCls, FINISH, R, SELECTED } from "@/components/ui/primitives";
 import Link from "next/link";
 import PageSetupTab from "./PageSetupTab";
 import { type WatchState } from "./LivePageTab";
@@ -279,14 +280,16 @@ function WebinarDetail({ id }: { id: string }) {
     navigate(target as Tab);
   };
 
-  // 이번 승인 범위 밖인 라이브 공유 링크는 현재 host 동작을 유지한다.
-  // eslint-disable-next-line no-restricted-syntax
-  const liveUrl = webinar ? `${window.location.origin}/webinar/${webinar.slug}/live` : "";
+  const publicOrigin = getPublicAppOrigin();
+  const liveUrl = webinar && publicOrigin ? `${publicOrigin}/webinar/${webinar.slug}/live` : "";
 
-  const copyLiveUrl = () => {
-    navigator.clipboard.writeText(liveUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const copyLiveUrl = async () => {
+    if (!liveUrl) { toast.error("공개 주소 설정을 확인해 주세요."); return; }
+    try {
+      await navigator.clipboard.writeText(liveUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { toast.error("링크를 복사하지 못했어요."); }
   };
 
   if (isLoading) return <HubLoader />;
@@ -418,7 +421,7 @@ function WebinarDetail({ id }: { id: string }) {
           </div>
         </div>
 
-        <div ref={tablistRef} className="flex items-center gap-1 border-b border-border -mb-px overflow-x-auto" role="tablist">
+        <div ref={tablistRef} className="flex items-center gap-1 overflow-x-auto py-2" role="tablist" aria-label="웨비나 메뉴">
           {tabs.map(({ id: tabId, label, icon: Icon }, tabIndex) => (
             <motion.button
               key={tabId}
@@ -432,11 +435,7 @@ function WebinarDetail({ id }: { id: string }) {
               whileHover={{ y: -1 }}
               whileTap={{ scale: 0.96 }}
               transition={spring}
-              className={`relative flex shrink-0 items-center gap-1.5 px-3 py-2.5 text-sm border-b-2 border-transparent transition-colors whitespace-nowrap ${
-                activeTab === tabId
-                  ? "text-violet-500 font-medium"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
+              className={`relative flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${activeTab === tabId ? SELECTED : "text-muted-foreground hover:bg-secondary hover:text-foreground"}`}
             >
               <Icon className="w-3.5 h-3.5" />
               {label}
@@ -445,13 +444,7 @@ function WebinarDetail({ id }: { id: string }) {
                   {webinar._count.registrations}
                 </span>
               )}
-              {activeTab === tabId && (
-                <motion.span
-                  layoutId="webinar-hub-tab-underline"
-                  className="absolute left-0 right-0 -bottom-px h-0.5 bg-violet-500 rounded-full"
-                  transition={spring}
-                />
-              )}
+
             </motion.button>
           ))}
         </div>

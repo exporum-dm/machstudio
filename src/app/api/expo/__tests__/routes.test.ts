@@ -348,23 +348,23 @@ describe("역할 — 화면이 숨긴 것은 API 도 막는다", () => {
   const asProjectRole = (role: "VIEWER" | "EDITOR" | "ADMIN") =>
     prismaMock.projectMember.findMany.mockResolvedValue([{ projectId: "p1", role }]);
 
-  it("MEMBER 는 발행할 수 없다", async () => {
+  it("MEMBER 도 배정 없이 발행을 시도한다", async () => {
     asMember();
     prismaMock.expoPage.findFirst.mockResolvedValue(page);
     const { POST } = await import("@/app/api/expo/pages/[pageId]/publish/route");
     const res = await POST(write({}), { params: Promise.resolve({ pageId: "pg1" }) });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(422);
     expect(prismaMock.expoPage.update).not.toHaveBeenCalled();
   });
 
   /** 끄는 것도 막는다 — 남이 켠 것을 아무나 끄면 전시 기간 중에 파트너 사이트가 빈다. */
-  it("MEMBER 는 공개 스위치를 만질 수 없다", async () => {
+  it("MEMBER 도 공개를 중지할 수 있다", async () => {
     asMember();
     prismaMock.expoPage.findFirst.mockResolvedValue(page);
     const { POST } = await import("@/app/api/expo/pages/[pageId]/live/route");
     const res = await POST(write({ live: false }), { params: Promise.resolve({ pageId: "pg1" }) });
-    expect(res.status).toBe(404);
-    expect(prismaMock.expoPage.update).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(prismaMock.expoPage.update).toHaveBeenCalled();
   });
 
   it("MEMBER 는 미리보기 토큰을 재발급할 수 없다", async () => {
@@ -372,7 +372,7 @@ describe("역할 — 화면이 숨긴 것은 API 도 막는다", () => {
     prismaMock.expoSite.findFirst.mockResolvedValue(site);
     const { POST } = await import("@/app/api/expo/[siteId]/regenerate-preview-token/route");
     const res = await POST(write({}), { params: Promise.resolve({ siteId: "s1" }) });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
     expect(prismaMock.expoSite.update).not.toHaveBeenCalled();
   });
 
@@ -391,7 +391,7 @@ describe("역할 — 화면이 숨긴 것은 API 도 막는다", () => {
     prismaMock.expoSite.findFirst.mockResolvedValue(site);
     const { DELETE } = await import("@/app/api/expo/[siteId]/route");
     const res = await DELETE(write({}), { params: Promise.resolve({ siteId: "s1" }) });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
     expect(prismaMock.expoSite.update).not.toHaveBeenCalled();
   });
 
@@ -400,18 +400,19 @@ describe("역할 — 화면이 숨긴 것은 API 도 막는다", () => {
     prismaMock.expoPage.findFirst.mockResolvedValue(page);
     const { DELETE } = await import("@/app/api/expo/pages/[pageId]/route");
     const res = await DELETE(write({}), { params: Promise.resolve({ pageId: "pg1" }) });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
     expect(prismaMock.expoPage.update).not.toHaveBeenCalled();
   });
 
   /** 색은 이미 공개된 것을 바꾼다 — 공개 로더가 사이트 테마를 실시간으로 읽는다. */
-  it("MEMBER 는 색을 바꿀 수 없다", async () => {
+  it("MEMBER 도 색을 바꿀 수 있다", async () => {
     asMember();
     prismaMock.expoSite.findFirst.mockResolvedValue(site);
+    prismaMock.expoSite.update.mockResolvedValue({ ...site, theme: { accent: "#ff0000" } });
     const { PATCH } = await import("@/app/api/expo/[siteId]/route");
     const res = await PATCH(write({ theme: { accent: "#ff0000" } }), { params: Promise.resolve({ siteId: "s1" }) });
-    expect(res.status).toBe(404);
-    expect(prismaMock.expoSite.update).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(prismaMock.expoSite.update).toHaveBeenCalled();
   });
 
   /** 초안 편집은 MEMBER 도 된다 — 좁히려다 편집까지 막으면 안 된다. */
@@ -460,17 +461,17 @@ describe("역할 — 화면이 숨긴 것은 API 도 막는다", () => {
     expect((await DELETE(write({}), { params: Promise.resolve({ siteId: "s1" }) })).status).toBe(200);
   });
 
-  it("PROJECT VIEWER 는 쓰지 못한다", async () => {
+  it("프로젝트 VIEWER 표기가 있어도 현재 워크스페이스 정책대로 편집한다", async () => {
     asMember();
     asProjectRole("VIEWER");
     prismaMock.expoPage.findFirst.mockResolvedValue(page);
     const { PATCH } = await import("@/app/api/expo/pages/[pageId]/route");
-    expect((await PATCH(write({ title: "x" }), { params: Promise.resolve({ pageId: "pg1" }) })).status).toBe(403);
+    expect((await PATCH(write({ title: "x" }), { params: Promise.resolve({ pageId: "pg1" }) })).status).toBe(200);
   });
 });
 
 describe("프로젝트 목록 노출", () => {
-  it("배정되지 않은 프로젝트 사이트를 목록에서 숨긴다", async () => {
+  it("같은 워크스페이스의 미배정 프로젝트 사이트도 조회한다", async () => {
     prismaMock.workspaceMember.findMany.mockResolvedValue([{ workspaceId: "w1", role: "MEMBER" }]);
     prismaMock.projectMember.findMany.mockResolvedValue([{ projectId: "p1", role: "VIEWER" }]);
     prismaMock.expoSite.findMany.mockResolvedValue([
@@ -479,17 +480,18 @@ describe("프로젝트 목록 노출", () => {
     ]);
     const { GET } = await import("@/app/api/expo/route");
     const body = await (await GET(read())).json();
-    expect(body.sites.map((site: { id: string }) => site.id)).toEqual(["s1"]);
+    expect(body.sites.map((site: { id: string }) => site.id)).toEqual(["s1", "s2"]);
   });
 
-  it("명시한 미배정 프로젝트는 빈 목록이 아니라 404 로 숨긴다", async () => {
+  it("명시한 미배정 프로젝트도 현재 워크스페이스 권한으로 조회한다", async () => {
     prismaMock.workspaceMember.findMany.mockResolvedValue([{ workspaceId: "w1", role: "MEMBER" }]);
     prismaMock.projectMember.findMany.mockResolvedValue([{ projectId: "p1", role: "VIEWER" }]);
     prismaMock.project.findUnique.mockResolvedValue({ id: "p2", workspaceId: "w1" });
     const { GET } = await import("@/app/api/expo/route");
     const res = await GET(new Request("https://machstudio.vercel.app/api/expo?projectId=p2"));
-    expect(res.status).toBe(404);
-    expect(prismaMock.expoSite.findMany).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(prismaMock.expoSite.findMany).toHaveBeenCalled();
+    expect((await res.json()).permissions.canEdit).toBe(true);
   });
 });
 

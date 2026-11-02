@@ -11,6 +11,23 @@ it("Claude 조사문과 결과 가져오기를 왕복한다", () => {
   expect(parseClaudeResearch('```json\n[{"title":"행사 개막","url":"https://example.com/post","source":"Example","channel":"press","publishedAt":"2026-10-30"}]\n```')).toMatchObject([{ title: "행사 개막", url: "https://example.com/post", channel: "press" }]);
 });
 
+it("Claude의 느슨한 JSON, 설명이 붙은 코드 블록과 결과 객체를 읽는다", () => {
+  const item = "{title: '행사 개막', url: 'https://example.com/post', source: 'Example',}";
+  expect(parseClaudeResearch(`[${item},]`)).toHaveLength(1);
+  expect(parseClaudeResearch(`조사 결과입니다.\n\`\`\`json\n[${item}]\n\`\`\`\n이상입니다.`)).toHaveLength(1);
+  expect(parseClaudeResearch(`{results: [${item}]}`)).toHaveLength(1);
+  expect(parseClaudeResearch(item)).toHaveLength(1);
+  expect(() => parseClaudeResearch('[{"title":')).toThrow("내용이 잘렸다면");
+  expect(() => parseClaudeResearch('[{"title":"제목"}]')).toThrow("source");
+});
+
+it("Claude 조사는 마지막 수집일 이전 누락 자료와 여러 채널도 찾는다", () => {
+  const prompt = buildClaudeResearchPrompt({ eventNames: ["Korea Expo LA"], lastCollectedAt: "2026-10-30T00:00:00Z" });
+  expect(prompt).toContain("이전에 놓친 자료도 포함");
+  expect(prompt).toContain("50건 이상");
+  expect(prompt).toContain("참가사·참관객");
+});
+
 it("인스타 반응 수치를 읽는다",()=>{
   expect(parseSocialPage("https://www.instagram.com/p/ABC123/",'<meta property="og:description" content="99 likes, 3 comments - koreaexpo_global on October 25, 2026: &quot;Korea Expo LA highlights&quot;.">')).toMatchObject({author:"koreaexpo_global",metrics:{likes:99,comments:3}});
 });

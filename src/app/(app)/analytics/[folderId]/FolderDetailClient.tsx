@@ -16,6 +16,8 @@ import {
   Search,
   X,
 } from "lucide-react";
+import { PageTabs } from "@/components/ui/page-layout";
+import { useQueryTab } from "@/components/ui/use-query-tab";
 import { toast } from "sonner";
 import AdPerformanceDashboard from "../AdPerformanceDashboard";
 import { FolderConnectionsPanel } from "./FolderConnectionsPanel";
@@ -89,7 +91,7 @@ export default function FolderDetailClient({ folderId }: { folderId: string }) {
   const [project, setProject] = useState<{ id: string; name: string } | null>(
     null,
   );
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useQueryTab<Tab>(tabs.map(t => t.id), "overview");
   const [rows, setRows] = useState<DataRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [dataLoading, setDataLoading] = useState(false);
@@ -350,24 +352,7 @@ export default function FolderDetailClient({ folderId }: { folderId: string }) {
             </button>
           </div>
         </div>
-        <nav
-          className="mt-5 flex gap-1 overflow-x-auto"
-          aria-label="광고 성과 보기"
-        >
-          {tabs.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setTab(item.id)}
-              className={`relative flex shrink-0 items-center gap-1.5 px-3 py-3 text-xs font-medium transition ${tab === item.id ? "text-violet-600" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              <item.icon className="h-3.5 w-3.5" />
-              {item.label}
-              {tab === item.id && (
-                <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-violet-500" />
-              )}
-            </button>
-          ))}
-        </nav>
+        <PageTabs label="광고 성과 보기" value={tab} onChange={setTab} options={tabs} />
       </div>
 
       {tab === "overview" ? (

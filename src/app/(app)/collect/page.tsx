@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Database, Globe, Loader2, ChevronRight, Users, Trash2, Upload, UserPlus, Edit3, Check, X, Copy } from "lucide-react";
+import { Plus, Database, Globe, Loader2, ChevronRight, Users, Trash2, Upload, UserPlus, Edit3, Check, X, Copy, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import ModalShell from "@/app/(app)/collect/[id]/ModalShell";
 import { toast } from "sonner";
@@ -10,7 +10,9 @@ import { useWorkspace } from "@/contexts/workspace";
 import Link from "next/link";
 import ProjectMembersModal from "@/components/settings/ProjectMembersModal";
 import ActiveToggle from "@/app/(app)/collect/_components/ActiveToggle";
-import { FINISH, R, SELECTED } from "@/components/ui/primitives";
+import { PageHeader } from "@/components/ui/page-layout";
+import { InlineError } from "@/components/ui/inline-error";
+import { FINISH, R, SELECTED, Field, FieldSelect } from "@/components/ui/primitives";
 
 interface CollectSource {
   id: string;
@@ -27,9 +29,16 @@ interface CollectSource {
 export default function CollectPage() {
   const { workspace, currentProject, isLoading: wsLoading } = useWorkspace();
   const [sources, setSources] = useState<CollectSource[]>([]);
+  const requestSequence = useRef(0);
+  const [loadedScope, setLoadedScope] = useState("");
+  const scope = workspace && currentProject ? `${workspace.id}:${currentProject.id}` : "";
+  const [loadError, setLoadError] = useState(false);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const shownSources = sources.filter(source => (!query.trim() || `${source.name} ${source.description ?? ""} ${source.siteUrl ?? ""}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) && (statusFilter === "all" || (statusFilter === "active" ? source.isActive : !source.isActive)));
   const [isLoading, setIsLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: "", description: "", siteUrl: "", mode: "capture" as "capture" | "builder" });
+  const [form, setForm] = useState({ name: "", description: "", siteUrl: "", mode: "builder" as "capture" | "builder" });
   const [isCreating, setIsCreating] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showMembers, setShowMembers] = useState(false);
@@ -44,17 +53,30 @@ export default function CollectPage() {
 
   const fetchSources = useCallback(async () => {
     if (!workspace || !currentProject) return;
+    const sequence = ++requestSequence.current;
+    const requestedScope = `${workspace.id}:${currentProject.id}`;
     setIsLoading(true);
+    setLoadError(false);
     try {
       const res = await fetch(`/api/collect-sources?workspaceId=${workspace.id}&projectId=${currentProject.id}`);
+      if (!res.ok) throw new Error();
       const data = await res.json();
+      if (sequence !== requestSequence.current) return;
       setSources(data.sources ?? []);
+      setLoadedScope(requestedScope);
+    } catch {
+      if (sequence === requestSequence.current) { setLoadError(true); setLoadedScope(requestedScope); }
     } finally {
-      setIsLoading(false);
+      if (sequence === requestSequence.current) setIsLoading(false);
     }
   }, [workspace, currentProject]);
 
-  useEffect(() => { fetchSources(); }, [fetchSources]);
+  useEffect(() => {
+    const sequence = requestSequence;
+    let disposed = false;
+    void Promise.resolve().then(() => { if (!disposed) void fetchSources(); });
+    return () => { disposed = true; sequence.current++; };
+  }, [fetchSources]);
 
   const handleCreate = async () => {
     if (!form.name.trim() || !workspace || !currentProject) return;
@@ -75,8 +97,8 @@ export default function CollectPage() {
       });
       const data = await res.json();
       if (!res.ok) { toast.error(data.error ?? "생성 실패"); return; }
-      toast.success(`'${data.source.name}' 수집 소스가 생성됐어요`);
-      setForm({ name: "", description: "", siteUrl: "", mode: "capture" as "capture" | "builder" });
+      toast.success(`'${data.source.name}' 수집 폼이 생성됐어요`);
+      setForm({ name: "", description: "", siteUrl: "", mode: "builder" as "capture" | "builder" });
       setShowCreate(false);
       fetchSources();
     } finally {
@@ -85,18 +107,22 @@ export default function CollectPage() {
   };
 
   const handleToggleSilent = async (sourceId: string, next: boolean) => {
+    try {
     const res = await fetch(`/api/collect-sources/${sourceId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isActive: next }),
     });
-    if (!res.ok) { toast.error("상태 변경 실패"); return; }
+    if (!res.ok) { toast.error("상태를 바꾸지 못했어요. 다시 시도해 주세요."); return false; }
     setSources((prev) => prev.map((s) => s.id === sourceId ? { ...s, isActive: next } : s));
+    return true;
+    } catch { toast.error("연결을 확인하고 다시 시도해 주세요."); return false; }
   };
 
   const handleToggle = async (source: CollectSource, next: boolean) => {
     const prev = source.isActive;
-    await handleToggleSilent(source.id, next);
+    try {
+      if (!await handleToggleSilent(source.id, next)) return;
     if (prev && !next) {
       toast("등록 폼이 비활성화됐어요", {
         description: "새 데이터 수집이 중단됩니다",
@@ -106,6 +132,7 @@ export default function CollectPage() {
     } else if (!prev && next) {
       toast.success("등록 폼이 활성화됐어요");
     }
+    } catch { toast.error("연결을 확인하고 다시 시도해 주세요."); }
   };
 
   const handleRenameSource = async (id: string) => {
@@ -154,7 +181,7 @@ export default function CollectPage() {
   const handleDelete = async (id: string) => {
     const res = await fetch(`/api/collect-sources/${id}`, { method: "DELETE" });
     if (!res.ok) { toast.error("삭제 실패"); return; }
-    toast.success("수집 소스가 삭제됐어요");
+    toast.success("등록 폼이 삭제됐어요");
     setDeleteId(null);
     setSources((prev) => prev.filter((s) => s.id !== id));
   };
@@ -179,10 +206,7 @@ export default function CollectPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6">
       <div className="flex items-end justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-semibold">등록</h1>
-          <p className="text-sm text-muted-foreground mt-1.5">{currentProject.name} · 사전등록·현장등록 폼과 외부 사이트 폼 수집</p>
-        </div>
+        <PageHeader title="등록" context={currentProject.name} description="신청·접수·문의 폼을 만들거나 기존 사이트의 폼을 연결해 응답을 관리합니다." />
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setShowMembers(true)}
@@ -228,7 +252,7 @@ export default function CollectPage() {
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-500 text-white text-sm font-medium hover:bg-violet-600 transition-colors"
           >
             <Plus className="w-4 h-4" />
-            수집 소스 추가
+            폼 만들기
           </motion.button>
         </div>
       </div>
@@ -251,19 +275,19 @@ export default function CollectPage() {
             exit={{ opacity: 0, y: -8 }}
             className="p-5 rounded-2xl border border-violet-400/30 bg-violet-500/5"
           >
-            <h3 className="text-sm font-semibold mb-4">새 수집 소스</h3>
+            <h3 className="text-sm font-semibold mb-4">새 등록 폼</h3>
             <div className="space-y-3">
               {/*
                 방식 선택이 맨 위인 이유: 뒤 입력칸이 방식에 따라 달라진다(연동형만 사이트 URL 을 쓴다).
                 순서를 뒤집으면 다 채운 뒤 방식을 바꿔 입력이 무의미해진다.
-                기본값은 **연동형** — 기존 사용자가 무심코 만들 때 지금과 같은 소스가 나와야 한다.
+                새 폼은 직접 만들기로 시작하며 기존 연동형 폼의 방식은 바꾸지 않는다.
               */}
               <div>
-                <label className="text-xs text-muted-foreground mb-1.5 block">어떻게 수집할까요? *</label>
-                <div role="radiogroup" aria-label="수집 방식" className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <label className="text-xs text-muted-foreground mb-1.5 block">어떻게 등록받을까요? *</label>
+                <div role="radiogroup" aria-label="등록 방식" className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {([
-                    { value: "capture", title: "연동형", desc: "이미 있는 폼에 스크립트를 붙여 데이터만 수집해요" },
-                    { value: "builder", title: "빌더형", desc: "여기서 폼을 만들고 코드블럭으로 삽입해요" },
+                    { value: "builder", title: "직접 만들기", desc: "신청·접수·문의에 필요한 항목을 직접 구성해요" },
+                    { value: "capture", title: "기존 폼 연결", desc: "이미 있는 사이트 폼에 스크립트를 붙여 응답을 모아요" },
                   ] as const).map((opt) => {
                     const active = form.mode === opt.value;
                     return (
@@ -296,7 +320,7 @@ export default function CollectPage() {
                 <input
                   autoFocus
                   type="text"
-                  placeholder="예: 2025 서울 국제아트페어"
+                  placeholder="예: 행사 등록, 상담 신청, 자료 요청"
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                   onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); if (e.key === "Escape") setShowCreate(false); }}
@@ -307,7 +331,7 @@ export default function CollectPage() {
                 <label className="text-xs text-muted-foreground mb-1 block">설명</label>
                 <input
                   type="text"
-                  placeholder="수집 소스에 대한 메모"
+                  placeholder="폼의 목적과 운영 메모"
                   value={form.description}
                   onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                   className="w-full px-3 py-2 rounded-xl border border-border bg-background text-sm focus:outline-none focus:border-violet-400"
@@ -337,7 +361,7 @@ export default function CollectPage() {
                   {isCreating ? "생성 중..." : "생성"}
                 </motion.button>
                 <button
-                  onClick={() => { setShowCreate(false); setForm({ name: "", description: "", siteUrl: "", mode: "capture" as "capture" | "builder" }); }}
+                  onClick={() => { setShowCreate(false); setForm({ name: "", description: "", siteUrl: "", mode: "builder" as "capture" | "builder" }); }}
                   className="px-4 py-2 rounded-xl border border-border text-sm hover:bg-secondary transition-colors"
                 >
                   취소
@@ -348,32 +372,37 @@ export default function CollectPage() {
         )}
       </AnimatePresence>
 
+      {loadedScope === scope && sources.length > 0 && !loadError && <div className="flex flex-wrap items-center gap-3">
+        <label className="relative min-w-48 flex-1"><span className="sr-only">등록 폼 검색</span><Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" aria-hidden /><Field value={query} onChange={e => setQuery(e.target.value)} placeholder="이름·설명·주소로 검색" className="pl-9" /></label>
+        <FieldSelect aria-label="등록 폼 상태" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="w-auto"><option value="all">모든 상태</option><option value="active">활성</option><option value="inactive">비활성</option></FieldSelect>
+        <span className="text-xs tabular-nums text-muted-foreground">{shownSources.length}개 / 전체 {sources.length}개</span>
+      </div>}
       {/* 목록 */}
-      {isLoading ? (
+      {isLoading || loadedScope !== scope ? (
         <div className="flex items-center justify-center h-40">
           <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
         </div>
-      ) : sources.length === 0 ? (
+      ) : loadError ? <InlineError message="등록 폼 목록을 불러오지 못했어요" onRetry={fetchSources} /> : sources.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <Database className="w-10 h-10 text-muted-foreground/20 mb-3" />
-          <p className="text-sm text-muted-foreground">아직 수집 소스가 없어요</p>
-          <p className="text-xs text-muted-foreground/60 mt-1 mb-4">외부 사이트에 스크립트를 삽입해 폼 데이터를 수집할 수 있어요</p>
+          <p className="text-sm text-muted-foreground">아직 등록 폼이 없어요</p>
+          <p className="text-xs text-muted-foreground/60 mt-1 mb-4">신청·접수·문의 등 목적에 맞는 폼을 직접 만들거나 기존 폼을 연결하세요.</p>
           <motion.button
             whileTap={{ scale: 0.95 }}
             onClick={() => setShowCreate(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-500 text-white text-sm font-medium hover:bg-violet-600 transition-colors"
           >
             <Plus className="w-4 h-4" />
-            수집 소스 추가
+            폼 만들기
           </motion.button>
         </div>
-      ) : (
+      ) : shownSources.length === 0 ? <div className="py-12 text-center"><p className="text-sm text-muted-foreground">조건에 맞는 등록 폼이 없어요.</p><button type="button" onClick={() => { setQuery(""); setStatusFilter("all"); }} className="mt-3 rounded-lg px-3 py-2 text-sm hover:bg-secondary">검색·필터 초기화</button></div> : (
         <div className="space-y-2">
-          {sources.map((source) => (
+          {shownSources.map((source) => (
             <motion.div
               key={source.id}
               layout
-              className="group flex items-center gap-4 p-4 rounded-2xl border border-border bg-background hover:border-violet-400/30 transition-colors"
+              className={`group grid grid-cols-[36px_minmax(0,1fr)] gap-x-3 gap-y-3 rounded-2xl bg-card p-4 transition-shadow hover:shadow-md sm:flex sm:items-center sm:gap-4 ${FINISH.s1}`}
             >
               <div className="w-9 h-9 rounded-xl bg-violet-500/10 flex items-center justify-center text-violet-500 shrink-0">
                 <Database className="w-4 h-4" />
@@ -413,8 +442,9 @@ export default function CollectPage() {
                     </Link>
                     <button
                       onClick={(e) => { e.preventDefault(); setEditingId(source.id); setEditingName(source.name); }}
-                      className="opacity-0 group-hover:opacity-60 hover:!opacity-100 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-all shrink-0"
+                      className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-opacity shrink-0 sm:opacity-0 sm:group-hover:opacity-60 sm:focus:opacity-100"
                       title="이름 수정"
+                      aria-label={`${source.name} 이름 수정`}
                     >
                       <Edit3 className="w-3 h-3" />
                     </button>
@@ -424,8 +454,8 @@ export default function CollectPage() {
                   {source.description && (
                     <p className="text-xs text-muted-foreground truncate mt-0.5">{source.description}</p>
                   )}
-                  <div className="flex items-center gap-3 mt-1">
-                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
                       <Users className="w-3 h-3" />{source._count.records.toLocaleString()}건
                     </span>
                     {/* 방식 배지 — 빌더형은 사이트 URL 이 없어서, 배지가 없으면 "설정이 덜 된
@@ -434,17 +464,18 @@ export default function CollectPage() {
                       {source.mode === "builder" ? "빌더형" : "연동형"}
                     </span>
                     {source.siteUrl && (
-                      <span className="text-xs text-muted-foreground flex items-center gap-1 truncate">
-                        <Globe className="w-3 h-3 shrink-0" />{source.siteUrl}
+                      <span className="flex min-w-0 max-w-full items-center gap-1 text-xs text-muted-foreground">
+                        <Globe className="w-3 h-3 shrink-0" /><span className="truncate">{source.siteUrl}</span>
                       </span>
                     )}
                   </div>
                 </Link>
               </div>
-              <div className="flex items-center gap-1.5 shrink-0">
+              <div className="col-start-2 flex shrink-0 items-center justify-end gap-1.5">
                 {/* 토글 스위치 */}
                 <ActiveToggle
                   active={source.isActive}
+                  label={`${source.name} 접수`}
                   onChange={(next) => handleToggle(source, next)}
                   size="sm"
                   showLabel={false}
@@ -464,7 +495,7 @@ export default function CollectPage() {
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
-                <Link href={`/collect/${source.id}`} className="p-1 text-muted-foreground hover:text-foreground transition-colors">
+                <Link href={`/collect/${source.id}`} aria-label={`${source.name} 열기`} className="rounded-lg p-2 text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <ChevronRight className="w-4 h-4" />
                 </Link>
               </div>

@@ -21,36 +21,24 @@ const read = (rel: string) => readFileSync(join(ROOT, rel), "utf8");
  */
 
 describe("메뉴 필터", () => {
-  it("준비 전에는 홈페이지 항목이 아예 없다", () => {
-    const visible = filterNavItems(navItems, { expoHomepageEnabled: false });
-    expect(visible.some((item) => item.href === "/homepage")).toBe(false);
+  it("웹사이트는 하나의 진입으로 묶고 기존 주소를 보존한다", () => {
+    const website = navItems.find(item => item.href === "/detail-page");
+    expect(website?.label).toBe("웹사이트");
+    expect(website?.aliases).toContain("/homepage");
+    expect(filterNavItems(navItems, { expoHomepageEnabled: false })).toContain(website);
   });
 
-  it("준비되면 나타난다", () => {
-    const visible = filterNavItems(navItems, { expoHomepageEnabled: true });
-    expect(visible.some((item) => item.href === "/homepage")).toBe(true);
+  it("서버가 준비됐다고 답한 기능만 노출한다", () => {
+    const gated = { href: "/homepage", label: "홈페이지", icon: navItems[0].icon, capability: "expoHomepage" as const };
+    expect(filterNavItems([gated], { expoHomepageEnabled: false })).toEqual([]);
+    expect(filterNavItems([gated], { expoHomepageEnabled: true })).toEqual([gated]);
+    const area = read("src/components/ui/page-layout.tsx");
+    expect(area).toContain("expoHomepageEnabled ?");
   });
 
-  /**
-   * 눌렀는데 아무 일도 안 일어나는 메뉴는 고장으로 읽힌다. 그래서 disabled 항목을
-   * 남기는 게 아니라 **개수가 줄어야** 한다.
-   */
-  it("숨길 때 빈 항목을 남기지 않는다", () => {
-    const off = filterNavItems(navItems, { expoHomepageEnabled: false });
-    const on = filterNavItems(navItems, { expoHomepageEnabled: true });
-    expect(on.length).toBe(off.length + 1);
-    for (const item of off) expect(item.href).not.toBe("/homepage");
-  });
-
-  it("다른 메뉴는 게이트에 걸리지 않는다", () => {
-    const off = filterNavItems(navItems, { expoHomepageEnabled: false });
-    for (const href of ["/dashboard", "/collect", "/analytics", "/tools", "/worklog", "/webinar", "/competition"]) {
-      expect(`${href}: ${off.some((item) => item.href === href)}`).toBe(`${href}: true`);
-    }
-  });
-
-  it("게이트가 걸린 항목은 홈페이지 하나뿐이다", () => {
-    expect(navItems.filter((item) => item.capability).map((item) => item.href)).toEqual(["/homepage"]);
+  it("대시보드 보고는 같은 메뉴로, 등록은 범용 이름으로 표시한다", () => {
+    expect(navItems.find(item => item.href === "/dashboard")?.aliases).toContain("/summary-dashboard");
+    expect(navItems.find(item => item.href === "/collect")?.label).toBe("등록");
   });
 });
 

@@ -1,11 +1,13 @@
 "use client";
 
+import { DashboardNavigation, PageHeader } from "@/components/ui/page-layout";
+
 /**
- * 프로젝트 대시보드 — 지금 진행 중인 사전등록·광고·대회·웨비나·상세페이지를 한 장에.
+ * 프로젝트 대시보드 — 지금 진행 중인 등록·광고·대회·웨비나·상세페이지를 한 장에.
  *
  * 읽는 화면이다(AGENTS §1 Calm Hierarchy): 메뉴마다 숫자 하나를 크게, 나머지는 작게.
  * 숫자는 **운영 시작부터 지금까지(전체 기간)** 기준이다 — 최근 7일만 보여 주면 "지금까지 얼마나
- * 모였나" 가 안 읽힌다는 요청(2026-10-08). 오늘·어제는 보조로 붙인다. 자세한 건 카드를 눌러 그 메뉴로 간다 — 사전등록 통계는 각 폼의 "현황" 탭,
+ * 모였나" 가 안 읽힌다는 요청(2026-10-08). 오늘·어제는 보조로 붙인다. 자세한 건 카드를 눌러 그 메뉴로 간다 — 등록 통계는 각 폼의 "현황" 탭,
  * 광고는 폴더, 대회는 대회 화면. 끝난 것은 첫 화면에서 내리고 "지난 n개" 로만 남긴다.
  */
 import { useCallback, useEffect, useState } from "react";
@@ -108,14 +110,9 @@ export default function DashboardClient() {
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
+      <DashboardNavigation />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold">대시보드</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {currentProject.name} · 지금 진행 중인 것만 모아 봐요
-            {data && <span className="ml-1.5 text-xs">({formatKstDateTime(data.generatedAt).slice(5, 16)} 기준)</span>}
-          </p>
-        </div>
+        <PageHeader title="대시보드" context={currentProject.name} description={<>현재 운영 중인 등록·광고·프로그램을 모아봅니다.{data && <span className="ml-1.5 text-xs">({formatKstDateTime(data.generatedAt).slice(5, 16)} 기준)</span>}</>} />
         <motion.button
           whileTap={{ scale: 0.96 }}
           transition={spring}
@@ -153,7 +150,7 @@ export function OverviewSections({ data, onShare }: { data: ProjectOverview; onS
   const grandTotal = data.collect.active.reduce((sum, s) => sum + s.total, 0);
   return (
     <>
-      {/* ── 사전등록 ── 첫 화면의 주인공: 지금까지 모인 등록(전체 기간) */}
+      {/* ── 등록 ── 첫 화면의 주인공: 지금까지 모인 등록(전체 기간) */}
       <Section
         icon={Database}
         title="등록"

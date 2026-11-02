@@ -1,9 +1,13 @@
 "use client";
 
+import { WebsiteNavigation } from "@/components/ui/page-layout";
+
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronRight, FileText, Loader2, Plus, Trash2 } from "lucide-react";
+import { PageHeader, ListSearch } from "@/components/ui/page-layout";
+import { useQueryText } from "@/components/ui/use-query-tab";
 import { toast } from "sonner";
 import { useWorkspace } from "@/contexts/workspace";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -23,6 +27,8 @@ export default function DetailPageListPage() {
   const { workspace, currentProject, isLoading: wsLoading } = useWorkspace();
   const confirm = useConfirm();
   const [pages, setPages] = useState<DetailPageRow[]>([]);
+  const [query, setQuery] = useQueryText();
+  const shown = pages.filter(item => item.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -103,13 +109,9 @@ export default function DetailPageListPage() {
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
+      <WebsiteNavigation />
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold">상세페이지</h1>
-          <p className="mt-1.5 text-sm text-muted-foreground">
-            {currentProject.name} · 아임웹 코드블럭에 한 줄로 붙이는 상세페이지
-          </p>
-        </div>
+        <PageHeader title="상세페이지" context={currentProject.name} description="독립된 콘텐츠 페이지를 만들고 사이트에 연결합니다." />
         <motion.button
           whileTap={{ scale: 0.95 }}
           onClick={() => setShowCreate(true)}
@@ -160,6 +162,7 @@ export default function DetailPageListPage() {
         )}
       </AnimatePresence>
 
+      {pages.length > 0 && <ListSearch value={query} onChange={setQuery} label="상세페이지 검색" count={shown.length} />}
       {isLoading ? (
         <div className="flex h-40 items-center justify-center">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -172,9 +175,9 @@ export default function DetailPageListPage() {
           <p className="text-sm text-muted-foreground">아직 상세페이지가 없어요</p>
           <p className="mt-1 text-xs text-muted-foreground/70">대회 공고 페이지와 같은 방식으로 섹션을 켜고 채우면 돼요</p>
         </div>
-      ) : (
+      ) : shown.length === 0 ? <div className="py-12 text-center"><p className="text-sm text-muted-foreground">검색 결과가 없어요.</p><button type="button" onClick={() => setQuery("")} className="mt-3 rounded-lg px-3 py-2 text-sm hover:bg-secondary">검색 초기화</button></div> : (
         <div className="space-y-2">
-          {pages.map((page) => (
+          {shown.map((page) => (
             <div
               key={page.id}
               className="group flex items-center gap-4 rounded-2xl border border-border bg-background p-4 transition-colors hover:border-violet-400/40"

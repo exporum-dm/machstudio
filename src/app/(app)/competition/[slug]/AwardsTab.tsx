@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Award, ChevronDown, ChevronUp, Copy, ExternalLink, Eye, EyeOff, Loader2, MonitorPlay, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { getPublicAppOrigin } from "@/lib/app-url";
 import { toast } from "sonner";
 import { InlineError } from "@/components/ui/inline-error";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -374,10 +375,8 @@ function ShowCard({
   const [config, setConfig] = useState<ShowConfig>(() => normalizeShowConfig(competition.showConfig));
   const [copied, setCopied] = useState(false);
 
-  // 이번 승인 범위 밖인 결과 발표 공유 링크는 현재 host 동작을 유지한다.
-  // eslint-disable-next-line no-restricted-syntax
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
-  const showUrl = competition.showToken ? `${origin}/show/${competition.showToken}` : "";
+  const origin = getPublicAppOrigin();
+  const showUrl = origin && competition.showToken ? `${origin}/show/${competition.showToken}` : "";
 
   const save = async (next: ShowConfig) => {
     setConfig(next);

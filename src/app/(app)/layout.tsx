@@ -25,7 +25,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const caps = await getExpoCapabilities({ probe: probeExpoSchema });
 
   return (
-    <WorkspaceProvider>
+    <WorkspaceProvider expoHomepageEnabled={caps.admin}>
       <ConfirmProvider>
         <div className="flex h-screen bg-muted print:block print:h-auto print:bg-white">
           {/*

@@ -1,5 +1,7 @@
 "use client";
 
+import { getPublicAppOrigin } from "@/lib/app-url";
+
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { use } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -1029,7 +1031,9 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
 
   const handleShare = async (surface: ShareSurface = "live") => {
     if (typeof window === "undefined") return;
-    const url = buildShareUrl(`${window.location.origin}/webinar/${slug}/live`, shareCode ?? "");
+    const origin = getPublicAppOrigin();
+    if (!origin) return;
+    const url = buildShareUrl(`${origin}/webinar/${slug}/live`, shareCode ?? "");
     try {
       if (typeof navigator !== "undefined" && navigator.share) {
         await navigator.share({ title: webinar?.name ?? "웨비나", url });

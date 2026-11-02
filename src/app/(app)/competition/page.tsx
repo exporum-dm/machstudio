@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Trophy, Loader2, ChevronRight, Users, Trash2 } from "lucide-react";
+import { PageHeader, ListSearch } from "@/components/ui/page-layout";
+import { useQueryText } from "@/components/ui/use-query-tab";
 import { toast } from "sonner";
 import Link from "next/link";
 import { useWorkspace } from "@/contexts/workspace";
@@ -38,6 +40,8 @@ export default function CompetitionPage() {
   const { workspace, currentProject, isLoading: wsLoading } = useWorkspace();
   const confirm = useConfirm();
   const [competitions, setCompetitions] = useState<Competition[]>([]);
+  const [query, setQuery] = useQueryText();
+  const shown = competitions.filter(item => item.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -132,12 +136,7 @@ export default function CompetitionPage() {
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">대회</h1>
-          <p className="mt-1.5 text-sm text-muted-foreground">
-            {currentProject.name} · 모집 공고부터 투표·심사·발표까지
-          </p>
-        </div>
+        <PageHeader title="대회" context={currentProject.name} description="모집 공고부터 투표·심사·결과 발표까지 관리합니다." />
         <motion.button
           whileTap={{ scale: 0.95 }}
           onClick={() => setShowCreate(true)}
@@ -209,6 +208,7 @@ export default function CompetitionPage() {
         )}
       </AnimatePresence>
 
+      {competitions.length > 0 && <ListSearch value={query} onChange={setQuery} label="대회 검색" count={shown.length} />}
       {isLoading ? (
         <div className="flex h-40 items-center justify-center">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -221,9 +221,9 @@ export default function CompetitionPage() {
           <p className="text-sm text-muted-foreground">아직 대회가 없어요</p>
           <p className="mt-1 text-xs text-muted-foreground/70">대회를 만들고 모집 공고부터 구성해보세요</p>
         </div>
-      ) : (
+      ) : shown.length === 0 ? <div className="py-12 text-center"><p className="text-sm text-muted-foreground">검색 결과가 없어요.</p><button type="button" onClick={() => setQuery("")} className="mt-3 rounded-lg px-3 py-2 text-sm hover:bg-secondary">검색 초기화</button></div> : (
         <div className="space-y-2">
-          {competitions.map((competition) => {
+          {shown.map((competition) => {
             const status = resolveCompetitionStatus(competition);
             const meta = COMPETITION_PHASE_META[status.phase];
             return (

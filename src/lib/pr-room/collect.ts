@@ -353,9 +353,10 @@ export async function collectPrRoom(roomId: string, now = new Date()) {
   const mentions = JSON.parse(
     JSON.stringify([...added, ...refreshed]),
   ) as Prisma.InputJsonValue;
-  await prisma.prRoom.update({
-    where: { id: room.id },
+  const saved = await prisma.prRoom.updateMany({
+    where: { id: room.id, updatedAt: room.updatedAt },
     data: { mentions, lastCollectedAt: now },
   });
+  if (!saved.count) throw new Error("PR_ROOM_CHANGED");
   return { roomId, added: added.length, counts, errors };
 }

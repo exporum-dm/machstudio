@@ -2,11 +2,11 @@
 
 import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
 import { ArrowLeft, Award, BarChart3, FileText, Loader2, Scale, Send, Share2, Trophy, Users, Vote } from "lucide-react";
+import { PageTabs } from "@/components/ui/page-layout";
+import { useQueryTab } from "@/components/ui/use-query-tab";
 import { toast } from "sonner";
 import { InlineError } from "@/components/ui/inline-error";
-import { useWorkspace } from "@/contexts/workspace";
 import { COMPETITION_PHASE_META, resolveCompetitionStatus } from "@/lib/competition-status";
 import type { CompetitionConfig } from "@/lib/competition-config";
 import BasicInfoTab from "./BasicInfoTab";
@@ -19,10 +19,10 @@ import JudgesTab from "./JudgesTab";
 import TallyTab from "./TallyTab";
 import AwardsTab from "./AwardsTab";
 
-const spring = { type: "spring", stiffness: 420, damping: 30 } as const;
 
 export interface CompetitionDetail {
   id: string;
+  workspaceId?: string;
   name: string;
   slug: string;
   description: string | null;
@@ -54,13 +54,12 @@ type TabId = (typeof TABS)[number]["id"];
 
 export default function CompetitionDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
-  const { workspace } = useWorkspace();
   const [competition, setCompetition] = useState<CompetitionDetail | null>(null);
   const [entryCount, setEntryCount] = useState(0);
   const [rounds, setRounds] = useState<RoundDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
-  const [tab, setTab] = useState<TabId>("basic");
+  const [tab, setTab] = useQueryTab<TabId>(TABS.map(t => t.id), "basic");
 
   const fetchCompetition = useCallback(async () => {
     setLoading(true);
@@ -134,37 +133,11 @@ export default function CompetitionDetailPage({ params }: { params: Promise<{ sl
         <p className="mt-1 font-mono text-xs text-muted-foreground">/{competition.slug}</p>
       </div>
 
-      <div className="sticky top-0 z-10 flex flex-wrap gap-1 border-b border-border bg-background">
-        {TABS.map(({ id, label, icon: Icon }) => {
-          const active = tab === id;
-          return (
-            <button
-              key={id}
-              onClick={() => setTab(id)}
-              className={`relative flex items-center gap-1.5 px-3 py-2 text-sm transition-colors ${
-                active ? "text-violet-600 dark:text-violet-400" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {label}
-              {id === "entries" && entryCount > 0 && (
-                <span className="rounded-full bg-secondary px-1.5 text-[10px] tabular-nums">{entryCount}</span>
-              )}
-              {active && (
-                <motion.span
-                  layoutId="competition-tab"
-                  transition={spring}
-                  className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-violet-500"
-                />
-              )}
-            </button>
-          );
-        })}
-      </div>
+      <PageTabs label="대회 메뉴" value={tab} onChange={setTab} options={TABS.map(t => ({ ...t, badge: t.id === "entries" && entryCount > 0 ? entryCount : undefined }))} />
 
       {tab === "basic" && <BasicInfoTab competition={competition} rounds={rounds} patch={patch} />}
       {tab === "notice" && <NoticePageTab competition={competition} rounds={rounds} patch={patch} />}
-      {tab === "form" && <EntryFormTab competition={competition} patch={patch} workspaceId={workspace?.id} />}
+      {tab === "form" && <EntryFormTab competition={competition} patch={patch} workspaceId={competition.workspaceId} />}
       {tab === "entries" && <EntriesTab competition={competition} onCountChange={setEntryCount} />}
       {tab === "vote" && <VoteSettingsTab competition={competition} rounds={rounds} onRoundsChange={setRounds} patch={patch} />}
       {tab === "judges" && <JudgesTab competition={competition} rounds={rounds} onRoundsChange={setRounds} />}

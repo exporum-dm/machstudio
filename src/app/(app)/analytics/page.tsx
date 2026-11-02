@@ -4,6 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import { BarChart3, CalendarDays, ChevronRight, FolderKanban, Loader2, Plus, Radio, X } from "lucide-react";
+import { PageHeader, ListSearch } from "@/components/ui/page-layout";
+import { useQueryText } from "@/components/ui/use-query-tab";
+import { InlineError } from "@/components/ui/inline-error";
 import { toast } from "sonner";
 import { useWorkspace } from "@/contexts/workspace";
 
@@ -24,6 +27,9 @@ const today = kstDateOnly(new Date());
 export default function AnalyticsFoldersPage() {
   const { workspace, currentProject, isLoading: workspaceLoading } = useWorkspace();
   const [folders, setFolders] = useState<Folder[]>([]);
+  const [query, setQuery] = useQueryText();
+  const shown = folders.filter(item => item.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [open, setOpen] = useState(false);
@@ -32,13 +38,14 @@ export default function AnalyticsFoldersPage() {
   const load = useCallback(async () => {
     if (!workspace || !currentProject) return;
     setLoading(true);
+    setLoadError("");
     try {
       const response = await fetch(`/api/ad-performance/folders?workspaceId=${workspace.id}&projectId=${currentProject.id}`);
       const data = await response.json().catch(() => null);
       if (!response.ok) throw new Error(data?.error || `광고 성과 폴더를 불러오지 못했습니다. (${response.status})`);
       setFolders(data.folders ?? []);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "광고 성과 폴더를 불러오지 못했습니다.");
+      setLoadError(error instanceof Error ? error.message : "광고 성과 폴더를 불러오지 못했습니다.");
     } finally { setLoading(false); }
   }, [workspace, currentProject]);
 
@@ -71,14 +78,15 @@ export default function AnalyticsFoldersPage() {
   return (
     <div className="space-y-7 p-4 sm:p-6 lg:p-8">
       <header className="flex flex-wrap items-end justify-between gap-4">
-        <div><p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-violet-500">Campaign workspaces</p><h1 className="text-2xl font-semibold tracking-tight">광고 성과</h1><p className="mt-1.5 text-sm text-muted-foreground">{currentProject.name}의 매체별 캠페인을 폴더 안에서 비교합니다.</p></div>
+        <PageHeader title="광고 성과" context={currentProject?.name} description="매체별 캠페인과 광고 소재의 성과를 비교합니다." />
         <motion.button whileTap={{ scale: .97 }} onClick={() => setOpen(true)} className="flex items-center gap-2 rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-violet-600"><Plus className="h-4 w-4" />광고 성과 폴더 만들기</motion.button>
       </header>
 
-      {loading ? <div className="flex h-52 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div> : folders.length === 0 ? (
+      {folders.length > 0 && <ListSearch value={query} onChange={setQuery} label="광고 폴더 검색" count={shown.length} />}
+      {loading ? <div className="flex h-52 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div> : loadError ? <InlineError message={loadError} onRetry={load} /> : folders.length === 0 ? (
         <button onClick={() => setOpen(true)} className="group flex min-h-64 w-full flex-col items-center justify-center rounded-3xl border border-dashed border-border bg-secondary/20 text-center transition hover:border-violet-300 hover:bg-violet-500/[.03]"><span className="mb-4 grid h-12 w-12 place-items-center rounded-2xl bg-violet-500/10 text-violet-500"><FolderKanban className="h-6 w-6" /></span><strong className="text-sm">첫 광고 성과 폴더를 만들어보세요</strong><span className="mt-2 max-w-sm text-xs leading-5 text-muted-foreground">하나의 행사에 Meta, Google, TikTok 계정을 연결하고 통합 성과부터 소재까지 내려가며 확인할 수 있습니다.</span></button>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{folders.map((folder, index) => (
+      ) : shown.length === 0 ? <div className="py-12 text-center"><p className="text-sm text-muted-foreground">검색 결과가 없어요.</p><button type="button" onClick={() => setQuery("")} className="mt-3 rounded-lg px-3 py-2 text-sm hover:bg-secondary">검색 초기화</button></div> : (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{shown.map((folder, index) => (
           <motion.div key={folder.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * .04 }}>
             <Link href={`/analytics/${folder.id}`} className="group block rounded-2xl bg-card p-5 shadow-[0_1px_2px_rgba(15,23,42,.08),0_10px_30px_rgba(15,23,42,.04)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_34px_rgba(91,33,182,.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
               <div className="mb-6 flex items-start justify-between"><span className="grid h-10 w-10 place-items-center rounded-xl bg-violet-500/10 text-violet-500"><BarChart3 className="h-5 w-5" /></span><ChevronRight className="h-4 w-4 text-muted-foreground transition group-hover:translate-x-1 group-hover:text-violet-500" /></div>

@@ -5,8 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  LayoutDashboard, LayoutGrid, BarChart3, LogOut,
-  ChevronDown, Plus, FolderOpen, Check, Loader2, Settings2, Settings, Database, Video, Pencil, Trash2, ShieldCheck, Menu, Trophy, Globe, Newspaper, FileText, NotebookPen, Wrench,
+  LayoutDashboard, BarChart3, LogOut,
+  ChevronDown, Plus, FolderOpen, Check, Loader2, Settings2, Settings, Database, Video, Pencil, Trash2, ShieldCheck, Menu, Trophy, Newspaper, FileText, NotebookPen, Wrench,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/contexts/workspace";
@@ -38,13 +38,12 @@ export interface NavItem {
 }
 
 export const navItems: NavItem[] = [
-  { href: "/dashboard", icon: LayoutDashboard, label: "대시보드" },
+  { href: "/dashboard", icon: LayoutDashboard, label: "대시보드", aliases: ["/summary-dashboard"] },
   { href: "/collect", icon: Database, label: "등록" },
   { href: "/analytics", icon: BarChart3, label: "광고 성과" },
   { href: "/webinar", icon: Video, label: "웨비나" },
   { href: "/competition", icon: Trophy, label: "대회" },
-  { href: "/detail-page", icon: FileText, label: "상세페이지" },
-  { href: "/homepage", icon: Globe, label: "홈페이지", capability: "expoHomepage" },
+  { href: "/detail-page", icon: FileText, label: "웹사이트", aliases: ["/homepage"] },
   { href: "/brief", icon: Newspaper, label: "홍보실" },
   { href: "/worklog", icon: NotebookPen, label: "업무일지" },
   // UTM 빌더·미디어·이벤트 택소노미를 한 메뉴의 탭으로(2026-10-17). 예전 주소도 그대로 열린다.
@@ -223,9 +222,10 @@ export function Sidebar({ expoHomepageEnabled = false }: SidebarProps = {}) {
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newProjectName.trim() }),
+        body: JSON.stringify({ name: newProjectName.trim(), workspaceId: workspace?.id }),
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "다시 시도해주세요");
       await refreshProjects();
       setCurrentProject(data.project);
       setNewProjectName(""); setShowNewProject(false); setProjectMenuOpen(false);
@@ -595,17 +595,9 @@ export function Sidebar({ expoHomepageEnabled = false }: SidebarProps = {}) {
             관리자
           </Link>
         )}
-        <Link
-          href="/summary-dashboard"
-          className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors ${
-            pathname === "/summary-dashboard"
-              ? "bg-violet-500/10 text-violet-500 font-medium"
-              : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-          }`}
-        >
-          <LayoutGrid className="w-4 h-4" />
-          요약 대시보드
-        </Link>
+        <button type="button" onClick={() => setWsSettingsOpen(true)} className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <Settings className="w-4 h-4" aria-hidden />워크스페이스 설정
+        </button>
         <div className="flex items-center gap-1">
           <NotificationPanel />
           <ThemeToggle />

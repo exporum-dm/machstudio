@@ -12,5 +12,12 @@ export async function POST(request: Request) {
   if (!g.ok) return g.response;
   const room = await prisma.prRoom.findUnique({ where: { projectId }, select: { id: true } });
   if (!room) return NextResponse.json({ error: "홍보실을 찾을 수 없어요" }, { status: 404 });
-  return NextResponse.json(await collectPrRoom(room.id));
+  try {
+    return NextResponse.json(await collectPrRoom(room.id));
+  } catch (error) {
+    if (error instanceof Error && error.message === "PR_ROOM_CHANGED") {
+      return NextResponse.json({ error: "조사 중 다른 창에서 내용이 바뀌었어요. 최신 내용을 불러온 뒤 다시 조사해 주세요." }, { status: 409 });
+    }
+    throw error;
+  }
 }

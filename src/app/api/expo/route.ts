@@ -23,8 +23,8 @@ export async function GET(request: Request) {
   const projectId = url.searchParams.get("projectId");
 
   /**
-   * 명시한 프로젝트는 목록을 읽기 전에 확인한다. 미배정 MEMBER 에게 빈 목록을 주면
-   * 프로젝트가 존재한다는 신호가 되므로, URL 로 특정한 자원과 같이 404 로 숨긴다.
+   * 명시한 프로젝트의 워크스페이스 소속을 목록 조회 전에 확인한다.
+   * 같은 워크스페이스의 계정은 배정 없이 조회하며 편집 권한은 별도로 내려준다.
    */
   let projectPermissions = deriveExpoPermissions(null, null);
   if (projectId) {

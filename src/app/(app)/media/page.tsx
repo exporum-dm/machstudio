@@ -22,6 +22,7 @@ import {
   Upload, ImageIcon, Video, FileText, Copy, Trash2, Loader2, X, Check, Minus,
   FolderPlus, FolderInput, ClipboardCopy, Square as SquareIcon,
 } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-layout";
 import { toast } from "sonner";
 import { useWorkspace } from "@/contexts/workspace";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -408,13 +409,8 @@ export default function MediaPage() {
   }, [selected, moveTarget, projects, projectFilter]);
 
   return (
-    <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">미디어</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          사진·동영상은 물론 한글·엑셀·CSV 같은 파일도 올리면 바로 쓸 수 있는 주소가 생겨요.
-        </p>
-      </div>
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
+      <PageHeader title="미디어" description="사진·동영상·문서를 올리고 여러 콘텐츠에서 재사용합니다." />
 
       {/* 업로드 자리 — 항상 보이고 그 자리에서 바로 시작된다(고치는 영역: 접지 않는다). */}
       <motion.label

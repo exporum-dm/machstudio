@@ -13,8 +13,11 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Btn, Field, FINISH, R, Segmented } from "@/components/ui/primitives";
+import { Btn, Field, FINISH, R } from "@/components/ui/primitives";
 import { api } from "@/components/brief/types";
+import { PageTabs } from "@/components/ui/page-layout";
+import { useQueryTab } from "@/components/ui/use-query-tab";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   analyzeMention,
   buildClaudeResearchPrompt,
@@ -29,6 +32,7 @@ import {
 
 interface Room {
   id: string;
+  updatedAt: string;
   lastCollectedAt: string | null;
   project: { name: string };
   keywords: unknown;
@@ -48,6 +52,16 @@ const dateTime = (value: string | null) =>
         timeStyle: "short",
       })
     : "아직 조사 전";
+function mentionSource(mention: PrMention) {
+  try {
+    const host = new URL(mention.url).hostname.replace(/^www\./, "");
+    for (const [domain, name] of [["instagram.com", "Instagram"], ["facebook.com", "Facebook"], ["threads.net", "Threads"], ["threads.com", "Threads"], ["x.com", "X"], ["twitter.com", "X"], ["linkedin.com", "LinkedIn"], ["tiktok.com", "TikTok"], ["youtube.com", "YouTube"], ["youtu.be", "YouTube"]]) {
+      if (host === domain || host.endsWith(`.${domain}`)) return name;
+    }
+    return /^(?:Google 뉴스|Google News|Google|구글 뉴스)$/i.test(mention.source.trim()) && host !== "news.google.com" ? host : mention.source;
+  } catch { return mention.source; }
+}
+
 function useRoom(projectId: string) {
   const [data, setData] = useState<Loaded | null>(null);
   const [error, setError] = useState("");
@@ -82,18 +96,17 @@ function useRoom(projectId: string) {
   }, [projectId]);
   return { data, setData, error, load };
 }
-async function save(projectId: string, body: Record<string, unknown>) {
+async function save(projectId: string, body: Record<string, unknown>, expectedUpdatedAt: string) {
   return api<Loaded>("/api/pr-room", {
     method: "PATCH",
-    body: JSON.stringify({ projectId, ...body }),
+    body: JSON.stringify({ projectId, ...body, expectedUpdatedAt }),
   });
 }
 
 export function MentionWorkspace({ projectId }: { projectId: string }) {
   const { data, setData, error, load } = useRoom(projectId);
-  const [tab, setTab] = useState<
-    "mentions" | "ai" | "response" | "report" | "settings"
-  >("mentions");
+  const confirm = useConfirm();
+  const [tab, setTab] = useQueryTab(["mentions", "ai", "response", "report", "settings"] as const, "mentions", "monitorTab");
   const [running, setRunning] = useState(false);
   const [runSummary, setRunSummary] = useState("");
   if (error) return <ErrorState message={error} retry={load} />;
@@ -102,16 +115,20 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
     Array.isArray(data.room.mentions) ? data.room.mentions : []
   ).map(x=>{const row=x as PrMention;return{...row,title:readable(row.title),excerpt:readable(row.excerpt)}}) as PrMention[];
   const patchMention = async (id: string, patch: Partial<PrMention>) => {
+    try {
     const next = mentions.map((x) => (x.id === id ? { ...x, ...patch } : x));
-    setData(await save(projectId, { mentions: next }));
+    setData(await save(projectId, { mentions: next }, data.room.updatedAt));
+    } catch (error) { toast.error(error instanceof Error ? error.message : "저장하지 못했어요"); await load(); }
   };
   const excludeMention = async (mention:PrMention) => {
-    if(!window.confirm("이 결과를 제거하고 다음 조사에서도 제외할까요?")) return;
+    if(!await confirm({ title: "이 조사 결과를 제외할까요?", description: "목록에서 제거하고 다음 조사에서도 제외합니다.", confirmLabel: "제외", tone: "danger" })) return;
+    try {
     const excluded=Array.isArray(data.room.excludedMentionUrls)?data.room.excludedMentionUrls.filter((x):x is string=>typeof x==="string"):[];
     const rules=Array.isArray(data.room.excludedMentionRules)?data.room.excludedMentionRules as ExcludedMentionRule[]:[];
     const rule:ExcludedMentionRule={title:mention.title,excerpt:mention.excerpt,source:mention.source,channel:mention.channel};
-    setData(await save(projectId,{mentions:mentions.filter(x=>x.id!==mention.id),excludedMentionUrls:[...new Set([...excluded,mention.url])],excludedMentionRules:[rule,...rules]}));
+    setData(await save(projectId,{mentions:mentions.filter(x=>x.id!==mention.id),excludedMentionUrls:[...new Set([...excluded,mention.url])],excludedMentionRules:[rule,...rules]}, data.room.updatedAt));
     toast.success("비슷한 조사 결과도 함께 제외하도록 기억했어요");
+    } catch (error) { toast.error(error instanceof Error ? error.message : "제외하지 못했어요"); await load(); }
   };
   /**
    * 수집된 뉴스·보도 언급을 "보도자료" 탭의 아카이브(pressReleases)로 복사해 둔다.
@@ -134,8 +151,13 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
       sourceUrl: mention.url,
       sourceOutlet: mention.source,
     };
-    setData(await save(projectId, { pressReleases: [release, ...existing] }));
-    toast.success("보도자료 아카이브에 저장했어요 — '보도자료' 탭에서 볼 수 있어요");
+    try {
+      setData(await save(projectId, { pressReleases: [release, ...existing] }, data.room.updatedAt));
+      toast.success("보도자료 아카이브에 저장했어요 — '보도자료' 탭에서 볼 수 있어요");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "아카이브에 저장하지 못했어요");
+      await load();
+    }
   };
   const collect = async () => {
     setRunning(true);
@@ -158,6 +180,7 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
       toast.success(`새 언급 ${r.added}건을 저장했어요`);
     } catch (e) {
       toast.error((e as Error).message);
+      await load();
     } finally {
       setRunning(false);
     }
@@ -210,18 +233,10 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
           </div>
         ))}
       </div>
-      <Segmented
-        value={tab}
-        onChange={setTab}
-        label="언급 조사 메뉴"
-        options={[
-          { value: "mentions", label: "수집 결과" },
-          { value: "ai", label: "AI 웹 조사" },
-          { value: "response", label: "이슈 대응" },
-          { value: "report", label: "분석 리포트" },
-          { value: "settings", label: "조사 설정" },
-        ]}
-      />
+      <PageTabs label="언급 조사 메뉴" value={tab} onChange={setTab} options={[
+        { id: "mentions", label: "수집 결과" }, { id: "ai", label: "AI 웹 조사" },
+        { id: "response", label: "이슈 대응" }, { id: "report", label: "분석 리포트" }, { id: "settings", label: "조사 설정" },
+      ]} />
       {tab === "mentions" ? (
         <MentionList
           mentions={mentions}
@@ -231,7 +246,7 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
           archive={archiveMention}
         />
       ) : tab === "ai" ? (
-        <AiResearchWorkspace projectId={projectId} data={data} setData={setData} mentions={mentions} />
+        <AiResearchWorkspace projectId={projectId} data={data} setData={setData} mentions={mentions} reload={load} />
       ) : tab === "response" ? (
         <ResponseList
           mentions={mentions}
@@ -241,7 +256,7 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
       ) : tab === "report" ? (
         <MentionReport mentions={mentions} lastCollectedAt={data.room.lastCollectedAt} />
       ) : (
-        <MentionSettings projectId={projectId} data={data} setData={setData} />
+        <MentionSettings projectId={projectId} data={data} setData={setData} reload={load} />
       )}
     </div>
   );
@@ -252,14 +267,17 @@ function AiResearchWorkspace({
   data,
   setData,
   mentions,
+  reload,
 }: {
   projectId: string;
   data: Loaded;
   setData: (data: Loaded) => void;
   mentions: PrMention[];
+  reload: () => Promise<void>;
 }) {
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
+  const [importError, setImportError] = useState("");
   const keywords = Array.isArray(data.room.keywords)
     ? data.room.keywords.filter((x): x is string => typeof x === "string" && Boolean(x.trim()))
     : [];
@@ -280,9 +298,15 @@ function AiResearchWorkspace({
   };
   const importResults = async () => {
     setSaving(true);
+    setImportError("");
     try {
       const known = new Set(mentions.map((x) => x.url));
-      const rows = parseClaudeResearch(value).filter((x) => !known.has(x.url) && !excludedUrls.has(x.url));
+      const parsed = parseClaudeResearch(value);
+      const rows = parsed.filter((x) => !known.has(x.url) && !excludedUrls.has(x.url));
+      if (!rows.length) {
+        toast.info(parsed.length ? "모두 이미 저장되었거나 제외한 URL이에요. Claude에 기존 URL을 제외하고 추가 조사해 달라고 요청해 주세요." : "조사 결과가 비어 있어요. Claude에서 추가 조사한 결과를 붙여 넣어 주세요.");
+        return;
+      }
       const now = new Date().toISOString();
       const added: PrMention[] = rows.map((row) => ({
         id: crypto.randomUUID(),
@@ -292,11 +316,12 @@ function AiResearchWorkspace({
         collectedAt: now,
         origin: "claude",
       }));
-      setData(await save(projectId, { mentions: [...added, ...mentions], lastCollectedAt: now }));
+      setData(await save(projectId, { mentions: [...added, ...mentions], lastCollectedAt: now }, data.room.updatedAt));
       setValue("");
-      toast.success(`Claude 조사 결과 ${added.length}건을 가져왔어요.`);
+      toast.success(`Claude 조사 결과 ${added.length}건을 가져왔어요.${parsed.length > added.length ? ` 기존·제외 URL ${parsed.length - added.length}건은 건너뛰었어요.` : ""}`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "결과를 가져오지 못했어요.");
+      setImportError(error instanceof Error ? error.message : "결과를 가져오지 못했어요.");
+      await reload();
     } finally {
       setSaving(false);
     }
@@ -322,12 +347,17 @@ function AiResearchWorkspace({
         <span className="text-xs font-medium text-violet-700">2단계</span>
         <h3 className="mt-1 font-semibold">조사 결과 가져오기</h3>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">Claude가 출력한 JSON 전체를 아래에 붙여 넣으세요. 기존 URL과 제외한 URL은 자동으로 건너뜁니다.</p>
+        <label htmlFor="claude-research-results" className="mt-3 block text-xs font-medium">조사 결과 JSON</label>
         <textarea
+          id="claude-research-results"
+          aria-invalid={Boolean(importError)}
+          aria-describedby={importError ? "claude-research-error" : undefined}
           value={value}
           onChange={(event) => setValue(event.target.value)}
           className={`mt-3 min-h-64 w-full bg-background p-3 font-mono text-xs leading-5 ${R.control}`}
           placeholder='[{"title":"행사 관련 기사", "url":"https://...", ...}]'
         />
+        {importError && <p id="claude-research-error" role="alert" className="mt-2 text-sm text-destructive">{importError}</p>}
         <Btn className="mt-3" tone="key" disabled={!data.canWrite || saving || !value.trim()} onClick={importResults}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
           결과 가져오기
@@ -386,7 +416,8 @@ function MentionList({
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <span className="text-xs text-muted-foreground">
-                  {x.channel === "press" ? "뉴스·보도" : "SNS"} · {x.source}
+                  {{ press: "뉴스·보도", sns: "SNS", comment: "댓글", community: "커뮤니티", web: "웹" }[x.channel]} · {mentionSource(x)}
+                  {x.origin && <span className="ml-2 rounded-full bg-secondary px-2 py-0.5">{x.origin === "claude" ? "Claude 가져오기" : x.origin === "reference" ? "참고 링크" : "자동 수집"}</span>}
                   {x.author ? ` · ${x.channel === "press" ? "기자 " : "@"}${x.author.replace(/^@/, "")}` : ""}
                   {` · ${x.publishedAt ? "게시" : "수집"} ${new Date(x.publishedAt ?? x.collectedAt).toLocaleDateString("ko-KR")}`}
                 </span>
@@ -601,10 +632,12 @@ function MentionSettings({
   projectId,
   data,
   setData,
+  reload,
 }: {
   projectId: string;
   data: Loaded;
   setData: (d: Loaded) => void;
+  reload: () => Promise<void>;
 }) {
   const words = Array.isArray(data.room.keywords)
     ? data.room.keywords
@@ -632,15 +665,20 @@ function MentionSettings({
         tone="key"
         disabled={!data.canWrite}
         onClick={async () => {
+          try {
           setData(
             await save(projectId, {
               keywords: keywords
                 .split(",")
                 .map((x) => x.trim())
                 .filter(Boolean),
-            }),
+            }, data.room.updatedAt),
           );
           toast.success("조사 설정을 저장했어요");
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message : "저장하지 못했어요");
+            await reload();
+          }
         }}
       >
         설정 저장
@@ -740,14 +778,19 @@ export function PressWorkspace({ projectId }: { projectId: string }) {
   };
   const saveRelease = async () => {
     if (!draft) return;
+    try {
     const release: PressRelease = {
       id: crypto.randomUUID(),
       type,
       ...draft,
       updatedAt: new Date().toISOString(),
     };
-    setData(await save(projectId, { pressReleases: [release, ...releases] }));
+    setData(await save(projectId, { pressReleases: [release, ...releases] }, data.room.updatedAt));
     toast.success("완성 원고를 저장했어요");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "원고를 저장하지 못했어요");
+      await load();
+    }
   };
   return (
     <div className="space-y-5">

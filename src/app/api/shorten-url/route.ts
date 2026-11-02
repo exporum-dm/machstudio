@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimitAsync } from "@/lib/ratelimit";
 import { logActivity } from "@/lib/activity";
+import { getPublicAppOrigin } from "@/lib/app-url";
 
 const makeCode = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", 7);
 
@@ -16,9 +17,9 @@ function isHttpUrl(value: string) {
   }
 }
 
-function shortBaseUrl(request: Request) {
+function shortBaseUrl() {
   const configured = process.env.SHORT_URL_BASE || process.env.NEXT_PUBLIC_SHORT_URL_BASE;
-  const base = configured || new URL(request.url).origin;
+  const base = configured || getPublicAppOrigin();
   return base.replace(/\/+$/, "");
 }
 
@@ -54,6 +55,8 @@ export async function POST(request: Request) {
   if (!longUrl || !isHttpUrl(longUrl)) {
     return NextResponse.json({ error: "올바른 URL이 필요해요" }, { status: 400 });
   }
+  const publicBase = shortBaseUrl();
+  if (!publicBase) return NextResponse.json({ error: "공개 주소 설정을 확인해 주세요" }, { status: 503 });
 
   try {
     let membership = await prisma.workspaceMember.findFirst({ where: { userId: user.id } });
@@ -80,7 +83,7 @@ export async function POST(request: Request) {
       workspaceId: membership.workspaceId,
       createdById: user.id,
     });
-    const shortUrl = `${shortBaseUrl(request)}/r/${shortLink.code}`;
+    const shortUrl = `${publicBase}/r/${shortLink.code}`;
 
     await logActivity({
       workspaceId: membership.workspaceId,
