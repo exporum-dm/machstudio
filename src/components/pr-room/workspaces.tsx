@@ -420,6 +420,11 @@ function ManualMentionForm({
   };
 
   const addMention = async () => {
+    const trimmedUrl = url.trim();
+    if (mentions.some((x) => x.url === trimmedUrl)) {
+      toast.error("이미 추가된 URL이에요");
+      return;
+    }
     setAdding(true);
     try {
       const now = new Date().toISOString();
