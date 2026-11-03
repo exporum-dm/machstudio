@@ -22,6 +22,8 @@ const LA: RegistrationSchedule = {
   ],
   betweenTitle: {},
   betweenBody: {},
+  closedTitle: {},
+  closedBody: {},
 };
 const at = (iso: string) => new Date(iso);
 
@@ -75,7 +77,7 @@ describe("entryChannelAt", () => {
 
 describe("normalizeCollectForm schedule", () => {
   it("defaults to off and drops malformed values", () => {
-    expect(normalizeCollectForm({}).schedule).toEqual({ enabled: false, timezone: "Asia/Seoul", preOpensAt: null, preClosesAt: null, onsite: [], betweenTitle: {}, betweenBody: {} });
+    expect(normalizeCollectForm({}).schedule).toEqual({ enabled: false, timezone: "Asia/Seoul", preOpensAt: null, preClosesAt: null, onsite: [], betweenTitle: {}, betweenBody: {}, closedTitle: {}, closedBody: {} });
     const n = normalizeCollectForm({
       schedule: { enabled: true, timezone: "Mars/Base", preClosesAt: "2026-10-21 14:00", onsite: [{ date: "2026-10-22", open: "8:00", close: "17:00" }, { date: "bad", open: "08:00", close: "17:00" }, { date: "2026-10-23", open: "08:00", close: "17:00" }] },
     }).schedule;

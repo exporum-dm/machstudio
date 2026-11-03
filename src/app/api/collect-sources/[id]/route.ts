@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { collectColumnsFor } from "@/lib/collect-columns";
 import { logActivity } from "@/lib/activity";
-import { mergeFormConfigUpdate, normalizeCollectForm } from "@/lib/collect-form-config";
+import { isFormLocale, mergeFormConfigUpdate, normalizeCollectForm } from "@/lib/collect-form-config";
 import { backfillEmailNormalized } from "@/lib/collect-email-backfill";
 
 /**
@@ -204,10 +204,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
    * - 폼 빌더 자동저장(`formConfig` 통째)은 DB 의 일정을 그대로 둔다 — 빌더가 열릴 때 들고 온 낡은
    *   일정이 방금 기본 정보에서 고친 값을 되돌리지 않게.
    */
-  if (body.registrationSchedule !== undefined && result.source.mode !== "builder") {
-    return NextResponse.json({ error: "등록 시간은 빌더형 등록에서만 쓸 수 있어요" }, { status: 400 });
+  if ((body.registrationSchedule !== undefined || body.formLocale !== undefined) && result.source.mode !== "builder") {
+    return NextResponse.json({ error: "등록 시간·폼 언어는 빌더형 등록에서만 쓸 수 있어요" }, { status: 400 });
   }
-  const nextFormConfig = mergeFormConfigUpdate(result.source.formConfig, body.formConfig, body.registrationSchedule);
+  // 폼 언어(formConfig.defaultLocale)도 같은 규칙 — "기본 정보" 탭이 `formLocale` 로만 바꾼다.
+  if (body.formLocale !== undefined && !isFormLocale(body.formLocale)) {
+    return NextResponse.json({ error: "지원하지 않는 언어예요" }, { status: 400 });
+  }
+  const nextFormConfig = mergeFormConfigUpdate(result.source.formConfig, body.formConfig, body.registrationSchedule, body.formLocale);
 
   const source = await prisma.collectSource.update({
     where: { id },

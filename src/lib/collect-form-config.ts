@@ -29,6 +29,18 @@ export type Localized = Record<string, string>;
 
 export const DEFAULT_LOCALE = "en";
 
+/**
+ * 폼 언어 — 방문자에게 보이는 기본 문구(버튼·안내·오류)의 언어. "기본 정보" 탭에서 고른다(2026-11-03).
+ * 운영자가 적은 항목 이름·선택지는 적은 그대로 나간다(번역하지 않는다).
+ * DEFAULT_LOCALE 은 라벨 맵의 저장 키라 바꾸지 않는다 — 이 값은 화면 문구만 고른다.
+ */
+export const FORM_LOCALES = [
+  { id: "ko", label: "한국어" },
+  { id: "en", label: "English" },
+] as const;
+export type FormLocale = (typeof FORM_LOCALES)[number]["id"];
+export const isFormLocale = (v: unknown): v is FormLocale => FORM_LOCALES.some((l) => l.id === v);
+
 /** 문자열이든 로케일 맵이든 받아 맵으로 통일한다. 값이 없으면 빈 맵. */
 export function toLocalized(value: unknown, locale: string = DEFAULT_LOCALE): Localized {
   // 문자열도 반드시 trim 한다 — 공백뿐인 값("  ")을 그냥 두면 truthy 라 살아남아서
@@ -169,6 +181,9 @@ export interface RegistrationSchedule {
   /** 사전등록 마감 뒤·현장등록 시작 전(또는 행사일 사이)에 보이는 안내. {next} = 다음 현장등록 시작 시각 */
   betweenTitle: Localized;
   betweenBody: Localized;
+  /** 모든 등록이 끝난 뒤(다음 현장등록 없음)·수동 마감에 보이는 안내. 비우면 기본 문구 */
+  closedTitle: Localized;
+  closedBody: Localized;
 }
 
 // ── 안내 블록 ─────────────────────────────────────────────────────────
@@ -348,7 +363,7 @@ export const EMPTY_FORM_CONFIG: CollectFormConfig = {
     registrationWindow: { opensAt: null, closesAt: null },
     extraRows: [],
   },
-  schedule: { enabled: false, timezone: "Asia/Seoul", preOpensAt: null, preClosesAt: null, onsite: [], betweenTitle: {}, betweenBody: {} },
+  schedule: { enabled: false, timezone: "Asia/Seoul", preOpensAt: null, preClosesAt: null, onsite: [], betweenTitle: {}, betweenBody: {}, closedTitle: {}, closedBody: {} },
   notices: [],
   validation: { defaultCountry: "US", onDuplicate: "block" },
   consent: {
@@ -429,7 +444,9 @@ function normalizeChoiceExtras(raw: Record<string, unknown>, optionCount: number
   // Number(true) === 1 이라 true 하나가 3지선다를 1개 제한으로 바꿔 놓기도 했다.
   const max = typeof raw.maxSelect === "number" ? raw.maxSelect : NaN;
   // 옵션 전체 이상이면 무제한과 같다 — 저장하지 않는다(웨비나 설문과 같은 계약).
-  if (Number.isInteger(max) && max >= 1 && max < optionCount) out.maxSelect = max;
+  // "기타"도 하나의 선택지로 센다 — 3개 + 기타에서 3개 제한은 의미가 있다.
+  const total = optionCount + (raw.allowOther === true ? 1 : 0);
+  if (Number.isInteger(max) && max >= 1 && max < total) out.maxSelect = max;
   if (raw.allowOther === true) out.allowOther = true;
   return out;
 }
@@ -639,6 +656,8 @@ export function normalizeCollectForm(raw: unknown): CollectFormConfig {
         : [],
       betweenTitle: toLocalized(scheduleRaw.betweenTitle, locale),
       betweenBody: toLocalized(scheduleRaw.betweenBody, locale),
+      closedTitle: toLocalized(scheduleRaw.closedTitle, locale),
+      closedBody: toLocalized(scheduleRaw.closedBody, locale),
     },
     // id 가 겹치면 뒤엣것을 버린다 — 같은 값 키(notice_x)를 두 블록이 나눠 쓰면 하나만 체크해도
     // 둘 다 충족되거나, 한 컨트롤에 오류가 두 번 붙는다(항목 key 중복을 거르는 이유와 같다).
@@ -826,17 +845,19 @@ export function resolveRegistrationPhase(
 
 /** 새 등록의 entryChannel — 일정이 켜져 있고 현장등록 창 안이면 "onsite", 아니면 "online"(예전 그대로). */
 /**
- * 저장할 폼 정의 — 등록 시간(schedule)은 "기본 정보" 탭이 혼자 소유한다.
- * formConfig(폼 빌더가 통째로 보냄)가 와도 일정은 DB 값을 지키고, schedule 이 올 때만 일정을 바꾼다.
+ * 저장할 폼 정의 — 등록 시간(schedule)·폼 언어(defaultLocale)는 "기본 정보" 탭이 혼자 소유한다.
+ * formConfig(폼 빌더가 통째로 보냄)가 와도 두 값은 DB 값을 지키고, 각자의 키가 올 때만 바꾼다
+ * (빌더가 열릴 때 들고 온 낡은 값으로 덮으면 기본 정보에서 바꾼 게 되돌아간다).
  * 둘 다 없으면 undefined(폼 정의를 건드리지 않는다).
  */
-export function mergeFormConfigUpdate(currentRaw: unknown, formConfig: unknown, schedule: unknown): CollectFormConfig | undefined {
-  if (formConfig === undefined && schedule === undefined) return undefined;
+export function mergeFormConfigUpdate(currentRaw: unknown, formConfig: unknown, schedule: unknown, locale?: unknown): CollectFormConfig | undefined {
+  if (formConfig === undefined && schedule === undefined && locale === undefined) return undefined;
   const current = normalizeCollectForm(currentRaw);
   const base = formConfig !== undefined ? normalizeCollectForm(formConfig) : current;
   return {
     ...base,
     schedule: schedule !== undefined ? normalizeCollectForm({ ...base, schedule }).schedule : current.schedule,
+    defaultLocale: isFormLocale(locale) ? locale : current.defaultLocale,
   };
 }
 

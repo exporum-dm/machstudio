@@ -17,6 +17,7 @@ export function CollectFormRuntime({
   locale,
   forceStatus,
   forceType,
+  forcePhase,
   serverNow,
   preview = true,
 }: {
@@ -25,6 +26,8 @@ export function CollectFormRuntime({
   locale?: string;
   forceStatus?: RegistrationStatus;
   forceType?: string;
+  /** 미리보기 "사전 마감" — 사전등록이 끝나고 현장등록 전 화면 */
+  forcePhase?: "between";
   /**
    * 서버 시각(ISO). 없으면 검토자 기기 시계로 접수 창을 판정한다 — 시계가 틀어진 기기에서
    * "왜 마감으로 보이죠?" 라는 오해가 생기고, 그건 폼 설정 문제로 오인된다.
@@ -47,12 +50,13 @@ export function CollectFormRuntime({
       preview,
       forceStatus,
       forceType,
+      forcePhase,
       locale,
       serverNow,
     });
     return () => handle.destroy();
     // config 는 빌더가 타이핑할 때마다 새 객체다 — 그때마다 다시 그리는 게 의도다(실시간 미리보기).
-  }, [config, sourceId, locale, forceStatus, forceType, preview, serverNow]);
+  }, [config, sourceId, locale, forceStatus, forceType, forcePhase, preview, serverNow]);
 
   return <div ref={hostRef} />;
 }

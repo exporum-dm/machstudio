@@ -23,6 +23,7 @@ import {
   noticeValueKey,
   resolveRegistrationPhase,
   resolveRegistrationStatus,
+  scheduleLocalToUtcMs,
   validateSubmission,
   visibleFields,
   type CollectField,
@@ -31,6 +32,7 @@ import {
   type RegistrationStatus,
   type SubmissionIssue,
 } from "@/lib/collect-form-config";
+import { fill, formCopy, type FormCopy } from "./copy";
 import { isValidCollectEmail } from "@/lib/collect-email";
 import { COUNTRY_DIALS, flagEmoji, isKnownCountry } from "@/lib/collect-country";
 import { resolveRedirect } from "@/lib/collect-redirect";
@@ -73,55 +75,23 @@ function maskedPhone(value: string): string {
   return digits.length < 8 ? "" : `•••••• ${digits.slice(-4)}`;
 }
 
-/** 안내 문구 — 로케일 대응은 §11 이후. 지금은 영어 단일 전시(LA)라 화면 문구도 여기 모은다. */
-const COPY = {
-  before: { title: "Registration hasn't opened yet", body: "The form will appear here once registration opens." },
-  closed: { title: "Registration is closed", body: "On-site registration is available at the venue." },
-  /** 운영 일정 — 사전등록 마감 뒤, 다음 현장등록 전. {next} 자리에 현지 시각이 들어간다(운영자가 문구를 바꿀 수 있다) */
-  between: { title: "Pre-registration is closed", body: "On-site registration opens {next}. Please register at the venue." },
-  submit: "Register",
-  submitting: "Submitting…",
-  empty: "This form has no fields yet.",
-  required: "Required",
-  invalidEmail: "Check the email format",
-  invalidPhone: "This number isn't valid for the selected country",
-  invalidNumber: "Numbers only",
-  unknownKey: "Not part of this form",
-  tooMany: "Too many selected",
-  notAnOption: "Not one of the options",
-  consentRequired: "Please agree to continue",
-  duplicate: "This email is already registered.",
-  networkError: "Couldn't submit. Please try again.",
-  closedNow: "Registration just closed.",
-  notOpenYet: "Registration hasn't opened yet.",
-  doneTitle: "You're registered",
-  checkinTitle: "Show this QR code at the check-in desk",
-  checkinBodyWithEmail: "You can also find the same QR code in your confirmation email.",
-  regNoLabel: "Registration number — show this at the venue",
-  previewFlag: "Preview — nothing is saved",
-  ticketLink: "Open my ticket page →",
-  saveImage: "Save as Image",
-  saveHint: "* If the button doesn't work, please take a screenshot.",
-  previewDone: "Sample number — nothing was saved.",
-  more: "Details",
-  less: "Hide",
-  close: "Close",
-  agree: "I agree",
-  period: "Period",
-  venue: "Venue",
-  openingHours: "Opening Hours",
-} as const;
 
-const ISSUE_COPY: Record<SubmissionIssue["code"], string> = {
-  required: COPY.required,
-  invalid_email: COPY.invalidEmail,
-  invalid_phone: COPY.invalidPhone,
-  invalid_number: COPY.invalidNumber,
-  unknown_key: COPY.unknownKey,
-  too_many: COPY.tooMany,
-  not_an_option: COPY.notAnOption,
-  consent_required: COPY.consentRequired,
-};
+/** 기본 문구는 copy.ts — "기본 정보 › 폼 언어"(config.defaultLocale)로 한국어·영어를 고른다(2026-11-03). */
+function issueCopy(COPY: FormCopy): Record<SubmissionIssue["code"], string> {
+  return {
+    required: COPY.required,
+    invalid_email: COPY.invalidEmail,
+    invalid_phone: COPY.invalidPhone,
+    invalid_number: COPY.invalidNumber,
+    unknown_key: COPY.unknownKey,
+    too_many: COPY.tooMany,
+    not_an_option: COPY.notAnOption,
+    consent_required: COPY.consentRequired,
+  };
+}
+
+/** "기타(직접 입력)"를 고른 상태의 select·radio 값 — 실제로 저장되는 건 적은 글자다 */
+const OTHER_VALUE = "__msf_other__";
 
 export interface MountCollectFormOptions {
   mount: HTMLElement;
@@ -138,6 +108,11 @@ export interface MountCollectFormOptions {
   forceStatus?: RegistrationStatus;
   /** 미리보기에서 특정 유형 문항이 펼쳐진 상태로 연다(?type=). */
   forceType?: string;
+  /**
+   * 미리보기 "사전 마감" — 사전등록이 끝나고 현장등록 전 화면(운영자가 적은 안내 + {next})을 강제로 본다.
+   * forceStatus 만으로는 이 화면이 안 나온다: 마감 강제는 "모든 등록 종료" 쪽 안내를 쓴다.
+   */
+  forcePhase?: "between";
   locale?: string;
   /**
    * 서버가 스크립트에 실어 보낸 시각(ISO). 상태 판정을 **방문자 시계로 하지 않는다** —
@@ -200,6 +175,7 @@ function openTermsPopup(
   format: "text" | "html",
   onAgree: () => void,
   themeStyle: Record<string, string | null>,
+  COPY: FormCopy,
   open?: FormOverlayOpener,
 ): () => void {
   const closeBtn = h("button", { type: "button", class: "msf-terms-close" }, COPY.close);
@@ -281,6 +257,24 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
   const preview = opts.preview === true;
   const lang = opts.locale || config.defaultLocale || DEFAULT_LOCALE;
   const t = (v: Localized | undefined) => localize(v, lang);
+  const COPY = formCopy(lang);
+  const ISSUE_COPY = issueCopy(COPY);
+  /** "기타"를 고른 항목(글자를 아직 안 적었어도 칸이 열려 있어야 한다) · 적은 글자 — 다시 그려도 남게 */
+  const otherOpen = new Set<string>();
+  const otherText = new Map<string, string>();
+  const otherInput = (f: { key: string }, label: string, onInput: (value: string) => void) => {
+    const input = h("input", {
+      class: "msf-input msf-other-input",
+      type: "text",
+      maxlength: "200",
+      placeholder: COPY.otherPlaceholder,
+      "aria-label": `${label} — ${COPY.other}`,
+    }) as HTMLInputElement;
+    input.value = otherText.get(f.key) ?? "";
+    input.style.marginTop = "8px";
+    input.addEventListener("input", () => { otherText.set(f.key, input.value); onInput(input.value); });
+    return input;
+  };
 
   /**
    * 서버 시각 오프셋. Age 를 더하지 않으면 CDN 에 굳은 serverNow 를 "지금" 으로 믿어
@@ -506,11 +500,32 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
         class: "msf-select", id: inputId, "aria-invalid": invalid,
         "aria-describedby": errId, "data-msf-key": f.key,
       }) as HTMLSelectElement;
-      sel.appendChild(h("option", { value: "" }, t(f.placeholder) || "Select"));
+      sel.appendChild(h("option", { value: "" }, t(f.placeholder) || COPY.select));
       for (const o of options) sel.appendChild(h("option", { value: o }, o));
-      sel.value = str(values[f.key]);
+      // 기타(직접 입력) — 고르면 아래에 입력칸이 열리고, 저장되는 값은 적은 글자다
+      if (f.allowOther) sel.appendChild(h("option", { value: OTHER_VALUE }, COPY.other));
+      const current = str(values[f.key]);
+      const otherOn = f.allowOther === true && (otherOpen.has(f.key) || (current !== "" && !options.includes(current)));
+      if (otherOn && current) otherText.set(f.key, current);
+      sel.value = otherOn ? OTHER_VALUE : current;
+      const other = f.allowOther ? otherInput(f, labelText, (v) => {
+        values[f.key] = v.trim();
+        clearIssue(f.key);
+        err.textContent = "";
+        markStarted();
+        updateSubmitState();
+      }) : null;
+      if (other) other.hidden = !otherOn;
       sel.addEventListener("change", () => {
-        values[f.key] = sel.value;
+        if (sel.value === OTHER_VALUE) {
+          otherOpen.add(f.key);
+          values[f.key] = (otherText.get(f.key) ?? "").trim();
+          if (other) { other.hidden = false; other.focus(); }
+        } else {
+          otherOpen.delete(f.key);
+          values[f.key] = sel.value;
+          if (other) other.hidden = true;
+        }
         clearIssue(f.key);
         markStarted();
         if (config.branch.enabled && config.branch.fieldKey === f.key) {
@@ -525,9 +540,10 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
         updateSubmitState();
       });
       wrap.appendChild(sel);
+      if (other) wrap.appendChild(other);
     } else if (f.type === "radio") {
       if (options.length === 0) {
-        wrap.appendChild(h("div", { class: "msf-hint" }, "No options configured"));
+        wrap.appendChild(h("div", { class: "msf-hint" }, COPY.noOptions));
       } else {
         const group = h("div", {
           class: "msf-radio-group",
@@ -537,14 +553,22 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
           "aria-invalid": invalid,
           "aria-describedby": errId,
         });
+        const otherSelected = () => {
+          const selected = str(values[f.key]);
+          return f.allowOther === true && (otherOpen.has(f.key) || (selected !== "" && !options.includes(selected)));
+        };
+        let other: HTMLInputElement | null = null;
         const paint = () => {
           const selected = str(values[f.key]);
+          const otherOn = otherSelected();
           for (const option of Array.from(group.children) as HTMLElement[]) {
-            const on = option.getAttribute("data-v") === selected;
+            const v = option.getAttribute("data-v");
+            const on = v === OTHER_VALUE ? otherOn : !otherOn && v === selected;
             option.setAttribute("data-on", on ? "1" : "0");
             const radio = option.querySelector("input") as HTMLInputElement | null;
             if (radio) radio.checked = on;
           }
+          if (other) other.hidden = !otherOn;
         };
         for (const option of options) {
           const radio = h("input", {
@@ -562,6 +586,7 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
           radio.addEventListener("blur", () => choice.classList.remove("is-focus"));
           radio.addEventListener("change", () => {
             if (!radio.checked) return;
+            otherOpen.delete(f.key);
             values[f.key] = option;
             clearIssue(f.key);
             markStarted();
@@ -578,21 +603,66 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
           });
           group.appendChild(choice);
         }
+        if (f.allowOther) {
+          const current = str(values[f.key]);
+          if (current && !options.includes(current)) otherText.set(f.key, current);
+          const radio = h("input", { type: "radio", name: inputId, value: OTHER_VALUE, "data-msf-key": f.key }) as HTMLInputElement;
+          const choice = h("label", { class: "msf-radio-option", "data-v": OTHER_VALUE },
+            radio,
+            h("span", { class: "msf-radio-mark", "aria-hidden": "true" }),
+            h("span", null, COPY.other),
+          );
+          radio.addEventListener("focus", () => choice.classList.add("is-focus"));
+          radio.addEventListener("blur", () => choice.classList.remove("is-focus"));
+          radio.addEventListener("change", () => {
+            if (!radio.checked) return;
+            otherOpen.add(f.key);
+            values[f.key] = (otherText.get(f.key) ?? "").trim();
+            clearIssue(f.key);
+            markStarted();
+            err.textContent = "";
+            paint();
+            other?.focus();
+            updateSubmitState();
+          });
+          group.appendChild(choice);
+          other = otherInput(f, labelText, (v) => {
+            values[f.key] = v.trim();
+            clearIssue(f.key);
+            err.textContent = "";
+            markStarted();
+            updateSubmitState();
+          });
+        }
         paint();
         wrap.appendChild(group);
+        if (other) wrap.appendChild(other);
       }
     } else if (f.type === "multiple") {
       if (options.length === 0) {
-        wrap.appendChild(h("div", { class: "msf-hint" }, "No options configured"));
+        wrap.appendChild(h("div", { class: "msf-hint" }, COPY.noOptions));
       } else {
         const picked = () => (Array.isArray(values[f.key]) ? (values[f.key] as unknown[]).map(str) : []);
+        // 기타 — 선택지에 없는 값이 곧 적은 글자다. 글자를 안 적었어도 고른 순간 개수에 센다(최대 개수 판정)
+        const regular = () => picked().filter((v) => options.includes(v));
+        {
+          const saved = picked().find((v) => !options.includes(v));
+          if (f.allowOther && saved) { otherText.set(f.key, saved); otherOpen.add(f.key); }
+        }
+        const otherOn = () => f.allowOther === true && otherOpen.has(f.key);
+        const commit = (nextRegular: string[]) => {
+          const text = (otherText.get(f.key) ?? "").trim();
+          values[f.key] = otherOn() && text ? nextRegular.concat([text]) : nextRegular;
+        };
         const chips = h("div", { class: "msf-chips" });
-        const atMax = () => f.maxSelect != null && picked().length >= f.maxSelect;
+        const atMax = () => f.maxSelect != null && regular().length + (otherOn() ? 1 : 0) >= f.maxSelect;
+        let other: HTMLInputElement | null = null;
         const paint = () => {
-          const list = picked();
+          const list = regular();
+          if (other) other.hidden = !otherOn();
           for (const el of Array.from(chips.children) as HTMLElement[]) {
             const v = el.getAttribute("data-v") ?? "";
-            const on = list.indexOf(v) !== -1;
+            const on = v === OTHER_VALUE ? otherOn() : list.indexOf(v) !== -1;
             el.setAttribute("data-on", on ? "1" : "0");
             el.setAttribute("data-disabled", !on && atMax() ? "1" : "0");
             const box = el.querySelector("input") as HTMLInputElement | null;
@@ -606,8 +676,8 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
           box.addEventListener("focus", () => chip.classList.add("is-focus"));
           box.addEventListener("blur", () => chip.classList.remove("is-focus"));
           box.addEventListener("change", () => {
-            const list = picked();
-            values[f.key] = box.checked ? list.concat([o]) : list.filter((x) => x !== o);
+            const list = regular();
+            commit(box.checked ? list.concat([o]) : list.filter((x) => x !== o));
             clearIssue(f.key);
             err.textContent = "";
             markStarted();
@@ -616,9 +686,34 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
           });
           chips.appendChild(chip);
         }
+        if (f.allowOther) {
+          const box = h("input", { type: "checkbox", "data-msf-key": f.key }) as HTMLInputElement;
+          const chip = h("label", { class: "msf-chip", "data-v": OTHER_VALUE }, box, h("span", null, COPY.other));
+          box.addEventListener("focus", () => chip.classList.add("is-focus"));
+          box.addEventListener("blur", () => chip.classList.remove("is-focus"));
+          box.addEventListener("change", () => {
+            if (box.checked) otherOpen.add(f.key); else otherOpen.delete(f.key);
+            commit(regular());
+            clearIssue(f.key);
+            err.textContent = "";
+            markStarted();
+            paint();
+            if (box.checked) other?.focus();
+            updateSubmitState();
+          });
+          chips.appendChild(chip);
+          other = otherInput(f, labelText, () => {
+            commit(regular());
+            clearIssue(f.key);
+            err.textContent = "";
+            markStarted();
+            updateSubmitState();
+          });
+        }
         paint();
         wrap.appendChild(chips);
-        if (f.maxSelect != null) wrap.appendChild(h("div", { class: "msf-hint" }, `Choose up to ${f.maxSelect}`));
+        if (other) wrap.appendChild(other);
+        if (f.maxSelect != null) wrap.appendChild(h("div", { class: "msf-hint" }, fill(COPY.chooseUpTo, { n: f.maxSelect })));
       }
     } else if (f.type === "checkbox") {
       const cb = h("input", {
@@ -885,7 +980,7 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
           clearIssue(issueKey);
           err.textContent = "";
           updateSubmitState();
-        }, themeStyle, opts.overlay);
+        }, themeStyle, COPY, opts.overlay);
       });
       // Details 를 라벨 아래 별도 줄이 아니라 같은 줄 오른쪽에 둔다 — 혼자 아래에
       // 떨어져 있으면 라벨과 상관없는 항목처럼 보인다.
@@ -1147,7 +1242,7 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
   function qrCard(regNo: string): HTMLElement {
     const img = h("img", {
       src: `${opts.origin}/api/collect/qr/${encodeURIComponent(regNo)}`,
-      alt: `Registration QR for ${regNo}`,
+      alt: fill(COPY.qrAlt, { regNo }),
       width: "200",
       height: "200",
       loading: "eager",
@@ -1236,19 +1331,19 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
     clearNode(consentHost);
     if (config.consent.privacy.enabled) {
       consentHost.appendChild(
-        renderConsentRow(config.consent.privacy, true, "I agree to the privacy policy", "consent_privacy",
+        renderConsentRow(config.consent.privacy, true, COPY.consentPrivacy, "consent_privacy",
           (v) => { consent.privacy = v; }, consent.privacy),
       );
     }
     if (config.consent.marketing.enabled) {
       consentHost.appendChild(
-        renderConsentRow(config.consent.marketing, false, "Send me updates", "consent_marketing",
+        renderConsentRow(config.consent.marketing, false, COPY.consentMarketing, "consent_marketing",
           (v) => { consent.marketing = v; }, consent.marketing),
       );
     }
     if (config.consent.thirdParty.enabled) {
       consentHost.appendChild(
-        renderConsentRow(config.consent.thirdParty, false, "Share my information with event partners", "consent_thirdParty",
+        renderConsentRow(config.consent.thirdParty, false, COPY.consentThirdParty, "consent_thirdParty",
           (v) => { consent.thirdParty = v; }, consent.thirdParty),
       );
     }
@@ -1263,8 +1358,8 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
     if (doneRegNo) {
       const identity = completionIdentity();
       const identityRows = [
-        ["Phone", identity.maskedPhone],
-        ["E-mail", identity.maskedEmail],
+        [COPY.phone, identity.maskedPhone],
+        [COPY.email, identity.maskedEmail],
       ].filter(([, value]) => Boolean(value)) as Array<[string, string]>;
       // 운영자가 켠 항목(예: 동반 인원 수)도 같은 줄 목록에 이어 붙인다.
       for (const extra of identity.extras) identityRows.push([extra.label, extra.value]);
@@ -1295,15 +1390,28 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
 
     const status = currentStatus();
     if (status !== "open") {
-      let copy: { title: string; body: string } = status === "before" ? COPY.before : COPY.closed;
-      // 운영 일정: 사전등록이 끝났고 현장등록이 아직이면 "현장등록은 ○○부터" — 수동 고정·미리보기 강제엔 쓰지 않는다
-      if (!opts.forceStatus && !serverStatus && !config.statusOverride && config.schedule.enabled) {
+      // 마감 안내는 운영자가 "기본 정보 › 등록 시간"에서 적은 문구가 먼저다(수동 마감·미리보기 마감도 같다)
+      let copy: { title: string; body: string } = status === "before"
+        ? COPY.before
+        : { title: t(config.schedule.closedTitle) || COPY.closed.title, body: t(config.schedule.closedBody) || COPY.closed.body };
+      // 운영 일정: 사전등록이 끝났고 현장등록이 아직이면 "현장등록은 ○○부터" — 수동 고정·미리보기 강제엔 쓰지 않는다.
+      // 단, 미리보기 "사전 마감"(forcePhase)은 그 화면을 보려고 누른 것이라 보여 준다.
+      const forceBetween = opts.forcePhase === "between";
+      if (status === "closed" && (forceBetween || (!opts.forceStatus && !serverStatus && !config.statusOverride && config.schedule.enabled))) {
         const phase = resolveRegistrationPhase(config.schedule, nowDate());
-        if (phase.status === "closed" && phase.nextOpenAt) {
-          let next = phase.nextOpenAt;
-          try {
-            next = new Intl.DateTimeFormat(lang || "en", { timeZone: config.schedule.timezone, month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(phase.nextOpenAt));
-          } catch { /* 모르는 로케일·시간대면 ISO 그대로 */ }
+        // 미리보기에서 다음 현장등록이 없으면(이미 지났거나 안 적음) 첫 현장등록 시각을 예로 쓴다
+        const firstOnsite = config.schedule.onsite[0];
+        const sampleAt = firstOnsite ? scheduleLocalToUtcMs(`${firstOnsite.date}T${firstOnsite.open}`, config.schedule.timezone) : NaN;
+        const nextAt = phase.status === "closed" && phase.nextOpenAt
+          ? phase.nextOpenAt
+          : forceBetween && Number.isFinite(sampleAt) ? new Date(sampleAt).toISOString() : null;
+        if (nextAt || forceBetween) {
+          let next = nextAt ?? COPY.nextSample;
+          if (nextAt) {
+            try {
+              next = new Intl.DateTimeFormat(lang || "en", { timeZone: config.schedule.timezone, month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(nextAt));
+            } catch { /* 모르는 로케일·시간대면 ISO 그대로 */ }
+          }
           copy = {
             title: t(config.schedule.betweenTitle) || COPY.between.title,
             body: (t(config.schedule.betweenBody) || COPY.between.body).split("{next}").join(next),
