@@ -32,6 +32,7 @@ export interface AnalysisRecord {
   data: Record<string, unknown>;
   /** 최초 유입 소스(없으면 마지막) */
   utmSource: string | null;
+  entryChannel?: string | null;
 }
 
 export interface AnalysisCheckIn {
@@ -278,6 +279,7 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
   const companionFlagged: { registrationNo: string | null; raw: string }[] = [];
   let textAsZero = 0, blank = 0, visitorsWithKids = 0, companionsUnique = 0, companionsDays = 0;
   let pre = 0, onsite = 0, preVisited = 0, onsiteVisited = 0;
+  let missingRegistrationTimes = 0;
   const dailyMap = new Map<string, { pre: number; onsite: number }>();
   const onsiteHourMap = new Map<string, number>();
   const leadMap = new Map<string, { regs: number; visited: number }>();
@@ -305,24 +307,29 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
   const visitOptionMap = new Map<string, string | null>();
 
   for (const r of records) {
-    const isPre = r.createdAt < onsiteFrom;
+    // 가져온 일시는 원본 등록일이 아니다. 시간이 없는 과거 자료는 알려진 접수 유형만 쓴다.
+    const timeKnown = r.data.__import_timestamp_missing !== true;
+    const isPre = !timeKnown && r.entryChannel ? r.entryChannel === "online" : r.createdAt < onsiteFrom;
+    if (!timeKnown) missingRegistrationTimes++;
     isPreById.set(r.id, isPre);
     const days = visitDays.get(r.id);
     const visited = Boolean(days?.size);
     const { date: regDate, hour: regHour } = parts(r.createdAt);
 
     if (isPre) { pre++; if (visited) preVisited++; } else { onsite++; if (visited) onsiteVisited++; }
-    const dm = dailyMap.get(regDate) ?? { pre: 0, onsite: 0 };
-    if (isPre) dm.pre++; else dm.onsite++;
-    dailyMap.set(regDate, dm);
-    if (!isPre) onsiteHourMap.set(`${regDate}|${regHour}`, (onsiteHourMap.get(`${regDate}|${regHour}`) ?? 0) + 1);
+    if (timeKnown) {
+      const dm = dailyMap.get(regDate) ?? { pre: 0, onsite: 0 };
+      if (isPre) dm.pre++; else dm.onsite++;
+      dailyMap.set(regDate, dm);
+      if (!isPre) onsiteHourMap.set(`${regDate}|${regHour}`, (onsiteHourMap.get(`${regDate}|${regHour}`) ?? 0) + 1);
 
-    const lead = firstEventDate ? dayDiff(firstEventDate, regDate) : 0;
-    const bucket = isPre ? LEAD_BUCKETS.find((b) => b.test(Math.max(lead, 1)))!.bucket : LEAD_BUCKETS[LEAD_BUCKETS.length - 1].bucket;
-    const lm = leadMap.get(bucket) ?? { regs: 0, visited: 0 };
-    lm.regs++;
-    if (visited) lm.visited++;
-    leadMap.set(bucket, lm);
+      const lead = firstEventDate ? dayDiff(firstEventDate, regDate) : 0;
+      const bucket = isPre ? LEAD_BUCKETS.find((b) => b.test(Math.max(lead, 1)))!.bucket : LEAD_BUCKETS[LEAD_BUCKETS.length - 1].bucket;
+      const lm = leadMap.get(bucket) ?? { regs: 0, visited: 0 };
+      lm.regs++;
+      if (visited) lm.visited++;
+      leadMap.set(bucket, lm);
+    }
 
     // 동반 인원 — 방문자만 센다
     let kids = 0;
@@ -501,6 +508,11 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
     insights: [],
   };
   analysis.insights = buildInsights(analysis);
+  if (missingRegistrationTimes) analysis.insights.unshift({
+    tone: "warn",
+    title: `원본 등록일시가 없는 ${num(missingRegistrationTimes)}건이 있어요`,
+    detail: "전체·유형별 등록 건수에는 포함하고, 등록일별 추이·시간대·등록 시점 분석에서는 제외했어요. 목록의 시간은 가져온 일시이며 원래 등록일이 아닙니다.",
+  });
   return analysis;
 }
 

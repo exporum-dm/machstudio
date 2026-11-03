@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, BarChart3, LogOut,
-  ChevronDown, Plus, FolderOpen, Check, Loader2, Settings2, Settings, Database, Video, Pencil, Trash2, ShieldCheck, Menu, Trophy, Newspaper, FileText, NotebookPen, Wrench,
+  ChevronDown, Plus, FolderOpen, Check, Loader2, Settings2, Settings, Database, Video, Pencil, Trash2, ShieldCheck, Menu, Trophy, Newspaper, FileText, NotebookPen, Wrench, CalendarDays,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/contexts/workspace";
@@ -38,13 +38,14 @@ export interface NavItem {
 }
 
 export const navItems: NavItem[] = [
-  { href: "/dashboard", icon: LayoutDashboard, label: "대시보드", aliases: ["/summary-dashboard"] },
+  { href: "/dashboard", icon: LayoutDashboard, label: "대시보드" },
   { href: "/collect", icon: Database, label: "등록" },
   { href: "/analytics", icon: BarChart3, label: "광고 성과" },
   { href: "/webinar", icon: Video, label: "웨비나" },
   { href: "/competition", icon: Trophy, label: "대회" },
   { href: "/detail-page", icon: FileText, label: "웹사이트", aliases: ["/homepage"] },
   { href: "/brief", icon: Newspaper, label: "홍보실" },
+  { href: "/content-calendar", icon: CalendarDays, label: "콘텐츠 캘린더" },
   { href: "/worklog", icon: NotebookPen, label: "업무일지" },
   // UTM 빌더·미디어·이벤트 택소노미를 한 메뉴의 탭으로(2026-10-17). 예전 주소도 그대로 열린다.
   { href: "/tools", icon: Wrench, label: "도구", aliases: ["/utm-builder", "/media"] },
@@ -582,6 +583,18 @@ export function Sidebar({ expoHomepageEnabled = false }: SidebarProps = {}) {
 
       {/* 슈퍼어드민 + 알림 + What's new */}
       <div className="px-3 pb-2 space-y-1">
+        <Link
+          href="/summary-dashboard"
+          aria-current={pathname === "/summary-dashboard" ? "page" : undefined}
+          className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+            pathname === "/summary-dashboard"
+              ? "bg-violet-500/10 text-violet-500 font-medium shadow-sm"
+              : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+          }`}
+        >
+          <LayoutDashboard className="w-4 h-4" aria-hidden />
+          요약 대시보드
+        </Link>
         {isSuperAdmin && (
           <Link
             href="/admin"

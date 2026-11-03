@@ -9,6 +9,33 @@ import {
   type AnalysisRecord,
 } from "@/lib/registration-analysis";
 
+describe("imported registration timestamps", () => {
+  const input = {
+    timezone: "Asia/Seoul", eventDates: ["2026-03-26"], fields: [],
+    companionKey: null, visitDateKey: null, regionKey: null, checkIns: [],
+  };
+  it("keeps undated pre-registration imports in totals without inventing an import-day registration", () => {
+    const a = buildRegistrationAnalysis({ ...input, records: [
+      { id: "known", registrationNo: null, createdAt: new Date("2026-03-20T00:00:00Z"), data: {}, utmSource: null },
+      { id: "import", registrationNo: null, createdAt: new Date("2026-11-03T00:00:00Z"), data: { __import_timestamp_missing: true }, entryChannel: "online", utmSource: null },
+    ] });
+    expect(a.kpi.registrations).toEqual({ total: 2, pre: 2, onsite: 0 });
+    expect(a.daily).toEqual([{ date: "2026-03-20", pre: 1, onsite: 0, cumulative: 1 }]);
+    expect(a.onsiteHourly).toEqual([]);
+    expect(a.leadTime.reduce((sum, row) => sum + row.regs, 0)).toBe(1);
+    expect(a.insights[0].title).toContain("1건");
+  });
+  it("keeps known original dates and undated onsite imports classified independently", () => {
+    const a = buildRegistrationAnalysis({ ...input, records: [
+      { id: "known", registrationNo: null, createdAt: new Date("2026-03-26T02:00:00Z"), data: {}, entryChannel: "online", utmSource: null },
+      { id: "import", registrationNo: null, createdAt: new Date("2026-11-03T00:00:00Z"), data: { __import_timestamp_missing: true }, entryChannel: "onsite", utmSource: null },
+    ] });
+    expect(a.kpi.registrations).toEqual({ total: 2, pre: 0, onsite: 2 });
+    expect(a.daily).toEqual([{ date: "2026-03-26", pre: 0, onsite: 1, cumulative: 1 }]);
+    expect(a.onsiteHourly.reduce((sum, row) => sum + row.n, 0)).toBe(1);
+  });
+});
+
 describe("parseCompanionCount", () => {
   it("reads plain and worded numbers", () => {
     expect(parseCompanionCount("2")).toEqual({ count: 2, status: "ok" });

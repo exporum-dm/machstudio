@@ -39,10 +39,10 @@ export async function loadCollectAnalysis(source: {
   const config = normalizeCollectForm(source.formConfig);
   const { fields, companionKey, visitDateKey, regionKey, textFields } = pickAnalysisFields(collectColumnsFor(source));
 
-  const keys = Array.from(new Set([...fields.map((f) => f.key), ...textFields.map((t) => t.key), companionKey, visitDateKey, regionKey].filter((k): k is string => Boolean(k))));
+  const keys = Array.from(new Set(["__import_timestamp_missing", ...fields.map((f) => f.key), ...textFields.map((t) => t.key), companionKey, visitDateKey, regionKey].filter((k): k is string => Boolean(k))));
   const [records, checkIns] = await Promise.all([
-    prisma.$queryRaw<{ id: string; registrationNo: string | null; createdAt: Date; utm: string | null; d: Record<string, unknown> | null }[]>(Prisma.sql`
-      SELECT id, "registrationNo", "createdAt",
+    prisma.$queryRaw<{ id: string; registrationNo: string | null; createdAt: Date; entryChannel: string | null; utm: string | null; d: Record<string, unknown> | null }[]>(Prisma.sql`
+      SELECT id, "registrationNo", "createdAt", "entryChannel",
              COALESCE(NULLIF("firstUtmSource", ''), NULLIF("utmSource", '')) AS utm,
              (SELECT jsonb_object_agg(key, value) FROM jsonb_each(data) WHERE key = ANY(${keys})) AS d
         FROM "CollectRecord" WHERE "sourceId" = ${source.id}`),
@@ -56,7 +56,7 @@ export async function loadCollectAnalysis(source: {
   const commonFields = fields.filter((f) => !branchOnly.has(f.key));
   const commonText = textFields.filter((t) => !branchOnly.has(t.key));
 
-  const all = records.map((r) => ({ id: r.id, registrationNo: r.registrationNo, createdAt: r.createdAt, data: r.d ?? {}, utmSource: r.utm }));
+  const all = records.map((r) => ({ id: r.id, registrationNo: r.registrationNo, createdAt: r.createdAt, entryChannel: r.entryChannel, data: r.d ?? {}, utmSource: r.utm }));
   const base: Omit<AnalysisInput, "fields" | "records" | "checkIns"> = {
     timezone: source.checkinTimezone,
     eventDates: config.eventInfo.eventDates,

@@ -27,10 +27,11 @@ import {
 import { toast } from "sonner";
 import { formatKst } from "@/lib/datetime";
 import { parseMemo } from "@/lib/webinar-memo";
-import { formatSurveyAnswer, isEmptySurveyAnswer, type SurveyQuestion } from "@/lib/webinar-survey";
+import { formatSurveyAnswer, isEmptySurveyAnswer, surveyQuestionColumnLabel, type SurveyQuestion } from "@/lib/webinar-survey";
 import { qaStatusLabel } from "@/lib/webinar-qa";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { InlineError } from "@/components/ui/inline-error";
+import { ColumnPicker, ResizeHandle, useColumnPrefs, type ColumnDef } from "./registrant-columns";
 
 const spring = { type: "spring", stiffness: 420, damping: 30 } as const;
 
@@ -384,6 +385,8 @@ export default function RegistrantsTab({ webinarId }: { webinarId: string }) {
   const [scoringMeta, setScoringMeta] = useState<{ phase: "before" | "live" | "ended"; liveMinutes: number; scheduledMinutes: number } | null>(null);
   const [segmentFilter, setSegmentFilter] = useState<SegmentKey | null>(null);
   const [surveys, setSurveys] = useState<Survey[]>([]);
+  /** 등록폼 커스텀 항목(열 선택에서 켤 수 있다) */
+  const [customFields, setCustomFields] = useState<{ key: string; label: string }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [page, setPage] = useState(1);
@@ -448,6 +451,7 @@ export default function RegistrantsTab({ webinarId }: { webinarId: string }) {
       if (data.stats) setStats(data.stats);
       if (data.scoring) setScoringMeta(data.scoring);
       setSurveys(data.surveys ?? []);
+      setCustomFields(Array.isArray(data.customFields) ? data.customFields : []);
       // 선택은 항상 현재 보이는 목록으로 한정 — 새로고침으로 사라진(다른 페이지로 밀린/삭제된) 행은
       // 선택에서 자동 제거해, 보이지 않는 행이 선택된 채 일괄 삭제되는 일을 막는다.
       setSelectedIds((prev) => {
@@ -816,6 +820,118 @@ export default function RegistrantsTab({ webinarId }: { webinarId: string }) {
     return `참석 ${b.attend} + 체류 ${b.watch} (${stay}/${b.evaluatedMinutes}분) + 행동 ${b.interact}${capped} + 인텐트 ${b.intent} = ${r.score ?? 0}점 · ${SEGMENT_META[r.segment ?? "noShow"].label}`;
   };
 
+  /* ── 명단 열 ── 고정 열 + 등록폼 커스텀 항목 + 설문 문항 + 유입(UTM). CSV 와 같은 값을 화면에서도 켤 수 있다.
+     "기본 켜짐"은 예전 화면에 있던 열 그대로다. 어떤 열을 볼지·너비는 registrant-columns.tsx(이 브라우저에 저장). */
+  const sortable = (label: string, key: SortKey) => <SortHeader label={label} sortKey={key} activeKey={sortBy} dir={sortDir} onSort={handleSort} />;
+  const plain = (v: string | null | undefined) => (v ? v : "-");
+  const chip = (on: boolean, yes = "동의") => (on
+    ? <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 dark:text-green-400">{yes}</span>
+    : <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground">-</span>);
+  const textCol = (id: string, label: string, group: string, width: number, get: (r: Registration) => string | null | undefined, opts: { defaultVisible?: boolean; sortKey?: SortKey } = {}): ColumnDef<Registration> => ({
+    id, label, group, width, defaultVisible: opts.defaultVisible ?? false,
+    header: opts.sortKey ? sortable(label, opts.sortKey) : label,
+    cell: (r) => <span className="text-muted-foreground">{plain(get(r))}</span>,
+    cellTitle: (r) => get(r) || undefined,
+  });
+  const customValue = (r: Registration, key: string) => {
+    const v = parseMemo(r.memo).customFields[key];
+    return v == null ? "" : Array.isArray(v) ? v.join(", ") : String(v);
+  };
+  const surveyAnswer = (r: Registration, surveyId: string, q: SurveyQuestion) => {
+    const answers = r.surveyResponses.find((x) => x.surveyId === surveyId)?.answers;
+    if (!answers) return "";
+    const a = answers[q.id];
+    return isEmptySurveyAnswer(a) ? "" : formatSurveyAnswer(q, a);
+  };
+  const columns: ColumnDef<Registration>[] = [
+    {
+      id: "name", label: "이름", group: "기본", width: 170, defaultVisible: true, locked: true,
+      header: sortable("이름", "name"),
+      cellTitle: (r) => r.name,
+      cell: (r) => (
+        <span className="inline-flex max-w-full items-center gap-2 font-medium">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-500/10 text-[11px] font-semibold text-violet-600 dark:text-violet-400" aria-hidden>{r.name?.[0] ?? "?"}</span>
+          <span className="truncate">{r.name}</span>
+        </span>
+      ),
+    },
+    // 참여점수 — 이름 바로 옆. 누구부터 연락할지가 이 두 열로 읽혀야 한다. 방송 전에는 열 자체가 없다.
+    ...(showScore ? [{
+      id: "score", label: "참여점수", group: "기본", width: 110, defaultVisible: true,
+      header: sortable("참여점수", "score"),
+      headerTitle: "참석·체류·인터랙션·마케팅 동의를 합성한 0~100 점수",
+      cell: (r: Registration) => (
+        <span className="inline-flex items-center gap-1.5" title={scoreTitle(r)}>
+          <span className={`flex h-7 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold tabular-nums ${SEGMENT_META[r.segment ?? "noShow"].cls}`}>{r.score ?? 0}</span>
+          <span className="text-[11px] text-muted-foreground">{SEGMENT_META[r.segment ?? "noShow"].label}</span>
+        </span>
+      ),
+    } satisfies ColumnDef<Registration>] : []),
+    textCol("phone", "연락처", "기본", 130, (r) => r.phone, { defaultVisible: true, sortKey: "phone" }),
+    textCol("email", "이메일", "기본", 190, (r) => r.email, { defaultVisible: true, sortKey: "email" }),
+    textCol("company", "소속", "기본", 140, (r) => r.company, { defaultVisible: true, sortKey: "company" }),
+    textCol("department", "부서", "기본", 110, (r) => r.department, { sortKey: "department" }),
+    textCol("jobTitle", "직함", "기본", 110, (r) => r.jobTitle, { defaultVisible: true, sortKey: "jobTitle" }),
+    textCol("industry", "업종", "기본", 140, (r) => r.industry, { defaultVisible: true, sortKey: "industry" }),
+    { id: "agreeMarketing", label: "마케팅 동의", group: "동의", width: 96, defaultVisible: true, header: sortable("마케팅", "agreeMarketing"), cell: (r) => chip(r.agreeMarketing) },
+    { id: "agreePrivacy", label: "개인정보 동의", group: "동의", width: 104, defaultVisible: false, header: "개인정보", cell: (r) => chip(r.agreePrivacy) },
+    { id: "agreeThirdParty", label: "제3자 제공 동의", group: "동의", width: 110, defaultVisible: false, header: "제3자 제공", cell: (r) => chip(r.agreeThirdParty) },
+    ...(surveys.length > 0 ? [{
+      id: "survey", label: "설문 응답", group: "참여", width: 100, defaultVisible: true, header: "설문",
+      cell: (r: Registration) => (
+        <button
+          type="button"
+          onClick={() => openRegistrationDetail(r)}
+          className={`rounded-full px-1.5 py-0.5 text-[10px] transition-colors hover:brightness-95 ${r.surveyResponses.length === 0 ? "bg-secondary text-muted-foreground" : r.surveyResponses.length === surveys.length ? "bg-green-500/10 text-green-600 dark:text-green-400" : "bg-violet-500/10 text-violet-600 dark:text-violet-400"}`}
+          title="설문 응답 보기"
+        >
+          {r.surveyResponses.length === 0 ? "미응답" : r.surveyResponses.length === surveys.length ? "응답 완료" : `${r.surveyResponses.length}/${surveys.length} 응답`}
+        </button>
+      ),
+    } satisfies ColumnDef<Registration>] : []),
+    /* 문의 열은 이 페이지에 문의가 하나라도 있을 때만 — 대부분의 등록자는 문의를 남기지 않아,
+       늘 켜 두면 빈 열이 명단을 넓힌다(설문 열이 surveys.length 로 판단하는 것과 같은 이중 게이트 원칙). */
+    ...(hasAnyQa ? [{
+      id: "qa", label: "문의", group: "참여", width: 80, defaultVisible: true,
+      cell: (r: Registration) => (r.qaItems.length > 0 ? (
+        <button
+          type="button"
+          onClick={() => openRegistrationDetail(r)}
+          className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-600 transition-colors hover:brightness-95 dark:text-violet-400"
+          title="문의 보기"
+        >
+          <MessageCircleQuestion className="h-3 w-3" />
+          {r.qaItems.length}건
+        </button>
+      ) : <span className="text-[10px] text-muted-foreground">-</span>),
+    } satisfies ColumnDef<Registration>] : []),
+    { id: "stay", label: "접속 시간", group: "참여", width: 80, defaultVisible: true, header: sortable("접속", "stayMinutes"), cell: (r) => <span className="text-muted-foreground">{r.enteredAt ? `${connectedMin(r)}분` : "-"}</span> },
+    { id: "enteredAt", label: "최초 입장", group: "참여", width: 120, defaultVisible: true, header: sortable("최초 입장", "enteredAt"), cell: (r) => <span className="text-xs text-muted-foreground">{formatDate(r.enteredAt)}</span> },
+    { id: "lastPingAt", label: "마지막 신호", group: "참여", width: 120, defaultVisible: false, header: sortable("마지막 신호", "lastPingAt"), cell: (r) => <span className="text-xs text-muted-foreground">{formatDate(r.lastPingAt)}</span> },
+    { id: "submittedAt", label: "등록일", group: "참여", width: 90, defaultVisible: true, header: sortable("등록일", "submittedAt"), cell: (r) => <span className="text-xs text-muted-foreground" title={formatDate(r.submittedAt)}>{formatDateShort(r.submittedAt)}</span> },
+    {
+      id: "status", label: "상태", group: "참여", width: 90, defaultVisible: true, header: sortable("상태", "isActive"),
+      cell: (r) => ((r.isLive ?? r.isActive)
+        ? <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 dark:text-green-400">시청 중</span>
+        : <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground">{r.enteredAt ? "시청함" : "미시청"}</span>),
+    },
+    textCol("note", "사전질문", "등록폼", 220, (r) => parseMemo(r.memo).note),
+    ...customFields.map((f) => textCol(`cf:${f.key}`, f.label || f.key, "등록폼", 140, (r) => customValue(r, f.key))),
+    ...surveys.flatMap((survey) => survey.questions.map((q, i) =>
+      textCol(`sq:${survey.id}:${q.id}`, `[${survey.title}] ${surveyQuestionColumnLabel(q, i)}`, "설문 문항", 180, (r) => surveyAnswer(r, survey.id, q)))),
+    textCol("utmSource", "UTM 소스(마지막 유입)", "유입", 140, (r) => r.utmSource),
+    textCol("utmMedium", "UTM 매체(마지막 유입)", "유입", 140, (r) => r.utmMedium),
+    textCol("utmCampaign", "UTM 캠페인(마지막 유입)", "유입", 160, (r) => r.utmCampaign),
+    textCol("firstUtmSource", "최초 UTM 소스", "유입", 140, (r) => r.firstUtmSource),
+    textCol("firstUtmMedium", "최초 UTM 매체", "유입", 140, (r) => r.firstUtmMedium),
+    textCol("firstUtmCampaign", "최초 UTM 캠페인", "유입", 160, (r) => r.firstUtmCampaign),
+    textCol("referrer", "유입 경로(referrer)", "유입", 200, (r) => r.referrer),
+  ];
+  const columnPrefs = useColumnPrefs(columns);
+  const shownColumns = columnPrefs.visibleColumns;
+  // 선택칸 40 + 열들 + 관리 88. 남는 폭은 맨 끝 빈 칸이 받는다 — 끌어 맞춘 너비가 그대로 지켜지게.
+  const tableWidth = 40 + shownColumns.reduce((sum, c) => sum + columnPrefs.widthOf(c), 0) + 88;
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5">
       <div>
@@ -911,6 +1027,7 @@ export default function RegistrantsTab({ webinarId }: { webinarId: string }) {
         >
           <Upload className="w-3.5 h-3.5" />일괄등록
         </motion.button>
+        <ColumnPicker columns={columns} isVisible={columnPrefs.isVisible} onToggle={columnPrefs.toggle} onReset={columnPrefs.reset} />
         <motion.button
           whileHover={{ y: -1 }}
           whileTap={{ scale: 0.96 }}
@@ -1448,10 +1565,16 @@ export default function RegistrantsTab({ webinarId }: { webinarId: string }) {
           )}
           <div className="rounded-2xl border border-border overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="text-sm" style={{ tableLayout: "fixed", width: `max(100%, ${tableWidth}px)` }}>
+                <colgroup>
+                  <col style={{ width: 40 }} />
+                  {shownColumns.map((c) => <col key={c.id} style={{ width: columnPrefs.widthOf(c) }} />)}
+                  <col style={{ width: 88 }} />
+                  <col />
+                </colgroup>
                 <thead>
                   <tr className="border-b border-border bg-secondary/30">
-                    <th className="px-4 py-3 w-10">
+                    <th className="px-3 py-3">
                       <input
                         type="checkbox"
                         aria-label="이 페이지 전체 선택"
@@ -1461,34 +1584,25 @@ export default function RegistrantsTab({ webinarId }: { webinarId: string }) {
                         className="align-middle accent-violet-500 cursor-pointer"
                       />
                     </th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap"><SortHeader label="이름" sortKey="name" activeKey={sortBy} dir={sortDir} onSort={handleSort} /></th>
-                    {/* 참여점수 — 이름 바로 옆에 둔다. 누구부터 연락할지가 이 두 열로 읽혀야 한다. */}
-                    {showScore && (
-                      <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap" title="참석·체류·인터랙션·마케팅 동의를 합성한 0~100 점수">
-                        <SortHeader label="참여점수" sortKey="score" activeKey={sortBy} dir={sortDir} onSort={handleSort} />
+                    {shownColumns.map((c) => (
+                      <th key={c.id} className="relative px-3 py-3 text-left text-xs font-medium text-muted-foreground" title={c.headerTitle}>
+                        <div className="truncate">{c.header ?? c.label}</div>
+                        <ResizeHandle
+                          label={c.label}
+                          width={columnPrefs.widthOf(c)}
+                          onResize={(w, persist) => columnPrefs.setWidth(c.id, w, persist)}
+                          onReset={() => columnPrefs.resetWidth(c.id)}
+                        />
                       </th>
-                    )}
-                    <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap"><SortHeader label="연락처" sortKey="phone" activeKey={sortBy} dir={sortDir} onSort={handleSort} /></th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap"><SortHeader label="소속" sortKey="company" activeKey={sortBy} dir={sortDir} onSort={handleSort} /></th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap"><SortHeader label="직함" sortKey="jobTitle" activeKey={sortBy} dir={sortDir} onSort={handleSort} /></th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap"><SortHeader label="업종" sortKey="industry" activeKey={sortBy} dir={sortDir} onSort={handleSort} /></th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap"><SortHeader label="마케팅" sortKey="agreeMarketing" activeKey={sortBy} dir={sortDir} onSort={handleSort} /></th>
-                    {surveys.length > 0 && <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap">설문</th>}
-                    {/* 문의 열은 이 페이지에 문의가 하나라도 있을 때만 — 대부분의 웨비나에서
-                        대부분의 등록자는 문의를 남기지 않아, 늘 켜 두면 빈 열이 명단을 넓힌다.
-                        (설문 열이 surveys.length 로 판단하는 것과 같은 이중 게이트 원칙) */}
-                    {hasAnyQa && <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap">문의</th>}
-                    <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap"><SortHeader label="접속" sortKey="stayMinutes" activeKey={sortBy} dir={sortDir} onSort={handleSort} /></th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap"><SortHeader label="최초 입장" sortKey="enteredAt" activeKey={sortBy} dir={sortDir} onSort={handleSort} /></th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap"><SortHeader label="등록일" sortKey="submittedAt" activeKey={sortBy} dir={sortDir} onSort={handleSort} /></th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap"><SortHeader label="상태" sortKey="isActive" activeKey={sortBy} dir={sortDir} onSort={handleSort} /></th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap">관리</th>
+                    ))}
+                    <th className="px-3 py-3 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">관리</th>
+                    <th aria-hidden />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {registrations.map((r) => (
                     <tr key={r.id} className={`transition-colors ${selectedIds.has(r.id) ? "bg-violet-500/5" : "hover:bg-secondary/20"}`}>
-                      <td className="px-4 py-3 w-10">
+                      <td className="px-3 py-3">
                         <input
                           type="checkbox"
                           aria-label={`${r.name} 선택`}
@@ -1497,83 +1611,10 @@ export default function RegistrantsTab({ webinarId }: { webinarId: string }) {
                           className="align-middle accent-violet-500 cursor-pointer"
                         />
                       </td>
-                      <td className="px-4 py-3 font-medium whitespace-nowrap">
-                        <span className="inline-flex items-center gap-2">
-                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-500/10 text-[11px] font-semibold text-violet-600 dark:text-violet-400" aria-hidden>{r.name?.[0] ?? "?"}</span>
-                          {r.name}
-                        </span>
-                      </td>
-                      {showScore && (
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1.5" title={scoreTitle(r)}>
-                            <span className={`flex h-7 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold tabular-nums ${SEGMENT_META[r.segment ?? "noShow"].cls}`}>
-                              {r.score ?? 0}
-                            </span>
-                            <span className="text-[11px] text-muted-foreground">{SEGMENT_META[r.segment ?? "noShow"].label}</span>
-                          </span>
-                        </td>
-                      )}
-                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
-                        <div>{r.phone ?? "-"}</div>
-                        {r.email && <div className="text-xs">{r.email}</div>}
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
-                        <div>{r.company ?? "-"}</div>
-                        {r.department && <div className="text-xs">{r.department}</div>}
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{r.jobTitle ?? "-"}</td>
-                      <td className="px-4 py-3 text-muted-foreground max-w-[180px] truncate">{r.industry ?? "-"}</td>
-                      <td className="px-4 py-3">
-                        {r.agreeMarketing ? (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 dark:text-green-400">동의</span>
-                        ) : (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground">-</span>
-                        )}
-                      </td>
-                      {surveys.length > 0 && (
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <button
-                            type="button"
-                            onClick={() => openRegistrationDetail(r)}
-                            className={`rounded-full px-1.5 py-0.5 text-[10px] transition-colors hover:brightness-95 ${r.surveyResponses.length === 0 ? "bg-secondary text-muted-foreground" : r.surveyResponses.length === surveys.length ? "bg-green-500/10 text-green-600 dark:text-green-400" : "bg-violet-500/10 text-violet-600 dark:text-violet-400"}`}
-                            title="설문 응답 보기"
-                          >
-                            {r.surveyResponses.length === 0 ? "미응답" : r.surveyResponses.length === surveys.length ? "응답 완료" : `${r.surveyResponses.length}/${surveys.length} 응답`}
-                          </button>
-                        </td>
-                      )}
-                      {hasAnyQa && (
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          {r.qaItems.length > 0 ? (
-                            <button
-                              type="button"
-                              onClick={() => openRegistrationDetail(r)}
-                              className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-600 transition-colors hover:brightness-95 dark:text-violet-400"
-                              title="문의 보기"
-                            >
-                              <MessageCircleQuestion className="h-3 w-3" />
-                              {r.qaItems.length}건
-                            </button>
-                          ) : (
-                            <span className="text-[10px] text-muted-foreground">-</span>
-                          )}
-                        </td>
-                      )}
-                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
-                        {r.enteredAt ? `${connectedMin(r)}분` : "-"}
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{formatDate(r.enteredAt)}</td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{formatDateShort(r.submittedAt)}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {(r.isLive ?? r.isActive) ? (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 dark:text-green-400">시청 중</span>
-                        ) : r.enteredAt ? (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground">시청함</span>
-                        ) : (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground">미시청</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
+                      {shownColumns.map((c) => (
+                        <td key={c.id} className="overflow-hidden text-ellipsis whitespace-nowrap px-3 py-3" title={c.cellTitle?.(r)}>{c.cell(r)}</td>
+                      ))}
+                      <td className="px-3 py-3 whitespace-nowrap">
                         <motion.button
                           whileHover={{ y: -1 }}
                           whileTap={{ scale: 0.92 }}
@@ -1595,6 +1636,7 @@ export default function RegistrantsTab({ webinarId }: { webinarId: string }) {
                           <Trash2 className="w-3.5 h-3.5" />
                         </motion.button>
                       </td>
+                      <td aria-hidden />
                     </tr>
                   ))}
                 </tbody>

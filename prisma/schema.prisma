@@ -98,6 +98,8 @@ model Workspace {
   expoSites            ExpoSite[]
   expoTemplates        ExpoTemplate[]
   mediaAssets          MediaAsset[]
+  contentItems         ContentItem[]
+  reminders            Reminder[]
 }
 
 model WorkspaceMember {
@@ -192,6 +194,7 @@ model Project {
   prRoom               PrRoom?
   detailPages          DetailPage[]
   workGroups           WorkGroup[]
+  contentItems         ContentItem[]
 }
 
 model AdPerformanceImportBatch {
@@ -938,6 +941,83 @@ model WorkEntry {
 
   @@index([workspaceId, date])
   @@index([authorId, date])
+}
+
+/// 콘텐츠 캘린더 한 건 — 올릴 콘텐츠(2026-11-02). 프로젝트마다 캘린더가 있고 전체 보기는 합친다.
+/// 2026-11-03 노션 "DM 업무 관리 › 콘텐츠" 구조에 맞춤(형식·담당 여러 개, 캠페인, 노션 7단계 상태).
+/// DB 에는 예전 칸 format·assigneeId·assigneeName 이 남아 있다(쓰지 않음, 기본값이 있어 저장에 문제없음).
+model ContentItem {
+  id          String    @id @default(cuid())
+  workspaceId String
+  /// NULL = 프로젝트 없이 팀 공통
+  projectId   String?
+  title       String
+  /// 발행일. NULL = 날짜 미정(아이디어)
+  date        DateTime? @db.Date
+  /// "HH:MM" 또는 ""
+  time        String    @default("")
+  /// waiting · planning · doing · design · confirm · done · stopped (lib/content-calendar.ts)
+  status      String    @default("waiting")
+  /// 인스타그램·블로그·유튜브 … 여러 채널에 같이 올리기도 한다
+  channels    String[]  @default([])
+  /// 카드뉴스·숏폼 비디오 … 여러 개
+  formats     String[]  @default([])
+  /// 사전등록 유도·티켓 판매 …
+  campaign    String    @default("")
+  /// [{ id: userId | null, name }] — User 를 외래키로 물지 않는다(퇴사자 계정을 지워도 이름이 남게).
+  /// id 가 없으면 계정 없는 사람(노션에서 가져온 퇴사자 등). 화면은 살아 있는 이름을 먼저 쓴다.
+  assignees   Json      @default("[]")
+  /// 카피·메모
+  body        String    @default("")
+  /// 발행한 게시물 주소
+  link        String    @default("")
+  /// 노션에서 가져온 항목의 페이지 id — 다시 가져와도 겹치지 않게
+  notionId    String?   @unique
+  /// 노션 원본 주소(첨부 파일은 노션에 있다)
+  sourceUrl   String    @default("")
+  /// 정기 알림이 만든 항목 "{reminderId}:YYYY-MM" — 같은 달에 두 번 만들지 않게
+  recurrenceKey String? @unique
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, date])
+  @@index([projectId])
+}
+
+/// 정기 알림(2026-11-03) — 매달 기준일(마지막 업무일 / n번째 업무일)에 맞춰 업무일로 며칠 전에 정해진 사람에게 알린다.
+/// 매일 cron(/api/cron/daily, KST 09:00) → lib/reminders.ts. 업무일은 lib/business-days.ts(공휴일 포함).
+model Reminder {
+  id                 String   @id @default(cuid())
+  workspaceId        String
+  title              String
+  /// 알림에 붙는 한 줄(비어 있으면 제목만)
+  message            String   @default("")
+  /// "last_business_day" | "nth_business_day" (lib/reminder-schedule.ts)
+  schedule           String
+  /// nth_business_day 의 n
+  nth                Int      @default(1)
+  /// 기준일보다 업무일로 며칠 먼저 알릴지(0 = 그날)
+  leadBusinessDays   Int      @default(0)
+  /// 받을 사람 userId — 워크스페이스 멤버만 실제로 받는다
+  recipientIds       String[] @default([])
+  /// 콘텐츠 캘린더에 미리 넣어 둘 항목 { title, projectId, formats, channels, campaign, assigneeIds }. null = 알림만
+  contentTemplate    Json?
+  /// 콘텐츠를 몇 달 앞까지 넣어 둘지(이번 달 포함)
+  contentMonthsAhead Int      @default(3)
+  /// 알림을 보낸 마지막 달 "YYYY-MM" — 같은 달에 두 번 보내지 않게
+  lastNotifiedMonth  String?
+  active             Boolean  @default(true)
+  createdById        String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
 }
 
 /// 상세페이지 — 대회 공고와 같은 섹션 빌더로 만드는 독립 페이지. 아임웹에 /d/{id} 한 줄로 붙는다.
