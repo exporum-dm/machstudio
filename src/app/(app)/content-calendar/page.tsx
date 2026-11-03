@@ -22,7 +22,8 @@ import { tabUrl, useQueryTab } from "@/components/ui/use-query-tab";
 import { useUndoableDelete } from "@/components/ui/use-undoable-delete";
 import { useWorkspace } from "@/contexts/workspace";
 import {
-  CONTENT_STATUSES, EMPTY_FILTER, NO_PROJECT_COLOR, PROJECT_COLORS, channelOptions, isValidMonth, kstToday, matchesFilter,
+  CONTENT_STATUSES, EMPTY_FILTER, NO_PROJECT_COLOR, PROJECT_COLORS, assigneeOptions, campaignOptions, channelOptions, formatOptions,
+  isValidMonth, kstToday, matchesFilter,
   monthGrid, monthKey, monthLabel, monthRange, shiftMonth,
   type ContentFilter, type ContentItemDto, type ContentMemberDto,
 } from "@/lib/content-calendar";
@@ -44,7 +45,7 @@ const isTmp = (id: string) => id.startsWith(TMP);
 const newTmpId = () => `${TMP}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const nowIso = () => new Date().toISOString();
 /** 보낼 수 있는 칸만 — 화면용 칸(createdAt 등)은 빼고 */
-const SENDABLE = ["projectId", "title", "date", "time", "status", "channels", "format", "assigneeId", "body", "link"] as const;
+const SENDABLE = ["projectId", "title", "date", "time", "status", "channels", "formats", "campaign", "assignees", "body", "link"] as const;
 const pickSendable = (fields: Partial<ContentItemDto>) =>
   Object.fromEntries(SENDABLE.filter((k) => k in fields).map((k) => [k, fields[k]]));
 
@@ -151,7 +152,7 @@ export default function ContentCalendarPage() {
         void load();
         return;
       }
-      setItems((prev) => prev.map((i) => (i.id === id ? { ...i, updatedAt: data.item.updatedAt, assigneeName: data.item.assigneeName } : i)));
+      setItems((prev) => prev.map((i) => (i.id === id ? { ...i, updatedAt: data.item.updatedAt } : i)));
     });
   };
   const flushRef = useRef(flush);
@@ -183,8 +184,8 @@ export default function ContentCalendarPage() {
     const item: ContentItemDto = {
       id: newTmpId(),
       projectId: scope !== "all" && scope !== "none" ? scope : null,
-      title: "", time: "", status: "idea", channels: [], format: "",
-      assigneeId: null, assigneeName: "", body: "", link: "", createdAt: now, updatedAt: now,
+      title: "", time: "", status: "waiting", channels: [], formats: [], campaign: "",
+      assignees: [], body: "", link: "", sourceUrl: "", createdAt: now, updatedAt: now,
       ...defaults,
       date,
     };
@@ -237,8 +238,9 @@ export default function ContentCalendarPage() {
   const visible = items.filter((i) => matchesFilter(i, fullFilter));
   // 보드·목록은 이 달 + 날짜 미정(캘린더는 앞뒤 달 칸도 보여 주므로 그대로)
   const inMonth = visible.filter((i) => !i.date || (i.date >= mStart && i.date <= mEnd));
-  const filterActive = filter.statuses.length + filter.channels.length + filter.assignees.length > 0 || filter.query.trim() !== "";
-  const knownChannels = channelOptions(items);
+  const filterActive = filter.statuses.length + filter.channels.length + filter.formats.length + filter.campaigns.length + filter.assignees.length > 0
+    || filter.query.trim() !== "";
+  const known = { channels: channelOptions(items), formats: formatOptions(items), campaigns: campaignOptions(items) };
   const opened = openId ? items.find((i) => i.id === openId) ?? null : null;
 
   const viewProps = {
@@ -285,12 +287,19 @@ export default function ContentCalendarPage() {
             onChange={(statuses) => setFilter((f) => ({ ...f, statuses }))}
             options={CONTENT_STATUSES.map((s) => ({ value: s.id, label: <span className="inline-flex items-center gap-1.5"><StatusDot status={s.id} />{s.label}</span> }))}
           />
-          <FilterMenu label="채널" value={filter.channels} onChange={(channels) => setFilter((f) => ({ ...f, channels }))} options={knownChannels.map((c) => ({ value: c, label: c }))} />
+          <FilterMenu
+            label="캠페인"
+            value={filter.campaigns}
+            onChange={(campaigns) => setFilter((f) => ({ ...f, campaigns }))}
+            options={[...known.campaigns.map((c) => ({ value: c, label: c })), { value: "none", label: "캠페인 없음" }]}
+          />
+          <FilterMenu label="형식" value={filter.formats} onChange={(formats) => setFilter((f) => ({ ...f, formats }))} options={known.formats.map((c) => ({ value: c, label: c }))} />
+          <FilterMenu label="플랫폼" value={filter.channels} onChange={(channels) => setFilter((f) => ({ ...f, channels }))} options={known.channels.map((c) => ({ value: c, label: c }))} />
           <FilterMenu
             label="담당"
             value={filter.assignees}
             onChange={(assignees) => setFilter((f) => ({ ...f, assignees }))}
-            options={[...members.map((m) => ({ value: m.id, label: m.name })), { value: "none", label: "담당 없음" }]}
+            options={[...assigneeOptions(items, members), { value: "none", label: "담당 없음" }]}
           />
           <label className="relative w-full sm:w-44">
             <span className="sr-only">검색</span>
@@ -326,7 +335,7 @@ export default function ContentCalendarPage() {
           isNew={isTmp(opened.id) && !savedTmp.has(opened.id)}
           projects={projects}
           members={members}
-          knownChannels={knownChannels}
+          known={known}
           onChange={(fields, mode) => patch(opened.id, fields, mode)}
           onClose={closeEditor}
           onDelete={() => deleteItem(opened.id)}

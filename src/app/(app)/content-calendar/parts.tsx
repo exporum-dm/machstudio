@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronDown, Clock } from "lucide-react";
 import { FINISH, R, SELECTED } from "@/components/ui/primitives";
-import { statusMeta, type ContentItemDto } from "@/lib/content-calendar";
+import { isClosedStatus, statusMeta, type ContentItemDto } from "@/lib/content-calendar";
 
 /** 세 보기가 같이 받는 것 */
 export interface ViewProps {
@@ -33,7 +33,7 @@ export function StatusChip({ status }: { status: string }) {
 export function CalendarChip({ item, color, onOpen, showProject, projectName }: {
   item: ContentItemDto; color: string; onOpen: () => void; showProject: boolean; projectName: string;
 }) {
-  const done = item.status === "published";
+  const done = isClosedStatus(item.status);
   return (
     <button
       type="button"
@@ -71,9 +71,10 @@ export function ItemCard({ item, color, projectName, showProject, onOpen, showDa
       <span className="whitespace-pre-line text-sm font-medium leading-snug">{item.title}</span>
       <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
         {showDate && item.date && <span className="inline-flex items-center gap-1 tabular-nums"><Clock className="h-3 w-3" aria-hidden />{shortDay(item.date)}{item.time && ` ${item.time}`}</span>}
-        {item.format && <span className="rounded bg-secondary px-1.5 py-0.5">{item.format}</span>}
+        {item.campaign && <span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-violet-700 dark:text-violet-300">{item.campaign}</span>}
+        {item.formats.map((f) => <span key={f} className="rounded bg-secondary px-1.5 py-0.5">{f}</span>)}
         {item.channels.map((c) => <span key={c} className="rounded bg-secondary px-1.5 py-0.5">{c}</span>)}
-        {item.assigneeName && <span className="ml-auto">{item.assigneeName}</span>}
+        {item.assignees.length > 0 && <span className="ml-auto">{item.assignees.map((a) => a.name).join(", ")}</span>}
       </span>
     </button>
   );

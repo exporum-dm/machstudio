@@ -3,13 +3,14 @@
 /**
  * 콘텐츠 상세 — 오른쪽 패널(모바일은 전체 화면). 고치는 즉시 저장된다(글자는 잠깐 멈추면).
  * 새 항목은 제목을 적는 순간 만들어진다 — 제목 없이 닫으면 아무것도 남지 않는다.
+ * 칸은 노션 "DM 업무 관리 › 콘텐츠"와 같다(2026-11-03): 상태 7단계, 형식·채널·담당 여러 개, 캠페인 하나.
  */
 import { useEffect, useRef, useState } from "react";
-import { Trash2, X } from "lucide-react";
+import { ExternalLink, Trash2, X } from "lucide-react";
 import { motion } from "framer-motion";
 import { FieldArea, FieldSelect, FINISH, R, SELECTED, UrlField } from "@/components/ui/primitives";
 import {
-  CONTENT_CHANNELS, CONTENT_FORMATS, CONTENT_STATUSES, isValidDay, isValidTime,
+  CONTENT_CAMPAIGNS, CONTENT_CHANNELS, CONTENT_FORMATS, CONTENT_STATUSES, assigneeKey, isValidDay, isValidTime,
   type ContentItemDto, type ContentMemberDto,
 } from "@/lib/content-calendar";
 import { StatusDot } from "./parts";
@@ -22,22 +23,64 @@ const pill = (on: boolean) => `${PILL} ${on ? SELECTED : `${FINISH.s2} text-mute
 
 const isHttpUrl = (v: string) => { try { const u = new URL(v.trim()); return u.protocol === "http:" || u.protocol === "https:"; } catch { return false; } };
 
-export default function ItemEditor({ item, isNew, projects, members, knownChannels, onChange, onClose, onDelete }: {
+/** 기본 목록 칩 + 직접 입력. multiple=false 면 하나만(다시 누르면 해제). */
+function TagPicker({ label, base, known, value, onChange, multiple = true, max = 30 }: {
+  label: string;
+  base: readonly string[];
+  /** 기본 목록 밖에서 이미 쓰인 값 */
+  known: string[];
+  value: string[];
+  onChange: (next: string[]) => void;
+  multiple?: boolean;
+  max?: number;
+}) {
+  const [draft, setDraft] = useState("");
+  const choices = [...base, ...known.filter((c) => !base.includes(c))];
+  const all = [...choices, ...value.filter((c) => !choices.includes(c))];
+  const toggle = (c: string) => {
+    const on = value.includes(c);
+    onChange(multiple ? (on ? value.filter((x) => x !== c) : [...value, c]) : on ? [] : [c]);
+  };
+  const add = () => {
+    const c = draft.trim().slice(0, max);
+    setDraft("");
+    if (!c || value.includes(c)) return;
+    onChange(multiple ? [...value, c] : [c]);
+  };
+  return (
+    <div>
+      <span className={LABEL}>{label}</span>
+      <div className="flex flex-wrap gap-1.5">
+        {all.map((c) => <button key={c} type="button" aria-pressed={value.includes(c)} onClick={() => toggle(c)} className={pill(value.includes(c))}>{c}</button>)}
+        <form onSubmit={(e) => { e.preventDefault(); add(); }} className="inline-flex">
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={add}
+            placeholder="직접 입력"
+            aria-label={`${label} 직접 입력`}
+            className={`h-8 w-24 bg-transparent px-2 text-xs ${R.control} ${FINISH.s2}`}
+          />
+        </form>
+      </div>
+    </div>
+  );
+}
+
+export default function ItemEditor({ item, isNew, projects, members, known, onChange, onClose, onDelete }: {
   item: ContentItemDto;
   /** 아직 서버에 없는 항목 */
   isNew: boolean;
   projects: { id: string; name: string }[];
   members: ContentMemberDto[];
-  /** 기본 채널 밖에서 이미 쓰인 채널 */
-  knownChannels: string[];
+  /** 기본 목록 밖에서 이미 쓰인 값 */
+  known: { channels: string[]; formats: string[]; campaigns: string[] };
   onChange: (fields: Partial<ContentItemDto>, mode: SaveMode) => void;
   onClose: () => void;
   onDelete: () => void;
 }) {
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const savedTitle = useRef(item.title);
-  const [customChannel, setCustomChannel] = useState("");
-  const [customFormat, setCustomFormat] = useState("");
   const [timeDraft, setTimeDraft] = useState(item.time);
   // 항목이 바뀌면 부모가 key 로 새로 그린다 — 위 상태들은 항목마다 처음부터.
   useEffect(() => { if (isNew) titleRef.current?.focus(); }, [isNew]);
@@ -67,17 +110,13 @@ export default function ItemEditor({ item, isNew, projects, members, knownChanne
     if (title.trim()) savedTitle.current = title;
     onChange({ title }, title.trim() ? "debounce" : "local");
   };
-  const toggleChannel = (c: string) =>
-    onChange({ channels: item.channels.includes(c) ? item.channels.filter((x) => x !== c) : [...item.channels, c] }, "now");
-  const addChannel = () => {
-    const c = customChannel.trim().slice(0, 30);
-    if (c && !item.channels.includes(c)) onChange({ channels: [...item.channels, c] }, "now");
-    setCustomChannel("");
-  };
-  const channelChoices = [...CONTENT_CHANNELS, ...knownChannels.filter((c) => !(CONTENT_CHANNELS as readonly string[]).includes(c))];
-  const extraSelected = item.channels.filter((c) => !channelChoices.includes(c));
-  const formatChoices: string[] = [...CONTENT_FORMATS];
-  if (item.format && !formatChoices.includes(item.format)) formatChoices.push(item.format);
+
+  // 담당 — 팀원 칩 + 계정 없는 사람(노션에서 온 퇴사자 등)은 고른 상태로만 보인다(누르면 빠진다)
+  const selectedKeys = new Set(item.assignees.map(assigneeKey));
+  const outsiders = item.assignees.filter((a) => !a.id || !members.some((m) => m.id === a.id));
+  const toggleMember = (m: ContentMemberDto) => onChange({
+    assignees: selectedKeys.has(m.id) ? item.assignees.filter((a) => a.id !== m.id) : [...item.assignees, { id: m.id, name: m.name }],
+  }, "now");
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-label="콘텐츠 상세">
@@ -99,9 +138,16 @@ export default function ItemEditor({ item, isNew, projects, members, knownChanne
       >
         <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
           <span className="text-xs text-muted-foreground">{isNew ? "새 콘텐츠" : "콘텐츠"}</span>
-          <button type="button" onClick={close} aria-label="닫기" className={`inline-flex h-9 w-9 items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground ${R.control}`}>
-            <X className="h-4 w-4" aria-hidden />
-          </button>
+          <div className="flex items-center gap-1">
+            {item.sourceUrl && (
+              <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className={`inline-flex min-h-9 items-center gap-1 px-2.5 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground ${R.control}`}>
+                <ExternalLink className="h-3.5 w-3.5" aria-hidden />노션 원본
+              </a>
+            )}
+            <button type="button" onClick={close} aria-label="닫기" className={`inline-flex h-9 w-9 items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground ${R.control}`}>
+              <X className="h-4 w-4" aria-hidden />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4">
@@ -112,11 +158,11 @@ export default function ItemEditor({ item, isNew, projects, members, knownChanne
               value={item.title}
               onChange={(e) => setTitle(e.target.value.replace(/\n/g, " "))}
               onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
-              placeholder="제목"
-              aria-label="제목"
+              placeholder="콘텐츠명"
+              aria-label="콘텐츠명"
               className="w-full resize-none bg-transparent text-xl font-semibold leading-snug outline-none placeholder:text-muted-foreground/50"
             />
-            {!item.title.trim() && <p className="mt-1 text-[11px] text-muted-foreground">{isNew ? "제목을 적으면 저장돼요" : "제목이 비어 있으면 저장되지 않아요"}</p>}
+            {!item.title.trim() && <p className="mt-1 text-[11px] text-muted-foreground">{isNew ? "콘텐츠명을 적으면 저장돼요" : "콘텐츠명이 비어 있으면 저장되지 않아요"}</p>}
           </div>
 
           <div>
@@ -132,7 +178,7 @@ export default function ItemEditor({ item, isNew, projects, members, knownChanne
 
           <div className="grid grid-cols-[1fr_7rem] gap-2">
             <label>
-              <span className={LABEL}>발행일</span>
+              <span className={LABEL}>날짜</span>
               <input
                 type="date"
                 value={item.date ?? ""}
@@ -163,70 +209,37 @@ export default function ItemEditor({ item, isNew, projects, members, knownChanne
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <label>
-              <span className={LABEL}>프로젝트</span>
-              <FieldSelect value={item.projectId ?? ""} onChange={(e) => onChange({ projectId: e.target.value || null }, "now")}>
-                <option value="">프로젝트 없음</option>
-                {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </FieldSelect>
-            </label>
-            <label>
-              <span className={LABEL}>담당</span>
-              <FieldSelect
-                value={item.assigneeId ?? ""}
-                onChange={(e) => {
-                  const id = e.target.value || null;
-                  onChange({ assigneeId: id, assigneeName: members.find((m) => m.id === id)?.name ?? "" }, "now");
-                }}
-              >
-                <option value="">없음</option>
-                {item.assigneeId && !members.some((m) => m.id === item.assigneeId) && <option value={item.assigneeId}>{item.assigneeName}</option>}
-                {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </FieldSelect>
-            </label>
-          </div>
+          <label className="block">
+            <span className={LABEL}>프로젝트</span>
+            <FieldSelect value={item.projectId ?? ""} onChange={(e) => onChange({ projectId: e.target.value || null }, "now")}>
+              <option value="">프로젝트 없음</option>
+              {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </FieldSelect>
+          </label>
 
           <div>
-            <span className={LABEL}>채널</span>
+            <span className={LABEL}>담당자</span>
             <div className="flex flex-wrap gap-1.5">
-              {[...channelChoices, ...extraSelected].map((c) => (
-                <button key={c} type="button" aria-pressed={item.channels.includes(c)} onClick={() => toggleChannel(c)} className={pill(item.channels.includes(c))}>{c}</button>
+              {members.map((m) => (
+                <button key={m.id} type="button" aria-pressed={selectedKeys.has(m.id)} onClick={() => toggleMember(m)} className={pill(selectedKeys.has(m.id))}>{m.name}</button>
               ))}
-              <form onSubmit={(e) => { e.preventDefault(); addChannel(); }} className="inline-flex items-center">
-                <input
-                  value={customChannel}
-                  onChange={(e) => setCustomChannel(e.target.value)}
-                  onBlur={addChannel}
-                  placeholder="직접 입력"
-                  aria-label="채널 직접 입력"
-                  className={`h-8 w-24 bg-transparent px-2 text-xs ${R.control} ${FINISH.s2}`}
-                />
-              </form>
+              {outsiders.map((a) => (
+                <button
+                  key={assigneeKey(a)}
+                  type="button"
+                  aria-pressed
+                  title="계정이 없는 사람이에요. 누르면 빠져요."
+                  onClick={() => onChange({ assignees: item.assignees.filter((x) => assigneeKey(x) !== assigneeKey(a)) }, "now")}
+                  className={pill(true)}
+                >{a.name}<X className="h-3 w-3" aria-hidden /></button>
+              ))}
             </div>
           </div>
 
-          <div>
-            <span className={LABEL}>형식</span>
-            <div className="flex flex-wrap gap-1.5">
-              {formatChoices.map((f) => (
-                <button key={f} type="button" aria-pressed={item.format === f} onClick={() => onChange({ format: item.format === f ? "" : f }, "now")} className={pill(item.format === f)}>{f}</button>
-              ))}
-              <form
-                onSubmit={(e) => { e.preventDefault(); const f = customFormat.trim().slice(0, 40); if (f) onChange({ format: f }, "now"); setCustomFormat(""); }}
-                className="inline-flex"
-              >
-                <input
-                  value={customFormat}
-                  onChange={(e) => setCustomFormat(e.target.value)}
-                  onBlur={() => { const f = customFormat.trim().slice(0, 40); if (f) onChange({ format: f }, "now"); setCustomFormat(""); }}
-                  placeholder="직접 입력"
-                  aria-label="형식 직접 입력"
-                  className={`h-8 w-24 bg-transparent px-2 text-xs ${R.control} ${FINISH.s2}`}
-                />
-              </form>
-            </div>
-          </div>
+          <TagPicker label="캠페인" base={CONTENT_CAMPAIGNS} known={known.campaigns} value={item.campaign ? [item.campaign] : []} multiple={false} max={40}
+            onChange={(v) => onChange({ campaign: v[0] ?? "" }, "now")} />
+          <TagPicker label="형식" base={CONTENT_FORMATS} known={known.formats} value={item.formats} onChange={(formats) => onChange({ formats }, "now")} />
+          <TagPicker label="플랫폼" base={CONTENT_CHANNELS} known={known.channels} value={item.channels} onChange={(channels) => onChange({ channels }, "now")} />
 
           <label className="block">
             <span className={LABEL}>내용 · 카피</span>

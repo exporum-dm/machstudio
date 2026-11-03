@@ -3,12 +3,14 @@
  *
  * GET 은 기간(from~to) 안의 항목 + 날짜 미정 항목을 함께 준다. 프로젝트·상태·채널 필터는 화면이 한다.
  * 워크스페이스 멤버 누구나 보고 고친다(2026-11-02 권한 정책 — 프로젝트 배정 없음).
- * 담당자 이름: 계정이 살아 있으면 지금 이름, 지워졌으면 항목에 적어 둔 assigneeName.
+ * 담당자(여러 명): 계정이 살아 있으면 지금 이름, 지워졌거나 계정 없는 사람(노션에서 가져온 퇴사자 등)은 적어 둔 이름.
  */
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireWorkspaceMember } from "@/lib/workspace-access";
-import { isContentStatus, isValidDay, isValidTime, normalizeChannels } from "@/lib/content-calendar";
+import {
+  assigneeKey, isContentStatus, isValidDay, isValidTime, normalizeTags, parseAssignees, type ContentAssignee,
+} from "@/lib/content-calendar";
 
 const toDateValue = (v: unknown) => (isValidDay(v) ? new Date(`${v}T00:00:00Z`) : null);
 const toDay = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
@@ -16,19 +18,20 @@ const text = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slic
 const displayName = (u: { name: string | null; email: string }) => u.name || u.email.split("@")[0];
 
 type ItemRow = {
-  id: string; projectId: string | null; title: string; date: Date | null; time: string; status: string; channels: string[]; format: string;
-  assigneeId: string | null; assigneeName: string; body: string; link: string; createdAt: Date; updatedAt: Date;
+  id: string; projectId: string | null; title: string; date: Date | null; time: string; status: string; channels: string[]; formats: string[];
+  campaign: string; assignees: unknown; body: string; link: string; sourceUrl: string; createdAt: Date; updatedAt: Date;
 };
 
 function serialize(i: ItemRow, names: Map<string, string>) {
   return {
     id: i.id, projectId: i.projectId, title: i.title, date: toDay(i.date), time: i.time,
-    status: isContentStatus(i.status) ? i.status : "idea", channels: i.channels, format: i.format,
-    assigneeId: i.assigneeId,
-    assigneeName: i.assigneeId ? names.get(i.assigneeId) ?? (i.assigneeName || "떠난 팀원") : "",
-    body: i.body, link: i.link, createdAt: i.createdAt.toISOString(), updatedAt: i.updatedAt.toISOString(),
+    status: isContentStatus(i.status) ? i.status : "waiting", channels: i.channels, formats: i.formats, campaign: i.campaign,
+    assignees: parseAssignees(i.assignees).map((a) => ({ id: a.id, name: (a.id && names.get(a.id)) || a.name || "떠난 팀원" })),
+    body: i.body, link: i.link, sourceUrl: i.sourceUrl, createdAt: i.createdAt.toISOString(), updatedAt: i.updatedAt.toISOString(),
   };
 }
+
+const assigneeIds = (rows: { assignees: unknown }[]) => rows.flatMap((r) => parseAssignees(r.assignees).map((a) => a.id));
 
 async function memberNames(workspaceId: string) {
   const members = await prisma.workspaceMember.findMany({
@@ -67,24 +70,37 @@ async function projectInWorkspace(projectId: unknown, workspaceId: string): Prom
   return p ? p.id : "invalid";
 }
 
-/** 담당자는 그 워크스페이스 멤버만. 이름을 같이 돌려준다(항목에 적어 둘 이름). */
-async function assigneeInWorkspace(assigneeId: unknown, workspaceId: string): Promise<{ id: string | null; name: string } | "invalid"> {
-  if (assigneeId === null || assigneeId === "" || assigneeId === undefined) return { id: null, name: "" };
-  if (typeof assigneeId !== "string") return "invalid";
-  const m = await prisma.workspaceMember.findUnique({
-    where: { userId_workspaceId: { userId: assigneeId, workspaceId } },
-    select: { user: { select: { name: true, email: true } } },
-  });
-  return m ? { id: assigneeId, name: displayName(m.user) } : "invalid";
+/**
+ * 담당자 목록 검사. 새로 넣는 id 는 그 워크스페이스 멤버만(이름은 지금 이름으로 적어 둔다).
+ * 이미 항목에 있던 사람(떠난 팀원·계정 없는 사람)은 멤버가 아니어도 그대로 둔다 — 빼는 건 화면에서 지운다.
+ */
+async function readAssignees(v: unknown, workspaceId: string, existing: ContentAssignee[]): Promise<ContentAssignee[] | "invalid"> {
+  const list = parseAssignees(v);
+  const ids = list.map((a) => a.id).filter((id): id is string => !!id);
+  const members = ids.length
+    ? await prisma.workspaceMember.findMany({
+      where: { workspaceId, userId: { in: ids } },
+      select: { userId: true, user: { select: { name: true, email: true } } },
+    })
+    : [];
+  const memberName = new Map(members.map((m) => [m.userId, displayName(m.user)]));
+  const out: ContentAssignee[] = [];
+  for (const a of list) {
+    if (a.id && memberName.has(a.id)) { out.push({ id: a.id, name: memberName.get(a.id)! }); continue; }
+    const kept = existing.find((e) => assigneeKey(e) === assigneeKey(a));
+    if (!kept) return "invalid";
+    out.push(kept);
+  }
+  return out;
 }
 
 type Fields = Partial<{
-  projectId: string | null; title: string; date: Date | null; time: string; status: string; channels: string[]; format: string;
-  assigneeId: string | null; assigneeName: string; body: string; link: string;
+  projectId: string | null; title: string; date: Date | null; time: string; status: string; channels: string[]; formats: string[];
+  campaign: string; assignees: ContentAssignee[]; body: string; link: string;
 }>;
 
 /** 들어온 값 중 있는 것만 검사해서 고칠 칸으로. 잘못된 값은 오류 문구. */
-async function readFields(body: Record<string, unknown>, workspaceId: string): Promise<Fields | { error: string }> {
+async function readFields(body: Record<string, unknown>, workspaceId: string, existingAssignees: ContentAssignee[] = []): Promise<Fields | { error: string }> {
   const out: Fields = {};
   if ("title" in body) {
     const title = text(body.title, 200);
@@ -108,8 +124,9 @@ async function readFields(body: Record<string, unknown>, workspaceId: string): P
     if (!isContentStatus(body.status)) return { error: "상태가 올바르지 않아요" };
     out.status = body.status;
   }
-  if ("channels" in body) out.channels = normalizeChannels(body.channels);
-  if ("format" in body) out.format = text(body.format, 40);
+  if ("channels" in body) out.channels = normalizeTags(body.channels);
+  if ("formats" in body) out.formats = normalizeTags(body.formats, 10);
+  if ("campaign" in body) out.campaign = text(body.campaign, 40);
   if ("body" in body) out.body = typeof body.body === "string" ? body.body.slice(0, 20_000) : "";
   if ("link" in body) {
     const link = safeLink(body.link);
@@ -121,11 +138,10 @@ async function readFields(body: Record<string, unknown>, workspaceId: string): P
     if (projectId === "invalid") return { error: "프로젝트를 찾을 수 없어요" };
     out.projectId = projectId;
   }
-  if ("assigneeId" in body) {
-    const a = await assigneeInWorkspace(body.assigneeId, workspaceId);
+  if ("assignees" in body) {
+    const a = await readAssignees(body.assignees, workspaceId, existingAssignees);
     if (a === "invalid") return { error: "담당자를 찾을 수 없어요" };
-    out.assigneeId = a.id;
-    out.assigneeName = a.name;
+    out.assignees = a;
   }
   return out;
 }
@@ -152,7 +168,7 @@ export async function GET(request: Request) {
     }),
     memberNames(workspaceId!),
   ]);
-  const names = await liveNames(items.map((i) => i.assigneeId), members);
+  const names = await liveNames(assigneeIds(items), members);
   return NextResponse.json({ items: items.map((i) => serialize(i, names)), members, me: access.userId });
 }
 
@@ -165,23 +181,22 @@ export async function POST(request: Request) {
   const fields = await readFields(body, workspaceId!);
   if ("error" in fields) return NextResponse.json({ error: fields.error }, { status: 400 });
   const item = await prisma.contentItem.create({
-    data: { ...fields, title: fields.title!, workspaceId: workspaceId!, createdById: access.userId },
+    data: { ...fields, assignees: fields.assignees ?? [], title: fields.title!, workspaceId: workspaceId!, createdById: access.userId },
   });
-  const names = new Map(item.assigneeId ? [[item.assigneeId, item.assigneeName]] : []);
-  return NextResponse.json({ item: serialize(item, names) }, { status: 201 });
+  return NextResponse.json({ item: serialize(item, new Map()) }, { status: 201 });
 }
 
 export async function PATCH(request: Request) {
   const body = await request.json().catch(() => ({}));
   const id = typeof body.id === "string" ? body.id : "";
-  const existing = id ? await prisma.contentItem.findUnique({ where: { id }, select: { workspaceId: true } }) : null;
+  const existing = id ? await prisma.contentItem.findUnique({ where: { id }, select: { workspaceId: true, assignees: true } }) : null;
   if (!existing) return NextResponse.json({ error: "항목을 찾을 수 없어요" }, { status: 404 });
   const access = await requireWorkspaceMember(existing.workspaceId);
   if ("error" in access) return NextResponse.json({ error: access.error }, { status: access.status });
-  const fields = await readFields(body, existing.workspaceId);
+  const fields = await readFields(body, existing.workspaceId, parseAssignees(existing.assignees));
   if ("error" in fields) return NextResponse.json({ error: fields.error }, { status: 400 });
   const item = await prisma.contentItem.update({ where: { id }, data: fields });
-  const names = await liveNames([item.assigneeId], []);
+  const names = await liveNames(assigneeIds([item]), []);
   return NextResponse.json({ item: serialize(item, names) });
 }
 
