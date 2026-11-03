@@ -291,7 +291,7 @@ export function NotificationPanel({ sidebarWidth = 248 }: Props) {
         <Bell className="w-4 h-4 shrink-0" />
         <span>알림</span>
         {unreadCount > 0 && (
-          <span className="ml-auto flex items-center justify-center w-5 h-5 rounded-full bg-violet-500 text-white text-[10px] font-semibold shrink-0">
+          <span aria-label={`새 알림 ${unreadCount}개`} className="ml-auto flex items-center justify-center w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-semibold shrink-0">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}

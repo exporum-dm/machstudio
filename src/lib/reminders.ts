@@ -5,12 +5,11 @@ import "server-only";
  * 규칙마다:
  *  1) contentTemplate 이 있으면 이번 달부터 contentMonthsAhead 개월치 콘텐츠를 기준일에 넣어 둔다.
  *     이미 그 달에 같은 제목의 항목이 그 프로젝트에 있으면(노션에서 가져온 것 등) 새로 만들지 않는다.
- *  2) 오늘이 알릴 날~기준일 사이이고 그 달을 아직 안 알렸으면 받는 사람에게 앱 알림 + 메일.
+ *  2) 오늘이 알릴 날~기준일 사이이고 그 달을 아직 안 알렸으면 받는 사람에게 앱 알림(사이드바 왼쪽 아래 "알림").
+ *     메일은 보내지 않는다(2026-11-03 사용자 결정 — 앱 알림이면 충분).
  *     lastNotifiedMonth 를 먼저 올리고 보낸다 — cron 이 겹쳐 돌아도 두 번 보내지 않게.
  */
 import { prisma } from "@/lib/prisma";
-import { sendEmail } from "@/lib/email";
-import { getPublicAppOrigin } from "@/lib/app-url";
 import { isHolidayYearCovered } from "@/lib/business-days";
 import { kstToday } from "@/lib/worklog";
 import {
@@ -42,13 +41,12 @@ function readTemplate(v: unknown): ContentTemplate | null {
 }
 
 const displayName = (u: { name: string | null; email: string }) => u.name || u.email.split("@")[0];
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 export interface ReminderRunResult {
   id: string;
   title: string;
   createdContent: string[];
-  notified?: { month: string; users: number; emails: number; emailSkipped: boolean };
+  notified?: { month: string; users: number };
   error?: string;
 }
 
@@ -115,7 +113,6 @@ export async function runReminders(now = new Date()): Promise<{ today: string; w
         if (claimed.count === 1) {
           const day = targetDay(schedule, month);
           const recipients = rule.recipientIds.filter((id) => memberById.has(id));
-          const origin = getPublicAppOrigin();
           const href = template
             ? `/content-calendar?month=${month}${template.projectId ? `&project=${template.projectId}` : ""}`
             : null;
@@ -130,26 +127,7 @@ export async function runReminders(now = new Date()): Promise<{ today: string; w
               data: { reminderId: rule.id, workspaceId: rule.workspaceId, title: rule.title, message: line, when, targetDate: day, month, href },
             })),
           });
-          let emails = 0;
-          let emailSkipped = false;
-          for (const id of recipients) {
-            const user = memberById.get(id)!;
-            const link = href && origin ? `${origin}${href}` : origin || "";
-            const r = await sendEmail({
-              to: user.email,
-              subject: `[알림] ${rule.title} — ${reminderDayLabel(day)}`,
-              html: `<div style="font-family:sans-serif;font-size:15px;line-height:1.6">
-<p><strong>${esc(rule.title)}</strong></p>
-<p>${esc(line)}</p>
-<p style="color:#666">${esc(when)}</p>
-${link ? `<p><a href="${esc(link)}">machstudio 에서 보기</a></p>` : ""}
-</div>`,
-              idempotencyKey: `reminder:${rule.id}:${month}:${id}`,
-            });
-            if (r.sent) emails++;
-            if (r.skipped) emailSkipped = true;
-          }
-          out.notified = { month, users: recipients.length, emails, emailSkipped };
+          out.notified = { month, users: recipients.length };
         }
       }
     } catch (e) {

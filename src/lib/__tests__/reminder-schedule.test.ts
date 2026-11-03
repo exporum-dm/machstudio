@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isBusinessDay, isHolidayYearCovered, lastBusinessDayOfMonth, nthBusinessDayOfMonth, shiftBusinessDays } from "@/lib/business-days";
+import { holidayName, isBusinessDay, isHolidayYearCovered, lastBusinessDayOfMonth, nthBusinessDayOfMonth, shiftBusinessDays } from "@/lib/business-days";
 import { dueMonth, notifyDay, targetDay, upcomingMonths, type ReminderSchedule } from "@/lib/reminder-schedule";
 
 const monthly: ReminderSchedule = { schedule: "last_business_day", nth: 1, leadBusinessDays: 4 };
@@ -26,6 +26,13 @@ describe("업무일", () => {
     expect(nthBusinessDayOfMonth("2026-03", 3)).toBe("2026-03-05"); // 3/1 일·3/2 대체
     expect(nthBusinessDayOfMonth("2026-10", 3)).toBe("2026-10-06"); // 10/5 대체
     expect(nthBusinessDayOfMonth("2027-01", 3)).toBe("2027-01-06"); // 1/1 신정
+  });
+  it("캘린더에 칠할 공휴일 이름 — 주말에 겹친 날도", () => {
+    expect(holidayName("2026-12-25")).toBe("성탄절");
+    expect(holidayName("2026-10-03")).toBe("개천절"); // 토요일
+    expect(holidayName("2026-10-05")).toBe("대체공휴일");
+    expect(holidayName("2026-11-03")).toBeNull();
+    expect(holidayName("constructor")).toBeNull();
   });
   it("공휴일 목록이 있는 해", () => {
     expect(isHolidayYearCovered(2026)).toBe(true);
