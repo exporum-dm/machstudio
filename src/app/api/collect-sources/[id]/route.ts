@@ -91,6 +91,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     webhookUrl, notifyOnSubmit, allowedOrigins, formPagePatterns, dedupKeyFields, fieldGroupSelector,
   } = body;
 
+  // 이름·설명·사이트 주소(목록·상세의 "정보 수정") — 이름은 비울 수 없고, 사이트 주소는 http(s) 만.
+  if (name !== undefined && (typeof name !== "string" || !name.trim())) {
+    return NextResponse.json({ error: "이름을 적어 주세요" }, { status: 400 });
+  }
+  if (typeof siteUrl === "string" && siteUrl.trim()) {
+    let ok = false;
+    try { const u = new URL(siteUrl.trim()); ok = u.protocol === "http:" || u.protocol === "https:"; } catch { ok = false; }
+    if (!ok) return NextResponse.json({ error: "사이트 주소는 https:// 로 시작해야 해요" }, { status: 400 });
+  }
+
   /**
    * "기본 정보" 탭(일자·장소·관람시간·키컬러·하이라이트 영상·포스터) — venueConfig 는
    * 원래 "개최일·게이트·배지 등 현장 운영 설정"용으로 만들어 둔 자유 JSON 이라 스키마
@@ -211,9 +221,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         // 끊는다"(§16.1)는 토큰의 존재 이유가 무너진다.
         ...(nextMode === "capture" && { previewToken: null }),
       }),
-      ...(name !== undefined && { name }),
-      ...(description !== undefined && { description: description || null }),
-      ...(siteUrl !== undefined && { siteUrl: siteUrl || null }),
+      ...(name !== undefined && { name: String(name).trim().slice(0, 200) }),
+      ...(description !== undefined && { description: typeof description === "string" && description.trim() ? description.trim().slice(0, 2000) : null }),
+      ...(siteUrl !== undefined && { siteUrl: typeof siteUrl === "string" && siteUrl.trim() ? siteUrl.trim() : null }),
       ...(successTrigger !== undefined && { successTrigger }),
       ...(redirectUrl !== undefined && { redirectUrl: redirectUrl || null }),
       ...(isActive !== undefined && { isActive }),

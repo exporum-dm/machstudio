@@ -11,8 +11,9 @@ import {
   ChevronLeft, ChevronRight, Search, Filter, Activity, Shield,
   RefreshCcw, Bell, Webhook, KeyRound, Eraser, AlertTriangle, ShieldAlert,
   MoreHorizontal, Link2, Wrench, HardDriveDownload, Columns3, MapPin, X, Layers,
-  Eye, EyeOff, BarChart3,
+  Eye, EyeOff, BarChart3, Edit3,
 } from "lucide-react";
+import { SourceInfoEditor } from "../_components/SourceInfoEditor";
 import { toast } from "sonner";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -273,6 +274,8 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
   const router = useRouter();
   const { currentProject, workspace, setCurrentProject, projects } = useWorkspace();
   const [source, setSource] = useState<CollectSource | null>(null);
+  /** 머리의 "정보 수정" — 이름·설명·사이트 주소 */
+  const [editingInfo, setEditingInfo] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   // 대시보드 카드가 ?tab=overview 로 바로 현황을 연다. 모르는 값이면 현황(기본 탭)으로.
   const [tab, setTab] = useQueryTab<Tab>(tabsFor(source?.mode ?? "capture").map(t => t.id), "overview");
@@ -1203,25 +1206,43 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
             <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center text-violet-500 shrink-0">
               <Database className="w-5 h-5" />
             </div>
-            <div>
+            {editingInfo ? (
+              <div className="w-full max-w-xl">
+                <SourceInfoEditor
+                  source={source}
+                  onCancel={() => setEditingInfo(false)}
+                  onSaved={(next) => { setSource((prev) => (prev ? { ...prev, ...next } : prev)); setEditingInfo(false); }}
+                />
+              </div>
+            ) : (
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-semibold">{source.name}</h1>
                 {/* 방식은 되돌릴 수 없는 성질이라(레코드가 쌓이면 전환 불가) 이름 옆에 상시 노출한다. */}
                 <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground">
                   {source.mode === "builder" ? "빌더형" : "연동형"}
                 </span>
+                <button
+                  type="button"
+                  onClick={() => setEditingInfo(true)}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                  title="이름·설명·사이트 주소 수정"
+                >
+                  <Edit3 className="h-3 w-3" aria-hidden />정보 수정
+                </button>
               </div>
-              <div className="flex items-center gap-3 mt-0.5">
+              <div className="mt-0.5 flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:items-start sm:gap-x-3">
                 {source.description && <p className="whitespace-pre-line text-sm text-muted-foreground">{source.description}</p>}
                 {source.siteUrl && (
                   <a href={source.siteUrl} target="_blank" rel="noopener noreferrer"
-                    className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
-                    <Globe className="w-3 h-3" />{source.siteUrl}
-                    <ExternalLink className="w-2.5 h-2.5" />
+                    className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 break-all">
+                    <Globe className="w-3 h-3 shrink-0" />{source.siteUrl}
+                    <ExternalLink className="w-2.5 h-2.5 shrink-0" />
                   </a>
                 )}
               </div>
             </div>
+            )}
           </div>
           <ActiveToggle active={source.isActive} onChange={(next) => handleToggle(next)} size="md" />
         </div>
