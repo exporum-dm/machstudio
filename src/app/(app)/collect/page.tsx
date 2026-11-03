@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Database, Globe, Loader2, ChevronRight, Users, Trash2, Upload, UserPlus, Edit3, Check, X, Copy, Search } from "lucide-react";
+import { SourceInfoEditor } from "./_components/SourceInfoEditor";
+import { Plus, Database, Globe, Loader2, ChevronRight, Users, Trash2, Upload, UserPlus, Edit3, Copy, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import ModalShell from "@/app/(app)/collect/[id]/ModalShell";
 import { toast } from "sonner";
@@ -44,7 +45,6 @@ export default function CollectPage() {
   const [showMembers, setShowMembers] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState("");
   // 복제 — 폼 항목·문구·설정을 그대로 가져가 새 폼을 연다(등록 데이터·링크는 새로).
   const router = useRouter();
   const [duplicateTarget, setDuplicateTarget] = useState<CollectSource | null>(null);
@@ -135,21 +135,6 @@ export default function CollectPage() {
     } catch { toast.error("연결을 확인하고 다시 시도해 주세요."); }
   };
 
-  const handleRenameSource = async (id: string) => {
-    const name = editingName.trim();
-    setEditingId(null);
-    if (!name) return;
-    const source = sources.find((s) => s.id === id);
-    if (!source || name === source.name) return;
-    const res = await fetch(`/api/collect-sources/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-    if (!res.ok) { toast.error("이름 변경 실패"); return; }
-    setSources((prev) => prev.map((s) => s.id === id ? { ...s, name } : s));
-    toast.success("이름이 변경됐어요");
-  };
 
   const openDuplicate = (source: CollectSource) => {
     setDuplicateTarget(source);
@@ -408,68 +393,50 @@ export default function CollectPage() {
                 <Database className="w-4 h-4" />
               </div>
               <div className="flex-1 min-w-0">
-                {/* 이름 행: 편집 아이콘을 이름 텍스트 바로 옆에 배치 */}
                 {editingId === source.id ? (
-                  <div className="flex items-center gap-1.5 min-w-0" onClick={(e) => e.preventDefault()}>
-                    <input
-                      autoFocus
-                      value={editingName}
-                      onChange={(e) => setEditingName(e.target.value)}
-                      onBlur={() => handleRenameSource(source.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleRenameSource(source.id);
-                        if (e.key === "Escape") setEditingId(null);
-                      }}
-                      className="text-sm font-medium bg-transparent border-b border-violet-400 focus:outline-none min-w-0 py-0.5"
-                    />
-                    <button
-                      onMouseDown={(e) => { e.preventDefault(); handleRenameSource(source.id); }}
-                      className="p-0.5 rounded text-violet-500 hover:bg-violet-500/10 transition-colors shrink-0"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onMouseDown={(e) => { e.preventDefault(); setEditingId(null); }}
-                      className="p-0.5 rounded text-muted-foreground hover:bg-secondary transition-colors shrink-0"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                  <SourceInfoEditor
+                    source={source}
+                    onCancel={() => setEditingId(null)}
+                    onSaved={(next) => { setSources((prev) => prev.map((s) => (s.id === next.id ? { ...s, ...next } : s))); setEditingId(null); }}
+                  />
                 ) : (
-                  <div className="flex items-center gap-1 min-w-0">
-                    <Link href={`/collect/${source.id}`} className="min-w-0">
-                      <span className="text-sm font-medium truncate block">{source.name}</span>
+                  <>
+                    {/* 이름 행: 편집 아이콘을 이름 텍스트 바로 옆에 — 이름·설명·사이트 주소를 한 번에 고친다 */}
+                    <div className="flex items-center gap-1 min-w-0">
+                      <Link href={`/collect/${source.id}`} className="min-w-0">
+                        <span className="text-sm font-medium truncate block">{source.name}</span>
+                      </Link>
+                      <button
+                        onClick={(e) => { e.preventDefault(); setEditingId(source.id); }}
+                        className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-opacity shrink-0 sm:opacity-0 sm:group-hover:opacity-60 sm:focus:opacity-100"
+                        title="이름·설명·사이트 주소 수정"
+                        aria-label={`${source.name} 정보 수정`}
+                      >
+                        <Edit3 className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <Link href={`/collect/${source.id}`} className="block min-w-0">
+                      {source.description && (
+                        <p className="text-xs text-muted-foreground truncate mt-0.5" title={source.description}>{source.description}</p>
+                      )}
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
+                          <Users className="w-3 h-3" />{source._count.records.toLocaleString()}건
+                        </span>
+                        {/* 방식 배지 — 빌더형은 사이트 URL 이 없어서, 배지가 없으면 "설정이 덜 된
+                            연동형" 처럼 보인다. 되돌릴 수 없는 성질이라 목록에서도 구분돼야 한다. */}
+                        <span className="shrink-0 rounded-full bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          {source.mode === "builder" ? "빌더형" : "연동형"}
+                        </span>
+                        {source.siteUrl && (
+                          <span className="flex min-w-0 max-w-full items-center gap-1 text-xs text-muted-foreground">
+                            <Globe className="w-3 h-3 shrink-0" /><span className="truncate">{source.siteUrl}</span>
+                          </span>
+                        )}
+                      </div>
                     </Link>
-                    <button
-                      onClick={(e) => { e.preventDefault(); setEditingId(source.id); setEditingName(source.name); }}
-                      className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-opacity shrink-0 sm:opacity-0 sm:group-hover:opacity-60 sm:focus:opacity-100"
-                      title="이름 수정"
-                      aria-label={`${source.name} 이름 수정`}
-                    >
-                      <Edit3 className="w-3 h-3" />
-                    </button>
-                  </div>
+                  </>
                 )}
-                <Link href={`/collect/${source.id}`} className="block min-w-0">
-                  {source.description && (
-                    <p className="text-xs text-muted-foreground truncate mt-0.5">{source.description}</p>
-                  )}
-                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
-                      <Users className="w-3 h-3" />{source._count.records.toLocaleString()}건
-                    </span>
-                    {/* 방식 배지 — 빌더형은 사이트 URL 이 없어서, 배지가 없으면 "설정이 덜 된
-                        연동형" 처럼 보인다. 되돌릴 수 없는 성질이라 목록에서도 구분돼야 한다. */}
-                    <span className="shrink-0 rounded-full bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                      {source.mode === "builder" ? "빌더형" : "연동형"}
-                    </span>
-                    {source.siteUrl && (
-                      <span className="flex min-w-0 max-w-full items-center gap-1 text-xs text-muted-foreground">
-                        <Globe className="w-3 h-3 shrink-0" /><span className="truncate">{source.siteUrl}</span>
-                      </span>
-                    )}
-                  </div>
-                </Link>
               </div>
               <div className="col-start-2 flex shrink-0 items-center justify-end gap-1.5">
                 {/* 토글 스위치 */}
