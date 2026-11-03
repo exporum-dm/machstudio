@@ -1,6 +1,6 @@
 "use client";
 
-import { DashboardNavigation, PageHeader } from "@/components/ui/page-layout";
+import { PageHeader } from "@/components/ui/page-layout";
 
 /**
  * 프로젝트 대시보드 — 지금 진행 중인 등록·광고·대회·웨비나·상세페이지를 한 장에.
@@ -110,7 +110,6 @@ export default function DashboardClient() {
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
-      <DashboardNavigation />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <PageHeader title="대시보드" context={currentProject.name} description={<>현재 운영 중인 등록·광고·프로그램을 모아봅니다.{data && <span className="ml-1.5 text-xs">({formatKstDateTime(data.generatedAt).slice(5, 16)} 기준)</span>}</>} />
         <motion.button

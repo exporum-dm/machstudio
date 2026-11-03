@@ -47,10 +47,6 @@ function AreaLinks({ label, links }: { label: string; links: { href: string; lab
   </nav>;
 }
 
-export function DashboardNavigation() {
-  return <AreaLinks label="대시보드 보기" links={[{ href: "/dashboard", label: "운영 현황" }, { href: "/summary-dashboard", label: "성과 보고" }]} />;
-}
-
 export function ListSearch({ value, onChange, label, count }: { value: string; onChange: (value: string) => void; label: string; count: number }) {
   return <div className="flex flex-wrap items-center gap-3">
     <label className="relative min-w-48 flex-1"><span className="sr-only">{label}</span><Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" aria-hidden /><Field type="search" value={value} onChange={e => onChange(e.target.value)} placeholder="이름으로 검색" className="pl-9" /></label>

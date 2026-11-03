@@ -1,6 +1,5 @@
 "use client";
 
-import { DashboardNavigation } from "@/components/ui/page-layout";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LayoutGrid, Link2, Loader2, Printer, RefreshCw, Share2, Unlink } from "lucide-react";
@@ -108,7 +107,6 @@ export default function SummaryDashboardClient() {
 
   return (
     <div className="summary-dashboard-print space-y-4 p-4 sm:p-6 lg:p-8 print:space-y-2 print:p-0">
-      <DashboardNavigation />
       {/*
         세로 A4 유지. 도넛/스파크라인은 화면·인쇄가 같은 recharts 컴포넌트를 쓰고 크기만
         print: 로 줄인다 — 인쇄용으로 별도 마크업을 갈아 끼우는 방식(CSS 토글, JS 분기 둘 다)은
@@ -124,7 +122,7 @@ export default function SummaryDashboardClient() {
       `}</style>
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between print:hidden">
         <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-semibold">성과 보고</h1>
+          <h1 className="text-2xl font-semibold">요약 대시보드</h1>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
             <p className="text-sm">진행중인 프로젝트의 등록 현황을 한눈에 모아봅니다</p>
             <p className="flex items-center gap-1.5 text-xs">
@@ -170,7 +168,7 @@ export default function SummaryDashboardClient() {
 
       {/* 인쇄에만 보이는 보고서 헤더 — 화면 UI 없이 제목·생성 시각만 문서에 남긴다 */}
       <div className="hidden print:block">
-        <h1 className="text-base font-semibold">성과 보고</h1>
+        <h1 className="text-base font-semibold">요약 대시보드</h1>
         {printedAtLabel && <p className="mt-0.5 text-[10px] text-muted-foreground">{printedAtLabel}</p>}
       </div>
 

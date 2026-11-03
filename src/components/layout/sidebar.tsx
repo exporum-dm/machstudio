@@ -38,7 +38,7 @@ export interface NavItem {
 }
 
 export const navItems: NavItem[] = [
-  { href: "/dashboard", icon: LayoutDashboard, label: "대시보드", aliases: ["/summary-dashboard"] },
+  { href: "/dashboard", icon: LayoutDashboard, label: "대시보드" },
   { href: "/collect", icon: Database, label: "등록" },
   { href: "/analytics", icon: BarChart3, label: "광고 성과" },
   { href: "/webinar", icon: Video, label: "웨비나" },
@@ -583,6 +583,18 @@ export function Sidebar({ expoHomepageEnabled = false }: SidebarProps = {}) {
 
       {/* 슈퍼어드민 + 알림 + What's new */}
       <div className="px-3 pb-2 space-y-1">
+        <Link
+          href="/summary-dashboard"
+          aria-current={pathname === "/summary-dashboard" ? "page" : undefined}
+          className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+            pathname === "/summary-dashboard"
+              ? "bg-violet-500/10 text-violet-500 font-medium shadow-sm"
+              : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+          }`}
+        >
+          <LayoutDashboard className="w-4 h-4" aria-hidden />
+          요약 대시보드
+        </Link>
         {isSuperAdmin && (
           <Link
             href="/admin"
