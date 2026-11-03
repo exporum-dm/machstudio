@@ -43,16 +43,17 @@ export default function ListView({ items, projectName, projectColor, showProject
 
       {/* 넓은 화면: 표 */}
       <div className={`hidden overflow-x-auto bg-card sm:block ${R.panel} ${FINISH.s1}`}>
-        <table className="w-full min-w-[760px] text-sm">
+        <table className="w-full min-w-[900px] text-sm">
           <thead className="border-b border-border text-left text-xs text-muted-foreground">
             <tr>
               <th className="w-40 px-3 py-2.5 font-medium">발행일</th>
               <th className="px-3 py-2.5 font-medium">제목</th>
               {showProject && <th className="w-36 px-3 py-2.5 font-medium">프로젝트</th>}
+              <th className="w-28 px-3 py-2.5 font-medium">캠페인</th>
               <th className="w-40 px-3 py-2.5 font-medium">채널</th>
-              <th className="w-24 px-3 py-2.5 font-medium">형식</th>
+              <th className="w-28 px-3 py-2.5 font-medium">형식</th>
               <th className="w-32 px-3 py-2.5 font-medium">상태</th>
-              <th className="w-24 px-3 py-2.5 font-medium">담당</th>
+              <th className="w-28 px-3 py-2.5 font-medium">담당</th>
             </tr>
           </thead>
           <tbody>
@@ -88,10 +89,11 @@ export default function ListView({ items, projectName, projectColor, showProject
                     </span>
                   </td>
                 )}
+                <td className="px-3 py-1 text-xs">{item.campaign}</td>
                 <td className="px-3 py-1">
                   <span className="flex flex-wrap gap-1">{item.channels.map((c) => <span key={c} className="rounded bg-secondary px-1.5 py-0.5 text-[11px]">{c}</span>)}</span>
                 </td>
-                <td className="px-3 py-1 text-xs">{item.format}</td>
+                <td className="px-3 py-1 text-xs">{item.formats.join(", ")}</td>
                 <td className="px-1 py-1">
                   <label className="relative flex items-center">
                     <span className="sr-only">{item.title} 상태</span>
@@ -105,7 +107,7 @@ export default function ListView({ items, projectName, projectColor, showProject
                     </select>
                   </label>
                 </td>
-                <td className="px-3 py-1 text-xs">{item.assigneeName}</td>
+                <td className="px-3 py-1 text-xs">{item.assignees.map((a) => a.name).join(", ")}</td>
               </tr>
             ))}
           </tbody>

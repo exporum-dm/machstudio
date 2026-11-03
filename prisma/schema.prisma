@@ -943,33 +943,40 @@ model WorkEntry {
 }
 
 /// 콘텐츠 캘린더 한 건 — 올릴 콘텐츠(2026-11-02). 프로젝트마다 캘린더가 있고 전체 보기는 합친다.
+/// 2026-11-03 노션 "DM 업무 관리 › 콘텐츠" 구조에 맞춤(형식·담당 여러 개, 캠페인, 노션 7단계 상태).
+/// DB 에는 예전 칸 format·assigneeId·assigneeName 이 남아 있다(쓰지 않음, 기본값이 있어 저장에 문제없음).
 model ContentItem {
-  id           String    @id @default(cuid())
-  workspaceId  String
+  id          String    @id @default(cuid())
+  workspaceId String
   /// NULL = 프로젝트 없이 팀 공통
-  projectId    String?
-  title        String
+  projectId   String?
+  title       String
   /// 발행일. NULL = 날짜 미정(아이디어)
-  date         DateTime? @db.Date
+  date        DateTime? @db.Date
   /// "HH:MM" 또는 ""
-  time         String    @default("")
-  /// "idea" | "draft" | "review" | "scheduled" | "published" (lib/content-calendar.ts)
-  status       String    @default("idea")
+  time        String    @default("")
+  /// waiting · planning · doing · design · confirm · done · stopped (lib/content-calendar.ts)
+  status      String    @default("waiting")
   /// 인스타그램·블로그·유튜브 … 여러 채널에 같이 올리기도 한다
-  channels     String[]  @default([])
-  /// 카드뉴스·릴스 …
-  format       String    @default("")
-  /// User 를 외래키로 물지 않는다 — 퇴사자 계정을 지워도 남아야 한다(업무일지와 같은 이유)
-  assigneeId   String?
-  /// 담당자 이름(지정할 때의 이름). 화면은 살아 있는 이름을 먼저 쓴다.
-  assigneeName String    @default("")
+  channels    String[]  @default([])
+  /// 카드뉴스·숏폼 비디오 … 여러 개
+  formats     String[]  @default([])
+  /// 사전등록 유도·티켓 판매 …
+  campaign    String    @default("")
+  /// [{ id: userId | null, name }] — User 를 외래키로 물지 않는다(퇴사자 계정을 지워도 이름이 남게).
+  /// id 가 없으면 계정 없는 사람(노션에서 가져온 퇴사자 등). 화면은 살아 있는 이름을 먼저 쓴다.
+  assignees   Json      @default("[]")
   /// 카피·메모
-  body         String    @default("")
+  body        String    @default("")
   /// 발행한 게시물 주소
-  link         String    @default("")
-  createdById  String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  link        String    @default("")
+  /// 노션에서 가져온 항목의 페이지 id — 다시 가져와도 겹치지 않게
+  notionId    String?   @unique
+  /// 노션 원본 주소(첨부 파일은 노션에 있다)
+  sourceUrl   String    @default("")
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   project   Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)

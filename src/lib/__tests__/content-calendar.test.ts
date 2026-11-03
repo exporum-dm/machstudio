@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-  channelOptions, compareItems, groupByDay, isValidMonth, isValidTime, matchesFilter, monthGrid, monthRange,
-  normalizeChannels, shiftMonth, type ContentItemDto,
+  EMPTY_FILTER, assigneeOptions, channelOptions, compareItems, groupByDay, isValidMonth, isValidTime, matchesFilter, monthGrid, monthRange,
+  normalizeTags, parseAssignees, shiftMonth, type ContentItemDto,
 } from "@/lib/content-calendar";
 
 const item = (over: Partial<ContentItemDto>): ContentItemDto => ({
-  id: "x", projectId: null, title: "제목", date: null, time: "", status: "idea", channels: [], format: "",
-  assigneeId: null, assigneeName: "", body: "", link: "", createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-01T00:00:00.000Z",
+  id: "x", projectId: null, title: "제목", date: null, time: "", status: "waiting", channels: [], formats: [], campaign: "",
+  assignees: [], body: "", link: "", sourceUrl: "", createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-01T00:00:00.000Z",
   ...over,
 });
-const all = { project: "all", statuses: [], channels: [], assignees: [], query: "" };
+const all = { project: "all", ...EMPTY_FILTER };
 
 describe("monthGrid", () => {
   it("일요일부터 토요일까지, 앞뒤 달 날짜로 채운다", () => {
@@ -50,9 +50,14 @@ describe("값 정리", () => {
     expect(isValidTime("24:00")).toBe(false);
     expect(isValidTime("9:30")).toBe(false);
   });
-  it("채널은 공백·중복을 걷어낸다", () => {
-    expect(normalizeChannels([" 인스타그램 ", "인스타그램", "", 3, "블로그"])).toEqual(["인스타그램", "블로그"]);
-    expect(normalizeChannels("인스타그램")).toEqual([]);
+  it("채널·형식은 공백·중복을 걷어낸다", () => {
+    expect(normalizeTags([" 인스타그램 ", "인스타그램", "", 3, "블로그"])).toEqual(["인스타그램", "블로그"]);
+    expect(normalizeTags("인스타그램")).toEqual([]);
+  });
+  it("담당자 JSON — 계정 없는 사람은 이름만, 이상한 값·중복은 버린다", () => {
+    expect(parseAssignees([{ id: "u1", name: "이창환" }, { id: null, name: "엄재호" }, { id: "u1", name: "x" }, 3, { name: "" }, null]))
+      .toEqual([{ id: "u1", name: "이창환" }, { id: null, name: "엄재호" }]);
+    expect(parseAssignees("x")).toEqual([]);
   });
 });
 
@@ -66,8 +71,15 @@ describe("필터", () => {
   it("채널은 하나라도 겹치면 통과, 담당 none 은 담당 없음", () => {
     expect(matchesFilter(item({ channels: ["블로그", "인스타그램"] }), { ...all, channels: ["인스타그램"] })).toBe(true);
     expect(matchesFilter(item({ channels: ["블로그"] }), { ...all, channels: ["인스타그램"] })).toBe(false);
-    expect(matchesFilter(item({ assigneeId: null }), { ...all, assignees: ["none"] })).toBe(true);
-    expect(matchesFilter(item({ assigneeId: "u1" }), { ...all, assignees: ["none"] })).toBe(false);
+    expect(matchesFilter(item({ assignees: [] }), { ...all, assignees: ["none"] })).toBe(true);
+    expect(matchesFilter(item({ assignees: [{ id: "u1", name: "a" }] }), { ...all, assignees: ["none"] })).toBe(false);
+    expect(matchesFilter(item({ assignees: [{ id: "u1", name: "a" }, { id: "u2", name: "b" }] }), { ...all, assignees: ["u2"] })).toBe(true);
+    expect(matchesFilter(item({ assignees: [{ id: null, name: "엄재호" }] }), { ...all, assignees: ["~엄재호"] })).toBe(true);
+  });
+  it("형식은 하나라도 겹치면, 캠페인 none 은 캠페인 없음", () => {
+    expect(matchesFilter(item({ formats: ["카드뉴스", "스토리"] }), { ...all, formats: ["스토리"] })).toBe(true);
+    expect(matchesFilter(item({ campaign: "" }), { ...all, campaigns: ["none"] })).toBe(true);
+    expect(matchesFilter(item({ campaign: "바이럴" }), { ...all, campaigns: ["티켓 판매"] })).toBe(false);
   });
   it("검색은 제목·내용을 대소문자 없이 본다", () => {
     expect(matchesFilter(item({ title: "STK 티저" }), { ...all, query: "stk" })).toBe(true);
@@ -94,5 +106,9 @@ describe("정렬·묶기", () => {
   });
   it("채널 후보 — 쓰인 기본 채널 먼저, 직접 적은 채널은 뒤", () => {
     expect(channelOptions([item({ channels: ["팝업", "블로그", "인스타그램"] })])).toEqual(["인스타그램", "블로그", "팝업"]);
+  });
+  it("담당 후보 — 팀원 + 계정 없는 사람", () => {
+    expect(assigneeOptions([item({ assignees: [{ id: null, name: "엄재호" }, { id: "u1", name: "이창환" }] })], [{ id: "u1", name: "이창환" }]))
+      .toEqual([{ value: "u1", label: "이창환" }, { value: "~엄재호", label: "엄재호 (계정 없음)" }]);
   });
 });
