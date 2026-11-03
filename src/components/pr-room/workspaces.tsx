@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   Archive,
   Clipboard,
+  Copy,
   Download,
   ExternalLink,
   FileText,
@@ -123,7 +124,7 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
     } catch (error) { toast.error(error instanceof Error ? error.message : "저장하지 못했어요"); await load(); }
   };
   const excludeMention = async (mention:PrMention) => {
-    if(!await confirm({ title: "이 조사 결과를 제외할까요?", description: "목록에서 제거하고 다음 조사에서도 제외합니다.", confirmLabel: "제외", tone: "danger" })) return;
+    if(!await confirm({ title: "무관한 내용인가요?", description: "목록에서 제거하고, 앞으로 비슷한 주제의 결과도 자동으로 걸러냅니다.", confirmLabel: "무관함 — 제외", tone: "danger" })) return;
     try {
     const excluded=Array.isArray(data.room.excludedMentionUrls)?data.room.excludedMentionUrls.filter((x):x is string=>typeof x==="string"):[];
     const rules=Array.isArray(data.room.excludedMentionRules)?data.room.excludedMentionRules as ExcludedMentionRule[]:[];
@@ -131,6 +132,21 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
     setData(await save(projectId,{mentions:mentions.filter(x=>x.id!==mention.id),excludedMentionUrls:[...new Set([...excluded,mention.url])],excludedMentionRules:[rule,...rules]}, data.room.updatedAt));
     toast.success("비슷한 조사 결과도 함께 제외하도록 기억했어요");
     } catch (error) { toast.error(error instanceof Error ? error.message : "제외하지 못했어요"); await load(); }
+  };
+  /**
+   * 같은 글이 다른 URL로 중복 수집됐을 때 쓰는 경로 — exclude(무관함)와 분리한 이유:
+   * 무관함 제외는 "제목·내용이 비슷한 결과도 앞으로 거른다"는 규칙을 학습한다. 중복은
+   * 내용 자체는 우리 행사와 관련이 있으므로, 그 규칙까지 학습하면 나중에 들어오는
+   * 진짜 관련 있는 새 언급까지 "비슷하다"는 이유로 조용히 걸러질 수 있다. 그래서 여기선
+   * 이 URL만 다시 안 나오게 기억하고, 유사 규칙은 남기지 않는다.
+   */
+  const duplicateMention = async (mention: PrMention) => {
+    if (!await confirm({ title: "중복된 결과를 삭제할까요?", description: "목록에서만 제거합니다 — 비슷한 다른 글까지 걸러내진 않아요.", confirmLabel: "중복 삭제", tone: "danger" })) return;
+    try {
+      const excluded = Array.isArray(data.room.excludedMentionUrls) ? data.room.excludedMentionUrls.filter((x): x is string => typeof x === "string") : [];
+      setData(await save(projectId, { mentions: mentions.filter((x) => x.id !== mention.id), excludedMentionUrls: [...new Set([...excluded, mention.url])] }, data.room.updatedAt));
+      toast.success("중복 결과를 삭제했어요");
+    } catch (error) { toast.error(error instanceof Error ? error.message : "삭제하지 못했어요"); await load(); }
   };
   /**
    * 수집된 뉴스·보도 언급을 "보도자료" 탭의 아카이브(pressReleases)로 복사해 둔다.
@@ -247,6 +263,7 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
             canWrite={data.canWrite}
             patch={patchMention}
             exclude={excludeMention}
+            duplicate={duplicateMention}
             archive={archiveMention}
           />
         </div>
@@ -507,12 +524,14 @@ function MentionList({
   canWrite,
   patch,
   exclude,
+  duplicate,
   archive,
 }: {
   mentions: PrMention[];
   canWrite: boolean;
   patch: (id: string, p: Partial<PrMention>) => Promise<void>;
   exclude: (mention:PrMention) => Promise<void>;
+  duplicate: (mention: PrMention) => Promise<void>;
   archive: (mention: PrMention) => Promise<void>;
 }) {
   const [category, setCategory] = useState<"all" | "press" | "sns">("all");
@@ -629,7 +648,8 @@ function MentionList({
                       아카이브에 저장
                     </Btn>
                   )}
-                  <Btn tone="ghost" onClick={()=>exclude(x)} aria-label="이 조사 결과 제외"><Trash2 className="h-4 w-4"/>제외</Btn>
+                  <Btn tone="ghost" onClick={()=>duplicate(x)} aria-label="중복된 결과 삭제"><Copy className="h-4 w-4"/>중복 삭제</Btn>
+                  <Btn tone="ghost" onClick={()=>exclude(x)} aria-label="무관한 결과 제외"><Trash2 className="h-4 w-4"/>무관함</Btn>
                 </div>
               )}
             </div>
@@ -780,9 +800,20 @@ function MentionSettings({
         .join(", ")
     : "";
   const [keywords, setKeywords] = useState(words);
+  const rules = Array.isArray(data.room.excludedMentionRules) ? data.room.excludedMentionRules as ExcludedMentionRule[] : [];
+  const removeRule = async (index: number) => {
+    try {
+      setData(await save(projectId, { excludedMentionRules: rules.filter((_, i) => i !== index) }, data.room.updatedAt));
+      toast.success("제외 규칙을 삭제했어요");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "삭제하지 못했어요");
+      await reload();
+    }
+  };
   return (
+    <div className="max-w-2xl space-y-5">
     <section
-      className={`${R.panel} ${FINISH.s1} max-w-2xl space-y-5 bg-card p-5`}
+      className={`${R.panel} ${FINISH.s1} space-y-5 bg-card p-5`}
     >
       <label className="block text-sm font-medium">
         행사명·검색어
@@ -822,6 +853,35 @@ function MentionSettings({
         최근 조사 · {dateTime(data.room.lastCollectedAt)} · 자동 수집 없이 버튼을 눌렀을 때만 조사합니다.
       </p>
     </section>
+    <section className={`${R.panel} ${FINISH.s1} space-y-3 bg-card p-5`}>
+      <div>
+        <h3 className="text-sm font-semibold">제외 규칙</h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          ‘무관함 — 제외’로 걸러낸 사례예요. 앞으로 제목·내용이 비슷한 결과도 자동으로 숨깁니다 — ‘중복 삭제’는 여기 남지 않아요.
+          관련 있는 내용이 잘못 걸러지고 있다면 여기서 지우세요.
+        </p>
+      </div>
+      {rules.length ? (
+        <ul className="space-y-2">
+          {rules.map((rule, index) => (
+            <li key={`${rule.title}-${index}`} className="flex items-start justify-between gap-3 rounded-lg bg-secondary/50 px-3 py-2 text-sm">
+              <div className="min-w-0">
+                <p className="truncate font-medium">{rule.title}</p>
+                {rule.excerpt && <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{rule.excerpt}</p>}
+              </div>
+              {data.canWrite && (
+                <Btn tone="ghost" onClick={() => removeRule(index)} aria-label="이 제외 규칙 삭제">
+                  <Trash2 className="h-4 w-4" />
+                </Btn>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-muted-foreground">아직 없어요.</p>
+      )}
+    </section>
+    </div>
   );
 }
 
