@@ -99,6 +99,7 @@ model Workspace {
   expoTemplates        ExpoTemplate[]
   mediaAssets          MediaAsset[]
   contentItems         ContentItem[]
+  reminders            Reminder[]
 }
 
 model WorkspaceMember {
@@ -974,6 +975,8 @@ model ContentItem {
   notionId    String?   @unique
   /// 노션 원본 주소(첨부 파일은 노션에 있다)
   sourceUrl   String    @default("")
+  /// 정기 알림이 만든 항목 "{reminderId}:YYYY-MM" — 같은 달에 두 번 만들지 않게
+  recurrenceKey String? @unique
   createdById String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -983,6 +986,38 @@ model ContentItem {
 
   @@index([workspaceId, date])
   @@index([projectId])
+}
+
+/// 정기 알림(2026-11-03) — 매달 기준일(마지막 업무일 / n번째 업무일)에 맞춰 업무일로 며칠 전에 정해진 사람에게 알린다.
+/// 매일 cron(/api/cron/daily, KST 09:00) → lib/reminders.ts. 업무일은 lib/business-days.ts(공휴일 포함).
+model Reminder {
+  id                 String   @id @default(cuid())
+  workspaceId        String
+  title              String
+  /// 알림에 붙는 한 줄(비어 있으면 제목만)
+  message            String   @default("")
+  /// "last_business_day" | "nth_business_day" (lib/reminder-schedule.ts)
+  schedule           String
+  /// nth_business_day 의 n
+  nth                Int      @default(1)
+  /// 기준일보다 업무일로 며칠 먼저 알릴지(0 = 그날)
+  leadBusinessDays   Int      @default(0)
+  /// 받을 사람 userId — 워크스페이스 멤버만 실제로 받는다
+  recipientIds       String[] @default([])
+  /// 콘텐츠 캘린더에 미리 넣어 둘 항목 { title, projectId, formats, channels, campaign, assigneeIds }. null = 알림만
+  contentTemplate    Json?
+  /// 콘텐츠를 몇 달 앞까지 넣어 둘지(이번 달 포함)
+  contentMonthsAhead Int      @default(3)
+  /// 알림을 보낸 마지막 달 "YYYY-MM" — 같은 달에 두 번 보내지 않게
+  lastNotifiedMonth  String?
+  active             Boolean  @default(true)
+  createdById        String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
 }
 
 /// 상세페이지 — 대회 공고와 같은 섹션 빌더로 만드는 독립 페이지. 아임웹에 /d/{id} 한 줄로 붙는다.
