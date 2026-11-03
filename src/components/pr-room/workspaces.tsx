@@ -866,7 +866,10 @@ function MentionSettings({
           {rules.map((rule, index) => (
             <li key={`${rule.title}-${index}`} className="flex items-start justify-between gap-3 rounded-lg bg-secondary/50 px-3 py-2 text-sm">
               <div className="min-w-0">
-                <p className="truncate font-medium">{rule.title}</p>
+                <span className="inline-block rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive">
+                  무관함 — 다른 행사·내용이라 제외
+                </span>
+                <p className="mt-1 truncate font-medium">{rule.title}</p>
                 {rule.excerpt && <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{rule.excerpt}</p>}
               </div>
               {data.canWrite && (
