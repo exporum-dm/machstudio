@@ -6,6 +6,7 @@ import { assembleWebinarEngagement } from "@/lib/webinar-scoring";
 import { resolveWebinarStatus } from "@/lib/webinar-status";
 import { buildMemo, parseMemo } from "@/lib/webinar-memo";
 import { buildSessionNumbering, resolveSessionRef } from "@/lib/webinar-sessions";
+import { normalizeRegistrationForm } from "@/lib/webinar-config";
 
 type DuplicateMode = "skip" | "include" | "update";
 
@@ -297,6 +298,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     })),
     surveyResponses,
     qaItems,
+    /* 등록폼 커스텀 항목 정의 — 명단 화면이 "열 선택"으로 켤 수 있게(CSV 와 같은 목록·순서).
+       끈 항목도 넣는다: 예전에 받은 값이 화면에서 사라지지 않게. */
+    customFields: normalizeRegistrationForm(webinar.config, { includeDisabled: true }).fields
+      .filter((f) => !f.system)
+      .map((f) => ({ key: f.key, label: f.label })),
   });
 }
 
