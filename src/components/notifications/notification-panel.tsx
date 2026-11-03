@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bell, Check, X, UserPlus, ShieldCheck, UserMinus, Database, Sparkles } from "lucide-react";
+import { Bell, Check, X, UserPlus, ShieldCheck, UserMinus, Database, Sparkles, CalendarClock } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { useWorkspace } from "@/contexts/workspace";
@@ -20,6 +20,10 @@ interface NotificationData {
   // REPORT_SENT
   reportName?: string;
   dashboardId?: string;
+  // REMINDER — 정기 알림(lib/reminders.ts)
+  title?: string;
+  when?: string;
+  href?: string | null;
   // generic fallback
   message?: string;
   [k: string]: unknown;
@@ -191,6 +195,27 @@ function NotificationItem({ n, onAction }: { n: Notification; onAction: () => vo
     );
   }
 
+  if (n.type === "REMINDER") {
+    const inner = (
+      <div className={`p-4 rounded-2xl border transition-colors ${n.read ? "border-border bg-background" : "border-amber-400/30 bg-amber-500/5"}`}>
+        <div className="flex items-start gap-3">
+          <div className="w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0 mt-0.5">
+            <CalendarClock className="w-4 h-4" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold leading-snug">{n.data.title ?? "정기 알림"}</p>
+            {n.data.message && n.data.message !== n.data.title && <p className="text-sm leading-snug mt-0.5">{n.data.message}</p>}
+            <p className="text-xs text-muted-foreground mt-0.5">{n.data.when ? `${n.data.when} · ` : ""}{timeAgo(n.createdAt)}</p>
+          </div>
+          {!n.read && <div className="w-2 h-2 rounded-full bg-amber-500 shrink-0 mt-1.5" />}
+        </div>
+      </div>
+    );
+    return typeof n.data.href === "string" && n.data.href.startsWith("/")
+      ? <Link href={n.data.href} className="block">{inner}</Link>
+      : inner;
+  }
+
   // Generic fallback — 알 수 없는 타입도 표시 (안 보이는 것보단 낫게)
   return (
     <div className={`p-4 rounded-2xl border transition-colors ${n.read ? "border-border bg-background" : "border-violet-400/20 bg-violet-500/5"}`}>
@@ -266,7 +291,7 @@ export function NotificationPanel({ sidebarWidth = 248 }: Props) {
         <Bell className="w-4 h-4 shrink-0" />
         <span>알림</span>
         {unreadCount > 0 && (
-          <span className="ml-auto flex items-center justify-center w-5 h-5 rounded-full bg-violet-500 text-white text-[10px] font-semibold shrink-0">
+          <span aria-label={`새 알림 ${unreadCount}개`} className="ml-auto flex items-center justify-center w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-semibold shrink-0">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}

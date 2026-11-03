@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { collectAllBriefs } from "@/lib/brief/collect";
+import { runReminders } from "@/lib/reminders";
 
 // 브리프 수집이 바깥 사이트 여러 곳을 읽으므로 기본 시간 제한보다 넉넉히.
 export const maxDuration = 60;
@@ -66,6 +67,13 @@ export async function GET(request: Request) {
     }));
   } catch (e) {
     result.briefCollect = { error: e instanceof Error ? e.message : String(e) };
+  }
+
+  // 5) 정기 알림 — 월간 엑스포럼 업로드·광고비 충전금 정산처럼 매달 업무일 기준으로 알린다(KST 09:00).
+  try {
+    result.reminders = await runReminders();
+  } catch (e) {
+    result.reminders = { error: e instanceof Error ? e.message : String(e) };
   }
 
   return NextResponse.json({ ok: true, ...result });

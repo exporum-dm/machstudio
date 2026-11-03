@@ -9,6 +9,7 @@ import { useMemo, useState } from "react";
 import { CalendarOff, Plus } from "lucide-react";
 import { FINISH, R, SELECTED_TEXT } from "@/components/ui/primitives";
 import { CONTENT_STATUSES, WEEKDAYS, dayLabel, groupByDay, monthGrid, monthKey } from "@/lib/content-calendar";
+import { holidayName } from "@/lib/business-days";
 import { CalendarChip, DRAG_TYPE, ItemCard, StatusDot, type ViewProps } from "./parts";
 
 export default function CalendarView({ items, month, today, projectName, projectColor, showProject, onOpen, onCreate, onPatch }: ViewProps & {
@@ -57,6 +58,9 @@ export default function CalendarView({ items, month, today, projectName, project
               const isToday = day === today;
               const isOver = overDay === day;
               const dayNum = Number(day.slice(8));
+              // 공휴일·일요일은 빨간 날 — 한눈에 쉬는 날이 보이게
+              const holiday = holidayName(day);
+              const red = holiday || i === 0;
               return (
                 <div
                   key={day}
@@ -66,8 +70,11 @@ export default function CalendarView({ items, month, today, projectName, project
                 >
                   <div className="mb-1 flex items-center justify-between">
                     <span className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-xs tabular-nums ${
-                      isToday ? "bg-violet-500 font-semibold text-white" : !inMonth ? "text-muted-foreground/60" : i === 0 ? "text-rose-500" : i === 6 ? "text-sky-600 dark:text-sky-400" : ""
+                      isToday ? `${red ? "bg-rose-500" : "bg-violet-500"} font-semibold text-white`
+                        : red ? `font-medium text-rose-500 ${inMonth ? "" : "opacity-50"}`
+                        : !inMonth ? "text-muted-foreground/60" : i === 6 ? "text-sky-600 dark:text-sky-400" : ""
                     }`}>{dayNum === 1 ? `${Number(day.slice(5, 7))}/${dayNum}` : dayNum}</span>
+                    {holiday && <span className={`mr-auto ml-1 hidden min-w-0 truncate text-[10px] text-rose-500 sm:inline ${inMonth ? "" : "opacity-50"}`}>{holiday}</span>}
                     <button
                       type="button"
                       aria-label={`${dayLabel(day)}에 콘텐츠 추가`}
@@ -98,7 +105,9 @@ export default function CalendarView({ items, month, today, projectName, project
       {/* 좁은 화면: 고른 날 */}
       <section className="space-y-2 sm:hidden" aria-label={`${dayLabel(selectedDay)} 콘텐츠`}>
         <div className="flex items-center justify-between">
-          <h2 className={`text-sm font-semibold ${selectedDay === today ? SELECTED_TEXT : ""}`}>{dayLabel(selectedDay)}</h2>
+          <h2 className={`text-sm font-semibold ${selectedDay === today ? SELECTED_TEXT : holidayName(selectedDay) ? "text-rose-500" : ""}`}>
+            {dayLabel(selectedDay)}{holidayName(selectedDay) && <span className="ml-1.5 text-xs font-normal">{holidayName(selectedDay)}</span>}
+          </h2>
           <button type="button" onClick={() => onCreate({ date: selectedDay })} className={`inline-flex min-h-9 items-center gap-1 px-3 text-sm text-muted-foreground hover:bg-secondary hover:text-foreground ${R.control}`}>
             <Plus className="h-4 w-4" aria-hidden />추가
           </button>
