@@ -21,6 +21,7 @@ import { FIELD_CLS, R } from "@/components/ui/primitives";
 import { ColorField, BRAND_PRESETS } from "@/components/ui/ColorField";
 import { extractDominantColor } from "@/lib/color-extract";
 import RegistrationTimesSection from "./RegistrationTimesSection";
+import FormLocaleSection from "./FormLocaleSection";
 
 export interface VenueInfo {
   eventStart?: string;
@@ -217,6 +218,12 @@ export default function InfoTab({
         onChange={(hex) => patch({ accentColor: hex })}
         presets={BRAND_PRESETS}
       />
+
+      {formConfig !== undefined && (
+        <div className="border-t border-border pt-6">
+          <FormLocaleSection sourceId={sourceId} formConfig={formConfig} onSaved={onFormConfigSaved} />
+        </div>
+      )}
 
       {formConfig !== undefined && (
         <div className="border-t border-border pt-6">

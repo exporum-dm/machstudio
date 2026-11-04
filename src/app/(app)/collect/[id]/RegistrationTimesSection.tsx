@@ -24,6 +24,7 @@ import {
   toLocalized,
   type RegistrationSchedule,
 } from "@/lib/collect-form-config";
+import { formCopy } from "@/lib/collect-form/copy";
 
 /** 지금 일정으로 본 상태 한 줄 — 저장 전에도 바로 바뀐다 */
 function schedulePreview(schedule: RegistrationSchedule, now: Date): { tone: "ok" | "warn" | "muted"; text: string } {
@@ -98,6 +99,8 @@ export default function RegistrationTimesSection({
   // 상위(기본 정보 머리)의 저장 표시 하나에 합친다
   useEffect(() => { onStateChange?.(state, retry); }, [onStateChange, state, retry]);
 
+  // 비웠을 때 나가는 기본 문구 — "폼 언어"에 따라 다르다(placeholder 가 실제 화면과 같아야 한다)
+  const copy = formCopy(config.defaultLocale);
   const eventDates = config.eventInfo.eventDates.length > 0 ? config.eventInfo.eventDates : dateRange(eventStart, eventEnd);
   const preview = schedulePreview(schedule, new Date());
   const badRows = schedule.onsite.filter((w) => w.open >= w.close);
@@ -197,14 +200,26 @@ export default function RegistrationTimesSection({
           )}
         </div>
 
-        <Row label="사전등록 마감 후 안내 제목" hint="비우면: Pre-registration is closed">
-          <input value={localize(schedule.betweenTitle, DEFAULT_LOCALE)} onChange={(e) => setSchedule({ betweenTitle: toLocalized(e.target.value) })} placeholder="Pre-registration is closed" className={`${FIELD_CLS} h-9`} />
+        <Row label="사전등록 마감 후 안내 제목" hint={`사전등록이 끝나고 다음 현장등록 전까지 보여요. 비우면: ${copy.between.title}`}>
+          <input value={localize(schedule.betweenTitle, DEFAULT_LOCALE)} onChange={(e) => setSchedule({ betweenTitle: toLocalized(e.target.value) })} placeholder={copy.between.title} className={`${FIELD_CLS} h-9`} />
         </Row>
-        <Row label="사전등록 마감 후 안내 본문" hint="{next} 자리에 다음 현장등록 시작 시각이 들어가요. 비우면 기본 문구를 써요.">
+        <Row label="사전등록 마감 후 안내 본문" hint="{next} 자리에 다음 현장등록 시작 시각이 들어가요. 비우면 기본 문구를 써요. 등록 폼 탭 미리보기의 '사전 마감'으로 확인할 수 있어요.">
           <textarea
             value={localize(schedule.betweenBody, DEFAULT_LOCALE)}
             onChange={(e) => setSchedule({ betweenBody: toLocalized(e.target.value) })}
-            placeholder="On-site registration opens {next}. Please register at the venue."
+            placeholder={copy.between.body}
+            rows={2}
+            className={`${FIELD_CLS} resize-y`}
+          />
+        </Row>
+        <Row label="등록 종료 안내 제목" hint={`모든 등록이 끝난 뒤·수동으로 마감했을 때 보여요. 비우면: ${copy.closed.title}`}>
+          <input value={localize(schedule.closedTitle, DEFAULT_LOCALE)} onChange={(e) => setSchedule({ closedTitle: toLocalized(e.target.value) })} placeholder={copy.closed.title} className={`${FIELD_CLS} h-9`} />
+        </Row>
+        <Row label="등록 종료 안내 본문" hint="비우면 기본 문구를 써요. 등록 폼 탭 미리보기의 '마감'으로 확인할 수 있어요.">
+          <textarea
+            value={localize(schedule.closedBody, DEFAULT_LOCALE)}
+            onChange={(e) => setSchedule({ closedBody: toLocalized(e.target.value) })}
+            placeholder={copy.closed.body}
             rows={2}
             className={`${FIELD_CLS} resize-y`}
           />

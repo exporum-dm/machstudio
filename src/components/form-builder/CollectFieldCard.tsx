@@ -73,6 +73,8 @@ export function CollectFieldCard({
   const labelText = localize(field.label, DEFAULT_LOCALE);
   const optionTexts = field.options.map((o) => localize(o, DEFAULT_LOCALE));
   const isChoice = CHOICE_TYPES.includes(field.type);
+  // 기타도 하나의 선택지로 센다 — 최대 개수가 이 수 이상이면 제한이 없는 것과 같다(정규화가 버린다)
+  const choiceCount = optionTexts.filter((t) => t.trim()).length + (field.allowOther ? 1 : 0);
   // 저장 직전이 아니라 **입력 시점에** 알린다(AGENTS.md: 검증은 해당 필드 바로 아래 인라인).
   const keyError = !field.key
     ? "저장 키가 필요해요"
@@ -180,6 +182,37 @@ export function CollectFieldCard({
               ownerTitle={labelText}
               listId={`copt:${field.id}`}
             />
+            {/* 기타(직접 입력) · 최대 선택 개수 — 저장·검증은 이미 받았는데 고를 곳이 없었다(2026-11-03) */}
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+              <label className="flex select-none items-center gap-1.5 text-[11px] text-muted-foreground">
+                <Switch checked={field.allowOther === true} onChange={(v) => patch({ allowOther: v ? true : undefined })} label={`${labelText || "항목"} 기타 직접 입력`} />
+                &ldquo;기타(직접 입력)&rdquo; 넣기
+              </label>
+              {field.type === "multiple" && (
+                <label className="flex select-none items-center gap-1.5 text-[11px] text-muted-foreground">
+                  최대
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    value={field.maxSelect ?? ""}
+                    onChange={(e) => {
+                      const n = Number.parseInt(e.target.value, 10);
+                      patch({ maxSelect: Number.isInteger(n) && n >= 1 ? n : undefined });
+                    }}
+                    placeholder="제한 없음"
+                    aria-label={`${labelText || "항목"} 최대 선택 개수`}
+                    className={`${FIELD_CLS} h-7 w-24 text-[12px]`}
+                  />
+                  개까지 선택
+                </label>
+              )}
+            </div>
+            {field.type === "multiple" && field.maxSelect != null && field.maxSelect >= choiceCount && (
+              <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+                선택지가 {choiceCount}개라 {field.maxSelect}개 제한은 걸리지 않아요 — 선택지 수보다 작게 적어 주세요.
+              </p>
+            )}
             {(field.type === "select" || field.type === "radio") && onMakeBranch && (
               <label className="mt-2 flex select-none items-center gap-1.5 text-[11px] text-muted-foreground">
                 <Switch checked={isBranchKey} onChange={onMakeBranch} label="이 항목으로 유형 분기" />

@@ -32,10 +32,13 @@ import {
 } from "@/lib/collect-form-config";
 import { getPublicAppOrigin } from "@/lib/app-url";
 
-const PREVIEW_STATES: Array<{ id: RegistrationStatus | "auto"; label: string }> = [
+/** "between" = 사전등록이 끝나고 현장등록 전 — 등록 시간을 켰을 때만 버튼이 보인다 */
+type PreviewState = RegistrationStatus | "auto" | "between";
+const PREVIEW_STATES: Array<{ id: PreviewState; label: string }> = [
   { id: "auto", label: "지금 상태" },
   { id: "before", label: "접수 전" },
   { id: "open", label: "접수 중" },
+  { id: "between", label: "사전 마감" },
   { id: "closed", label: "마감" },
 ];
 
@@ -63,7 +66,7 @@ export default function FormBuilderTab({
 }) {
   // 저장된 값은 어떤 모양이든 올 수 있다 — 화면은 정규화된 것만 본다.
   const [config, setConfig] = useState<CollectFormConfig>(() => normalizeCollectForm(initialConfig));
-  const [previewState, setPreviewState] = useState<RegistrationStatus | "auto">("auto");
+  const [previewState, setPreviewState] = useState<PreviewState>("auto");
 
   const onSavedRef = useRef(onSaved);
   useEffect(() => {
@@ -210,7 +213,7 @@ export default function FormBuilderTab({
       {/* 미리보기는 임베드와 같은 모델·가시성 규칙을 읽는다 — 각자 그리면 반드시 갈라진다. */}
       <aside className="space-y-2 lg:sticky lg:top-4 lg:self-start">
         <div className="flex items-center gap-1">
-          {PREVIEW_STATES.map((s) => (
+          {PREVIEW_STATES.filter((s) => s.id !== "between" || config.schedule.enabled).map((s) => (
             <button
               key={s.id}
               type="button"
@@ -225,7 +228,8 @@ export default function FormBuilderTab({
           <CollectFormRuntime
             config={config}
             sourceId={sourceId}
-            forceStatus={previewState === "auto" ? undefined : previewState}
+            forceStatus={previewState === "auto" ? undefined : previewState === "between" ? "closed" : previewState}
+            forcePhase={previewState === "between" ? "between" : undefined}
           />
         </div>
         <p className="px-1 text-[11px] leading-snug text-muted-foreground/70">

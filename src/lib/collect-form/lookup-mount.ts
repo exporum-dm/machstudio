@@ -15,31 +15,9 @@ import { COUNTRY_DIALS, flagEmoji, isKnownCountry } from "@/lib/collect-country"
 import type { CollectFormConfig } from "@/lib/collect-form-config";
 import { visitorBadgeCssVars, visitorBadgePalette } from "@/lib/collect-badge";
 import { downloadTicketImage } from "./ticket-image";
+import { lookupCopy } from "./copy";
 
 
-const COPY = {
-  title: "Find my QR",
-  desc: "Enter what you registered with.",
-  email: "Email",
-  phone: "Phone",
-  submit: "Find my registration",
-  searching: "Searching…",
-  /** 못 찾았을 때는 **이 문구 하나로만** 끝낸다(§10.2) — 이유를 나누면 열거 힌트가 된다. */
-  notFound: "We couldn't find a registration with that information.",
-  needSomething: "Enter your email or phone number first.",
-  networkError: "Something went wrong. Please try again.",
-  saveImage: "Save as Image",
-  saveHint: "* If the button doesn't work, please take a screenshot.",
-  searchAgain: "Search Again",
-  tooMany: "Too many attempts. Please try again in a few minutes.",
-  regNoLabel: "Show this at the venue",
-  noQr: "Your registration was found. We'll email your ticket again.",
-  needBoth: "Enter both your email and phone number.",
-  needEmail: "Your email is missing.",
-  needPhone: "Your phone number is missing.",
-  ticketLink: "Open my ticket page →",
-  previewFlag: "Preview — nothing is saved",
-} as const;
 
 export interface MountLookupOptions {
   mount: HTMLElement;
@@ -83,6 +61,8 @@ export function mountCollectLookup(opts: MountLookupOptions): LookupHandle {
   ensureFormStyles(opts.styleRoot);
   const { config, mount } = opts;
   const preview = opts.preview === true;
+  // 기본 문구 — "기본 정보 › 폼 언어"(config.defaultLocale)를 따른다(copy.ts)
+  const COPY = lookupCopy(config.defaultLocale);
 
   const useEmail = config.lookup.fields.includes("email");
   const usePhone = config.lookup.fields.includes("phone");
@@ -207,8 +187,8 @@ export function mountCollectLookup(opts: MountLookupOptions): LookupHandle {
       (collect-lookup 의 maskEmail/maskPhone). 가리는 이유는 그쪽 주석 참고.
     */
     const rows: [string, string][] = [
-      ["Phone", view.maskedPhone],
-      ["E-mail", view.maskedEmail],
+      [COPY.phone, view.maskedPhone],
+      [COPY.email, view.maskedEmail],
     ].filter(([, value]) => !!value) as [string, string][];
     for (const extra of view.extras) rows.push([extra.label, extra.value]);
 
