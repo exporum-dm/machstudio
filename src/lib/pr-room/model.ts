@@ -131,12 +131,46 @@ export function parseClaudeResearch(value: string): ClaudeResearchMention[] {
 
 export const releaseLabel:Record<PressRelease["type"],string>={advance:"개최 예정",opening:"개막",closing:"성료",statement:"공식 입장",archived:"아카이브"};
 
-export function buildPressRelease(type:PressRelease["type"],a:PressAnswers){
-  const name=a.eventName.trim()||"행사";const label=releaseLabel[type];
-  const title=type==="statement"?`${name}, 관련 공식 입장 발표`:`${name}, ${label}…${a.purpose.trim()||"주요 소식 공개"}`;
-  const lead=type==="advance"?`${a.organizers}는 ${a.datePlace}에 ‘${name}’을 개최한다고 밝혔다.`:type==="opening"?`${a.organizers}가 주최하는 ‘${name}’이 ${a.datePlace}에 개막했다.`:type==="closing"?`‘${name}’이 ${a.datePlace} 일정을 마치고 성료했다.`:`${a.organizers}는 ‘${name}’과 관련해 다음과 같이 공식 입장을 밝혔다.`;
-  const paragraphs=[lead,a.purpose&&`이번 ${type==="statement"?"입장 발표":"행사"}의 핵심은 ${a.purpose.trim()}이다.`,a.highlights&&`주요 내용은 ${a.highlights.trim()}이다. ${a.audience?`${a.audience.trim()}을 대상으로 마련됐다.`:""}`,a.figures&&`확인된 주요 성과와 수치는 ${a.figures.trim()}이다.`,a.quote&&`관계자는 “${a.quote.trim().replace(/^“|”$/g,"")}”라고 말했다.`,a.nextStep&&`향후 ${a.nextStep.trim()}을 추진할 계획이다.`,a.contact&&`문의: ${a.contact.trim()}`].filter(Boolean);
-  return{title,body:`[보도자료] ${title}\n\n${paragraphs.join("\n\n")}`};
+/**
+ * 질문 답변을 바로 문장 틀에 끼워 맞추는 매드리브스 생성기였던 buildPressRelease 를 대체한다.
+ * MACH 서버에는 LLM 호출이 전혀 없어서(Resend 같은 외부 API만 연동돼 있다) 그 함수는 AI 글쓰기가
+ * 아니라 고정 문장 조합이었다 — 품질이 기계적일 수밖에 없었다. "AI 웹 조사" 탭과 같은 패턴으로,
+ * 여기서는 프롬프트만 만들고 실제 집필은 사용자가 연 Claude 세션에 맡긴다.
+ */
+export function buildPressReleasePrompt({
+  type,
+  answers,
+  references,
+}: {
+  type: PressRelease["type"];
+  answers: PressAnswers;
+  references: PressRelease[];
+}) {
+  const label = releaseLabel[type];
+  const facts = [
+    `행사명: ${answers.eventName.trim()}`,
+    `일시·장소: ${answers.datePlace.trim()}`,
+    `주최·주관: ${answers.organizers.trim()}`,
+    `핵심 메시지: ${answers.purpose.trim()}`,
+    answers.highlights.trim() && `주요 프로그램·내용: ${answers.highlights.trim()}`,
+    answers.audience.trim() && `대상: ${answers.audience.trim()}`,
+    answers.figures.trim() && `공개 가능한 수치·성과: ${answers.figures.trim()}`,
+    answers.quote.trim() && `인용할 관계자 발언: ${answers.quote.trim()}`,
+    answers.nextStep.trim() && `향후 계획: ${answers.nextStep.trim()}`,
+    answers.contact.trim() && `언론 문의처: ${answers.contact.trim()}`,
+  ].filter(Boolean).join("\n");
+  const refText = references.length
+    ? references.slice(0, 3).map((r, i) => `--- 참고 보도자료 ${i + 1}${r.sourceOutlet ? ` (${r.sourceOutlet} 게재)` : ""} ---\n${r.body.slice(0, 1500)}`).join("\n\n")
+    : "없음 — 일반적인 국문 보도자료 형식(제목, 리드 문단, 본문, 문의처)을 따르세요.";
+  return `아래 사실관계로 ${label} 보도자료를 작성해 주세요. 확인된 사실만 쓰고, 추측이나 과장된 수식어는 넣지 마세요.
+
+[사실관계]
+${facts}
+
+[참고 — 과거에 실제로 배포한 보도자료. 톤·문장 구조만 참고하고 사실관계는 반드시 위 것만 쓰세요]
+${refText}
+
+제목 한 줄, 빈 줄, 그다음 본문 순서로 평문만 출력하세요. 마크다운 기호나 설명 문구 없이 보도자료 본문만 주세요.`;
 }
 
 export function analyzeMention(title: string) {

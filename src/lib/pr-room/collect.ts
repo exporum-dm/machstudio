@@ -139,7 +139,30 @@ export function parseSocialPage(url: string, html: string): Found | null {
   };
 }
 
-async function enrichRows(rows:Found[]){const enriched:Found[]=[];for(let i=0;i<rows.length;i+=24){const batch=await Promise.all(rows.slice(i,i+24).map(async row=>{const r=await safeFetchText(row.url,{maxBytes:1_200_000,timeoutMs:8_000});if(!r)return row;const social=parseSocialPage(r.finalUrl,r.text);if(/instagram\.com|tiktok\.com/i.test(r.finalUrl)&&social)return{...row,...social,publishedAt:social.publishedAt??row.publishedAt};const source=meta(r.text,"og:site_name")||row.source;const author=meta(r.text,"author")||meta(r.text,"article:author")||decodeText(r.text.match(/"author"\s*:\s*\{[^}]*"name"\s*:\s*"([^"]+)"/i)?.[1]??"");const title=meta(r.text,"og:title")||meta(r.text,"twitter:title")||row.title;return{...row,title:cleanText(title),url:r.finalUrl,source,author:author||row.author,excerpt:metaDescription(r.text)||row.excerpt}}));enriched.push(...batch)}return enriched}
+// Google 뉴스 리다이렉트(news.google.com/rss/articles/...)는 스크립트 리다이렉트라 단순 fetch 로는
+// 실제 기사로 못 따라갈 때가 있다 — 그러면 og 메타가 Google 뉴스 자체 설명("Google 뉴스가 전세계
+// 매체로부터 종합한 최신 뉴스")으로 덮어써 제목이 깨진다. RSS 에서 이미 파싱한 제목·출처가 더
+// 정확하니, 리다이렉트가 안 풀렸으면 그걸 덮어쓰지 않는다.
+export function isUnresolvedGoogleNews(url: string) { try { return /(^|\.)news\.google\.com$/.test(new URL(url).hostname); } catch { return false; } }
+// 같은 소식이 Google 뉴스 리다이렉트 URL만 바뀌어 재수집되는 경우가 많다 — 제목(공백·문장부호
+// 차이는 무시)이 같으면 같은 글로 보고 더 정보가 많은 쪽만 남긴다. 완전히 같은 글자일 때만
+// 합치므로, 내용이 다른 글이 제목만 비슷해서 잘못 합쳐질 위험은 없다.
+function titleScore(row: Found) {
+  return (row.excerpt?.length ?? 0) + (row.comments?.length ?? 0) * 50 + (row.metrics ? 20 : 0) + (isUnresolvedGoogleNews(row.url) ? -1000 : 0);
+}
+export function dedupeByTitle(rows: Found[]): Found[] {
+  const byKey = new Map<string, Found>();
+  const noKey: Found[] = [];
+  for (const row of rows) {
+    const key = compact(row.title);
+    if (!key) { noKey.push(row); continue; }
+    const existing = byKey.get(key);
+    byKey.set(key, !existing || titleScore(row) > titleScore(existing) ? row : existing);
+  }
+  return [...byKey.values(), ...noKey];
+}
+
+async function enrichRows(rows:Found[]){const enriched:Found[]=[];for(let i=0;i<rows.length;i+=24){const batch=await Promise.all(rows.slice(i,i+24).map(async row=>{const r=await safeFetchText(row.url,{maxBytes:1_200_000,timeoutMs:8_000});if(!r)return row;if(isUnresolvedGoogleNews(r.finalUrl))return{...row,url:r.finalUrl};const social=parseSocialPage(r.finalUrl,r.text);if(/instagram\.com|tiktok\.com/i.test(r.finalUrl)&&social)return{...row,...social,publishedAt:social.publishedAt??row.publishedAt};const source=meta(r.text,"og:site_name")||row.source;const author=meta(r.text,"author")||meta(r.text,"article:author")||decodeText(r.text.match(/"author"\s*:\s*\{[^}]*"name"\s*:\s*"([^"]+)"/i)?.[1]??"");const title=meta(r.text,"og:title")||meta(r.text,"twitter:title")||row.title;return{...row,title:cleanText(title),url:r.finalUrl,source,author:author||row.author,excerpt:metaDescription(r.text)||row.excerpt}}));enriched.push(...batch)}return enriched}
 
 /**
  * 사람이 직접 찾은 언급(로그인 뒤에만 보이는 Threads 글 등)을 URL 하나로 등록할 때, 제목·요약을
@@ -151,6 +174,7 @@ export async function previewMentionUrl(url: string): Promise<Found | null> {
   const social = SOCIAL_SOURCES.find((s) => host.includes(s.domain));
   const r = await safeFetchText(url, { maxBytes: 1_200_000, timeoutMs: 8_000 });
   if (!r) return null;
+  if (isUnresolvedGoogleNews(r.finalUrl)) return null;
   if (/instagram\.com|tiktok\.com/i.test(r.finalUrl)) {
     const parsed = parseSocialPage(r.finalUrl, r.text);
     if (parsed) return { ...parsed, url: r.finalUrl };
@@ -335,7 +359,7 @@ export async function collectPrRoom(roomId: string, now = new Date()) {
       }
     }),
   );
-  const rows = (await enrichRows(settled.flat())).filter(row=>!excluded.has(row.url)&&!isSimilarToExcluded(row,excludedRules,queries));
+  const rows = dedupeByTitle((await enrichRows(settled.flat())).filter(row=>!excluded.has(row.url)&&!isSimilarToExcluded(row,excludedRules,queries)));
   const naverRetentionCutoff = now.getTime() - 21 * 86_400_000;
   const previous = (
     Array.isArray(room.mentions)
@@ -359,10 +383,15 @@ export async function collectPrRoom(roomId: string, now = new Date()) {
       : { ...item, title: cleanText(item.title) };
   });
   const known = new Set(previous.map((x) => x.url));
+  const knownTitles = new Set(previous.map((x) => compact(x.title)).filter(Boolean));
   const added: PrMention[] = [];
   for (const row of rows) {
     if (known.has(row.url)) continue;
+    const titleKey = compact(row.title);
+    // 같은 글이 Google 뉴스 리다이렉트 URL만 바뀌어 다시 걸렸다 — 새 글로 추가하지 않는다.
+    if (titleKey && knownTitles.has(titleKey)) continue;
     known.add(row.url);
+    if (titleKey) knownTitles.add(titleKey);
     added.push({
       id: randomUUID(),
       title: row.title,
