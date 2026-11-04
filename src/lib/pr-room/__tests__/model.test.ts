@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { analyzeMention, buildClaudeResearchPrompt, buildPressRelease, parseClaudeResearch } from "../model";
-import { isRelevantMention, isSimilarToExcluded, parseNaverNews, parseSocialPage, publicComments } from "../collect";
+import { analyzeMention, buildClaudeResearchPrompt, buildPressReleasePrompt, parseClaudeResearch } from "../model";
+import { dedupeByTitle, isRelevantMention, isSimilarToExcluded, isUnresolvedGoogleNews, parseNaverNews, parseSocialPage, publicComments } from "../collect";
 
 describe("홍보실 조사", () => {
   it("부정 이슈를 보수적으로 올린다", () => expect(analyzeMention("운영 부실 논란")).toMatchObject({ sentiment: "negative", status: "issue" }));
@@ -48,9 +48,42 @@ it("제외한 오탐과 주제가 비슷한 새 결과도 제외한다",()=>{
   expect(isSimilarToExcluded({title:"코리아 엑스포 LA K뷰티 개막",excerpt:"미국 바이어 상담",channel:"sns"},rules,["코리아 엑스포 LA"])).toBe(false);
 });
 
-it("질문 답변으로 보도자료 전체 원고를 만든다",()=>{
-  const result=buildPressRelease("opening",{eventName:"코리아 엑스포 LA",datePlace:"10월 22일 LA",organizers:"엑스포럼",purpose:"한국 소비재의 미국 진출",highlights:"85개 기업 전시",audience:"바이어와 소비자",figures:"사전등록 4천 명",quote:"현지 접점을 넓히겠다",contact:"홍보팀",nextStep:"후속 상담"});
-  expect(result.body).toContain("개막했다");expect(result.body).toContain("문의: 홍보팀");
+it("질문 답변과 참고 보도자료로 Claude에 보낼 프롬프트를 만든다",()=>{
+  const prompt=buildPressReleasePrompt({type:"opening",answers:{eventName:"코리아 엑스포 LA",datePlace:"10월 22일 LA",organizers:"엑스포럼",purpose:"한국 소비재의 미국 진출",highlights:"85개 기업 전시",audience:"바이어와 소비자",figures:"사전등록 4천 명",quote:"현지 접점을 넓히겠다",contact:"홍보팀",nextStep:"후속 상담"},references:[{id:"r1",type:"archived",title:"과거 보도자료",body:"과거 보도자료 본문",updatedAt:"2026-01-01T00:00:00Z",sourceOutlet:"동아일보"}]});
+  expect(prompt).toContain("코리아 엑스포 LA");
+  expect(prompt).toContain("문의처: 홍보팀");
+  expect(prompt).toContain("동아일보");
+  expect(prompt).toContain("과거 보도자료 본문");
+});
+
+it("참고 보도자료가 없으면 일반 형식을 따르라고 안내한다",()=>{
+  const prompt=buildPressReleasePrompt({type:"advance",answers:{eventName:"행사",datePlace:"장소",organizers:"주최",purpose:"목적",highlights:"",audience:"",figures:"",quote:"",contact:"",nextStep:""},references:[]});
+  expect(prompt).toContain("일반적인 국문 보도자료 형식");
+});
+
+it("Google 뉴스 리다이렉트가 안 풀린 URL을 알아본다",()=>{
+  expect(isUnresolvedGoogleNews("https://news.google.com/rss/articles/CBMi...")).toBe(true);
+  expect(isUnresolvedGoogleNews("https://www.donga.com/news/Economy/article/1")).toBe(false);
+});
+
+it("같은 제목(문장부호만 다름)의 글이 여러 URL로 들어오면 더 정보가 많은 쪽만 남긴다",()=>{
+  const base = { source: "", channel: "press" as const, publishedAt: null };
+  const rows = [
+    { ...base, title: "'2026 코리아 엑스포 LA' 개막", url: "https://news.google.com/rss/articles/a", excerpt: "" },
+    { ...base, title: "‘2026 코리아 엑스포 LA’ 개막", url: "https://www.donga.com/news/1", excerpt: "본문 요약이 있는 쪽" },
+  ];
+  const result = dedupeByTitle(rows);
+  expect(result).toHaveLength(1);
+  expect(result[0].url).toBe("https://www.donga.com/news/1");
+});
+
+it("제목이 다른 글은 합치지 않는다",()=>{
+  const base = { source: "", channel: "press" as const, publishedAt: null, excerpt: "" };
+  const rows = [
+    { ...base, title: "코리아 엑스포 LA 개막", url: "https://a.example.com/1" },
+    { ...base, title: "코리아 엑스포 LA 폐막", url: "https://b.example.com/2" },
+  ];
+  expect(dedupeByTitle(rows)).toHaveLength(2);
 });
 
 describe("네이버 뉴스 검색",()=>{

@@ -24,7 +24,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   analyzeMention,
   buildClaudeResearchPrompt,
-  buildPressRelease,
+  buildPressReleasePrompt,
   parseClaudeResearch,
   releaseLabel,
   type PressAnswers,
@@ -958,7 +958,11 @@ export function PressWorkspace({ projectId }: { projectId: string }) {
   const releases = (
     Array.isArray(data.room.pressReleases) ? data.room.pressReleases : []
   ) as PressRelease[];
-  const generate = () => {
+  const references = releases.filter((r) => r.type === "archived");
+  const prompt = buildPressReleasePrompt({ type, answers, references });
+  // MACH 서버에는 LLM 호출이 없다(Resend 같은 외부 API만 연동) — "AI 웹 조사" 탭과 같은 패턴으로
+  // 프롬프트만 만들어 Claude에 넘기고, 집필 결과는 사람이 직접 붙여넣는다.
+  const copyPromptAndOpen = () => {
     if (
       !answers.eventName.trim() ||
       !answers.datePlace.trim() ||
@@ -966,7 +970,12 @@ export function PressWorkspace({ projectId }: { projectId: string }) {
       !answers.purpose.trim()
     )
       return toast.error("필수 질문 4개에 먼저 답해주세요");
-    setDraft(buildPressRelease(type, answers));
+    window.open("https://claude.ai/new", "_blank", "noopener,noreferrer");
+    navigator.clipboard
+      .writeText(prompt)
+      .then(() => toast.success("프롬프트를 복사했어요. Claude에 붙여넣고 받은 결과를 오른쪽 칸에 붙여넣으세요."))
+      .catch(() => toast.error("프롬프트를 복사하지 못했어요."));
+    setDraft({ title: "", body: "" });
   };
   // 이미 완성된 원고(워드에서 작성한 것 등)를 그대로 붙여넣어 아카이브에 저장하는 경로 —
   // 질문에 안 답해도 되고, 생성기를 거치지 않는다.
@@ -996,7 +1005,7 @@ export function PressWorkspace({ projectId }: { projectId: string }) {
         <div>
           <h2 className="text-lg font-semibold">보도자료 작성</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            확인된 사실만 질문에 답하면 배포 가능한 전체 원고로 정리합니다.
+            질문에 답하면 Claude에 보낼 프롬프트를 만들어요. Claude가 쓴 결과를 오른쪽에 붙여넣어 저장하세요.
           </p>
         </div>
         {/* 이미 완성된 원고(워드에서 쓴 것 등)는 질문 없이 바로 붙여넣어 아카이브할 수 있다 —
@@ -1042,10 +1051,14 @@ export function PressWorkspace({ projectId }: { projectId: string }) {
               </label>
             ),
           )}
-          <Btn tone="key" onClick={generate}>
+          <Btn tone="key" onClick={copyPromptAndOpen}>
             <WandSparkles className="h-4 w-4" />
-            전체 원고 작성
+            프롬프트 복사하고 Claude 열기
           </Btn>
+          <details className="rounded-xl bg-secondary/50 p-3 text-sm">
+            <summary className="cursor-pointer font-medium">Claude에 보낼 프롬프트 확인</summary>
+            <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap text-xs leading-5 text-muted-foreground">{prompt}</pre>
+          </details>
         </section>
         <section className={`${R.panel} ${FINISH.s1} bg-card p-6`}>
           {draft ? (
@@ -1087,7 +1100,7 @@ export function PressWorkspace({ projectId }: { projectId: string }) {
                 value={draft.body}
                 onChange={(e) => setDraft({ ...draft, body: e.target.value })}
                 className={`mt-3 min-h-[34rem] w-full bg-background p-4 text-sm leading-7 ${R.control}`}
-                placeholder="워드에서 작성한 본문을 그대로 붙여넣으세요"
+                placeholder="Claude가 쓴 결과를 그대로 붙여넣으세요(또는 워드에서 작성한 본문)"
               />
               <Btn
                 className="mt-3"
@@ -1101,7 +1114,7 @@ export function PressWorkspace({ projectId }: { projectId: string }) {
             </>
           ) : (
             <div className="flex min-h-96 items-center justify-center text-center text-sm text-muted-foreground">
-              왼쪽 질문에 답해 새로 쓰거나,
+              왼쪽 질문에 답하고 ‘프롬프트 복사하고 Claude 열기’를 누르거나,
               <br />
               위 ‘완성된 원고 붙여넣기’로 이미 있는 글을 저장하세요.
             </div>
