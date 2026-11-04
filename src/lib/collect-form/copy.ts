@@ -1,5 +1,5 @@
 /**
- * 등록 폼 기본 문구 — 한국어·영어(2026-11-03). "기본 정보 › 폼 언어"(formConfig.defaultLocale)로 고른다.
+ * 등록 폼 기본 문구 — 한국어·영어(2026-11-03), 프랑스어·일본어(2026-11-04). "기본 정보 › 폼 언어"(formConfig.defaultLocale)로 고른다.
  *
  * 운영자가 적은 항목 이름·선택지·안내는 여기 없다 — 적은 그대로 나간다.
  * 여기는 운영자가 안 적었을 때 쓰는 문구(버튼·상태 안내·오류·동의 기본 문구)다.
@@ -108,6 +108,104 @@ const KO: FormCopy = {
   consentThirdParty: "행사 협력사에 정보 제공하는 것에 동의합니다",
 };
 
+const FR: FormCopy = {
+  before: { title: "Les inscriptions ne sont pas encore ouvertes", body: "Le formulaire apparaîtra ici dès l'ouverture des inscriptions." },
+  closed: { title: "Les inscriptions sont closes", body: "Vous pouvez vous inscrire sur place." },
+  between: { title: "La pré-inscription est close", body: "L'inscription sur place ouvre {next}. Merci de vous inscrire sur le lieu de l'événement." },
+  nextSample: "(heure d'ouverture sur place)",
+  submit: "S'inscrire",
+  submitting: "Envoi en cours…",
+  empty: "Ce formulaire n'a pas encore de champs.",
+  required: "Obligatoire",
+  invalidEmail: "Vérifiez le format de l'e-mail",
+  invalidPhone: "Ce numéro n'est pas valide pour le pays sélectionné",
+  invalidNumber: "Chiffres uniquement",
+  unknownKey: "Ne fait pas partie de ce formulaire",
+  tooMany: "Trop de choix sélectionnés",
+  notAnOption: "Ne fait pas partie des choix",
+  consentRequired: "Veuillez accepter pour continuer",
+  duplicate: "Cet e-mail est déjà inscrit.",
+  networkError: "L'envoi a échoué. Veuillez réessayer.",
+  closedNow: "Les inscriptions viennent de se clore.",
+  notOpenYet: "Les inscriptions ne sont pas encore ouvertes.",
+  doneTitle: "Votre inscription est confirmée",
+  checkinTitle: "Présentez ce QR code à l'accueil",
+  checkinBodyWithEmail: "Vous retrouverez le même QR code dans votre e-mail de confirmation.",
+  regNoLabel: "Numéro d'inscription — à présenter sur place",
+  previewFlag: "Aperçu — rien n'est enregistré",
+  ticketLink: "Ouvrir mon billet →",
+  saveImage: "Enregistrer l'image",
+  saveHint: "* Si le bouton ne fonctionne pas, faites une capture d'écran.",
+  previewDone: "Numéro d'exemple — rien n'a été enregistré.",
+  more: "Détails",
+  less: "Masquer",
+  close: "Fermer",
+  agree: "J'accepte",
+  period: "Dates",
+  venue: "Lieu",
+  openingHours: "Horaires",
+  select: "Sélectionner",
+  noOptions: "Aucun choix configuré",
+  chooseUpTo: "{n} choix maximum",
+  other: "Autre",
+  otherPlaceholder: "Précisez",
+  phone: "Téléphone",
+  email: "E-mail",
+  qrAlt: "QR code d'inscription {regNo}",
+  consentPrivacy: "J'accepte la politique de confidentialité",
+  consentMarketing: "Je souhaite recevoir des actualités",
+  consentThirdParty: "J'accepte que mes informations soient partagées avec les partenaires de l'événement",
+};
+
+const JA: FormCopy = {
+  before: { title: "まだ受付期間ではありません", body: "受付が始まると、ここにフォームが表示されます。" },
+  closed: { title: "受付は終了しました", body: "会場で当日登録ができます。" },
+  between: { title: "事前登録は終了しました", body: "当日登録は{next}から開始します。会場で登録してください。" },
+  nextSample: "（当日登録の開始時刻）",
+  submit: "登録する",
+  submitting: "送信中…",
+  empty: "まだ項目がありません。",
+  required: "必須項目です",
+  invalidEmail: "メールアドレスの形式をご確認ください",
+  invalidPhone: "選択した国の電話番号の形式ではありません",
+  invalidNumber: "数字のみ入力してください",
+  unknownKey: "このフォームにない項目です",
+  tooMany: "選択できる数を超えています",
+  notAnOption: "選択肢にない値です",
+  consentRequired: "登録するには同意が必要です",
+  duplicate: "このメールアドレスはすでに登録されています。",
+  networkError: "送信できませんでした。もう一度お試しください。",
+  closedNow: "ただいま受付が終了しました。",
+  notOpenYet: "まだ受付期間ではありません。",
+  doneTitle: "登録が完了しました",
+  checkinTitle: "受付でこのQRコードをご提示ください",
+  checkinBodyWithEmail: "確認メールでも同じQRコードをご確認いただけます。",
+  regNoLabel: "登録番号 — 会場でご提示ください",
+  previewFlag: "プレビュー — 保存されません",
+  ticketLink: "入場券ページを開く →",
+  saveImage: "画像を保存",
+  saveHint: "* ボタンが使えない場合は、スクリーンショットを撮ってください。",
+  previewDone: "サンプル番号です — 保存されていません。",
+  more: "詳細",
+  less: "閉じる",
+  close: "閉じる",
+  agree: "同意します",
+  period: "会期",
+  venue: "会場",
+  openingHours: "開場時間",
+  select: "選択してください",
+  noOptions: "選択肢がありません",
+  chooseUpTo: "最大{n}個まで選択できます",
+  other: "その他",
+  otherPlaceholder: "直接入力",
+  phone: "電話番号",
+  email: "メールアドレス",
+  qrAlt: "{regNo} の登録QR",
+  consentPrivacy: "個人情報の収集・利用に同意します",
+  consentMarketing: "イベント情報を受け取る",
+  consentThirdParty: "イベント協力会社への情報提供に同意します",
+};
+
 const LOOKUP_EN = {
   title: "Find my QR",
   desc: "Enter what you registered with.",
@@ -157,13 +255,70 @@ const LOOKUP_KO: LookupCopy = {
   previewFlag: "미리보기 — 저장되지 않아요",
 };
 
-/** 언어 코드("ko", "ko-KR", "en" …) → 문구. 모르는 언어는 영어. */
+const LOOKUP_FR: LookupCopy = {
+  title: "Retrouver mon QR code",
+  desc: "Saisissez les informations utilisées lors de l'inscription.",
+  email: "E-mail",
+  phone: "Téléphone",
+  submit: "Retrouver mon inscription",
+  searching: "Recherche…",
+  notFound: "Aucune inscription ne correspond à ces informations.",
+  needSomething: "Saisissez d'abord votre e-mail ou votre numéro de téléphone.",
+  networkError: "Une erreur est survenue. Veuillez réessayer.",
+  saveImage: "Enregistrer l'image",
+  saveHint: "* Si le bouton ne fonctionne pas, faites une capture d'écran.",
+  searchAgain: "Nouvelle recherche",
+  tooMany: "Trop de tentatives. Réessayez dans quelques minutes.",
+  regNoLabel: "À présenter sur place",
+  noQr: "Votre inscription a été trouvée. Nous vous renverrons votre billet par e-mail.",
+  needBoth: "Saisissez votre e-mail et votre numéro de téléphone.",
+  needEmail: "Votre e-mail est manquant.",
+  needPhone: "Votre numéro de téléphone est manquant.",
+  ticketLink: "Ouvrir mon billet →",
+  previewFlag: "Aperçu — rien n'est enregistré",
+};
+
+const LOOKUP_JA: LookupCopy = {
+  title: "QRコードを探す",
+  desc: "登録時に入力した情報を入力してください。",
+  email: "メールアドレス",
+  phone: "電話番号",
+  submit: "登録を探す",
+  searching: "検索中…",
+  notFound: "入力された情報で登録が見つかりませんでした。",
+  needSomething: "先にメールアドレスか電話番号を入力してください。",
+  networkError: "問題が発生しました。もう一度お試しください。",
+  saveImage: "画像を保存",
+  saveHint: "* ボタンが使えない場合は、スクリーンショットを撮ってください。",
+  searchAgain: "もう一度探す",
+  tooMany: "試行回数が多すぎます。数分後にもう一度お試しください。",
+  regNoLabel: "会場でご提示ください",
+  noQr: "登録が見つかりました。入場券をメールで再送します。",
+  needBoth: "メールアドレスと電話番号の両方を入力してください。",
+  needEmail: "メールアドレスを入力してください。",
+  needPhone: "電話番号を入力してください。",
+  ticketLink: "入場券ページを開く →",
+  previewFlag: "プレビュー — 保存されません",
+};
+
+type CopyLang = "ko" | "en" | "fr" | "ja";
+
+// Record 로 둔다 — 언어를 늘렸는데 표 한 줄이 비면 컴파일이 깨진다(대회 문구와 같은 규칙).
+const FORM_DICT: Record<CopyLang, FormCopy> = { ko: KO, en: EN, fr: FR, ja: JA };
+const LOOKUP_DICT: Record<CopyLang, LookupCopy> = { ko: LOOKUP_KO, en: LOOKUP_EN, fr: LOOKUP_FR, ja: LOOKUP_JA };
+
+const copyLang = (locale: string | undefined): CopyLang => {
+  const base = (locale ?? "").toLowerCase().split(/[-_]/)[0];
+  return base === "ko" || base === "fr" || base === "ja" ? base : "en";
+};
+
+/** 언어 코드("ko", "ko-KR", "ja", "fr" …) → 문구. 모르는 언어는 영어. */
 export function formCopy(locale: string | undefined): FormCopy {
-  return (locale ?? "").toLowerCase().startsWith("ko") ? KO : EN;
+  return FORM_DICT[copyLang(locale)];
 }
 
 export function lookupCopy(locale: string | undefined): LookupCopy {
-  return (locale ?? "").toLowerCase().startsWith("ko") ? LOOKUP_KO : LOOKUP_EN;
+  return LOOKUP_DICT[copyLang(locale)];
 }
 
 /** "{n}" 같은 자리 채우기 */

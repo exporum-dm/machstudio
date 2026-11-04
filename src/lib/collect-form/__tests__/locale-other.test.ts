@@ -36,7 +36,14 @@ describe("폼 언어", () => {
     const db = { defaultLocale: "ko", fields: [] };
     expect(mergeFormConfigUpdate(db, { defaultLocale: "en", fields: [] }, undefined).defaultLocale).toBe("ko");
     expect(mergeFormConfigUpdate(db, undefined, undefined, "en")!.defaultLocale).toBe("en");
-    expect(mergeFormConfigUpdate(db, undefined, undefined, "fr")!.defaultLocale).toBe("ko");
+    expect(mergeFormConfigUpdate(db, undefined, undefined, "ja")!.defaultLocale).toBe("ja");
+    expect(mergeFormConfigUpdate(db, undefined, undefined, "de")!.defaultLocale).toBe("ko");
+  });
+  it.each([["fr", "S'inscrire", "Autre"], ["ja", "登録する", "その他"]])("%s 도 기본 문구가 그 언어", (locale, submit, other) => {
+    mount({ defaultLocale: locale, fields: [{ id: "f1", key: "job", label: { en: "Job" }, type: "radio", enabled: true, allowOther: true, options: [{ en: "A" }] }] });
+    expect(text()).toContain(submit);
+    expect(text()).toContain(other);
+    expect(text()).not.toContain("Register");
   });
 });
 

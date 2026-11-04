@@ -30,13 +30,15 @@ export type Localized = Record<string, string>;
 export const DEFAULT_LOCALE = "en";
 
 /**
- * 폼 언어 — 방문자에게 보이는 기본 문구(버튼·안내·오류)의 언어. "기본 정보" 탭에서 고른다(2026-11-03).
+ * 폼 언어 — 방문자에게 보이는 기본 문구(버튼·안내·오류)의 언어. "기본 정보" 탭에서 고른다(2026-11-03, 프랑스어·일본어 2026-11-04).
  * 운영자가 적은 항목 이름·선택지는 적은 그대로 나간다(번역하지 않는다).
  * DEFAULT_LOCALE 은 라벨 맵의 저장 키라 바꾸지 않는다 — 이 값은 화면 문구만 고른다.
  */
 export const FORM_LOCALES = [
   { id: "ko", label: "한국어" },
   { id: "en", label: "English" },
+  { id: "fr", label: "Français" },
+  { id: "ja", label: "日本語" },
 ] as const;
 export type FormLocale = (typeof FORM_LOCALES)[number]["id"];
 export const isFormLocale = (v: unknown): v is FormLocale => FORM_LOCALES.some((l) => l.id === v);
