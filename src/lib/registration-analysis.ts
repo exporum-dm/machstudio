@@ -6,8 +6,8 @@
  *
  * ── 정의(화면 "용어" 에 그대로 보인다) ─────────────────────────────────────
  *  · 사전등록 / 현장등록: 등록 시각이 onsiteFrom(현장등록 시작 — 기본은 행사 첫날 0시, 현지) 이전이면 사전.
- *    현장등록도 온라인 폼으로 들어온다 — 구분은 오직 시각이다.
- *  · 방문: 입장 스캔이 1번 이상. 현장등록을 했어도 스캔이 없으면 방문이 아니다(LA 2026 운영 결정).
+ *    확인된 과거 참관객 명단이 있으면 원본의 사전·현장 구분을 우선한다.
+ *  · 방문: 입장 스캔이 1번 이상 또는 확인된 과거 방문 명단에 있음. 시각이 없으면 날짜만 집계한다.
  *  · 순방문자: 사람 수(몇 번 와도 1). 누적 방문객(연인원): 날마다 각각 센 합 — 이틀 오면 2.
  *  · 동반 인원: 등록자가 적은 동반 자녀 수. **방문자 수에만 더한다**(인구통계는 모른다).
  *    순방문자에는 한 번, 연인원에는 그 사람이 온 날마다 더한다.
@@ -15,6 +15,8 @@
  *  · 등록 시점(D-n): 행사 첫날(현지 날짜) 기준 며칠 전에 등록했나.
  */
 import { zonedLocalToUtc } from "@/lib/collect-checkin";
+import { readAttendanceHistory } from "@/lib/collect-attendance-history";
+import { splitCollectValues } from "@/lib/collect-value-split";
 
 // ── 입력 ────────────────────────────────────────────────────────────────
 export interface AnalysisField {
@@ -126,6 +128,17 @@ export interface RegistrationAnalysis {
   /** 방문자(사람)의 동반 자녀 수 분포 — "0" "1" "2" "3" "4+" "미응답" */
   companionDist: { bucket: string; visitors: number }[];
   insights: Insight[];
+  attendance?: {
+    historicalVisitors: number;
+    visitorsWithEntryTime: number;
+    dateOnlyVisitors: number;
+    stay: {
+      sessions: number;
+      averageSeconds: number | null;
+      medianSeconds: number | null;
+      byDay: { date: string; sessions: number; averageSeconds: number; medianSeconds: number }[];
+    };
+  };
 }
 
 // ── 분석에 쓸 항목 고르기 ──────────────────────────────────────────────────
@@ -240,7 +253,7 @@ function optionToEventDate(option: string, eventDates: string[]): string | null 
     const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     if (eventDates.includes(iso)) return iso;
   }
-  const md = /(\d{1,2})[./-](\d{1,2})/.exec(option);
+  const md = /(\d{1,2})\s*(?:[./-]|월\s*)(\d{1,2})/.exec(option);
   if (md) {
     const hit = eventDates.find((e) => Number(e.slice(5, 7)) === Number(md[1]) && Number(e.slice(8, 10)) === Number(md[2]));
     if (hit) return hit;
@@ -273,6 +286,23 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
     const k = `${c.recordId}|${c.eventDate}`;
     const prev = firstScanOfDay.get(k);
     if (!prev || c.scannedAt < prev) firstScanOfDay.set(k, c.scannedAt);
+  }
+
+  const histories = new Map(records.map((r) => [r.id, readAttendanceHistory(r.data, eventDates)] as const));
+  const stayValues: number[] = [];
+  const staysByDay = new Map<string, number[]>();
+  for (const [id, history] of histories) {
+    if (!history) continue;
+    const days = visitDays.get(id) ?? new Set<string>();
+    for (const date of history.dates) days.add(date);
+    if (days.size) visitDays.set(id, days);
+    for (const session of history.sessions) {
+      if (session.durationSeconds === null) continue;
+      stayValues.push(session.durationSeconds);
+      const values = staysByDay.get(session.date) ?? [];
+      values.push(session.durationSeconds);
+      staysByDay.set(session.date, values);
+    }
   }
 
   // 레코드 1회 순회
@@ -309,7 +339,8 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
   for (const r of records) {
     // 가져온 일시는 원본 등록일이 아니다. 시간이 없는 과거 자료는 알려진 접수 유형만 쓴다.
     const timeKnown = r.data.__import_timestamp_missing !== true;
-    const isPre = !timeKnown && r.entryChannel ? r.entryChannel === "online" : r.createdAt < onsiteFrom;
+    const importedChannel = histories.get(r.id)?.channel;
+    const isPre = importedChannel ? importedChannel === "online" : !timeKnown && r.entryChannel ? r.entryChannel === "online" : r.createdAt < onsiteFrom;
     if (!timeKnown) missingRegistrationTimes++;
     isPreById.set(r.id, isPre);
     const days = visitDays.get(r.id);
@@ -381,7 +412,7 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
       else if (s.key === "__region") { const v = normalizeRegion(r.data[input.regionKey!]); values = v ? [v] : []; }
       else {
         const raw = r.data[s.key];
-        values = (Array.isArray(raw) ? raw : raw == null || raw === "" ? [] : [raw]).map((v) => String(v).trim()).filter(Boolean);
+        values = s.kind === "multi" && !Array.isArray(raw) ? splitCollectValues(raw, s.options) : (Array.isArray(raw) ? raw : raw == null || raw === "" ? [] : [raw]).map((v) => String(v).trim()).filter(Boolean);
       }
       if (values.length === 0) continue;
       acc.answered++;
@@ -398,7 +429,7 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
     // 방문 예정일 vs 실제
     if (planned && visited) {
       const raw = r.data[input.visitDateKey!];
-      const opts = (Array.isArray(raw) ? raw : raw ? [raw] : []).map(String);
+      const opts = Array.isArray(raw) ? raw.map(String) : splitCollectValues(raw, input.fields.find((field) => field.key === input.visitDateKey)?.options);
       const plannedDates = new Set<string>();
       for (const o of opts) {
         if (!visitOptionMap.has(o)) visitOptionMap.set(o, optionToEventDate(o, eventDates));
@@ -508,6 +539,30 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
     insights: [],
   };
   analysis.insights = buildInsights(analysis);
+  if ([...histories.values()].some(Boolean)) {
+    const mean = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / values.length;
+    const median = (values: number[]) => {
+      const sorted = [...values].sort((a, b) => a - b), mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    };
+    const ids = new Set(records.map((r) => r.id));
+    const timedIds = new Set(checkIns.filter((c) => ids.has(c.recordId)).map((c) => c.recordId));
+    analysis.attendance = {
+      historicalVisitors: [...histories.values()].filter((history) => history && history.dates.length > 0).length,
+      visitorsWithEntryTime: timedIds.size,
+      dateOnlyVisitors: [...visitDays.keys()].filter((id) => ids.has(id) && !timedIds.has(id)).length,
+      stay: {
+        sessions: stayValues.length,
+        averageSeconds: stayValues.length ? mean(stayValues) : null,
+        medianSeconds: stayValues.length ? median(stayValues) : null,
+        byDay: [...staysByDay.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, values]) => ({ date, sessions: values.length, averageSeconds: mean(values), medianSeconds: median(values) })),
+      },
+    };
+    if (analysis.attendance.dateOnlyVisitors) analysis.insights.unshift({
+      tone: "info", title: "방문 명단과 입장시각 자료의 범위가 달라요",
+      detail: `방문 ${num(visitorsUnique)}명 중 입장시각이 있는 ${num(timedIds.size)}명만 시간대별 그래프에 포함했어요. 시각이 없는 방문 기록도 방문율·방문일·재방문에는 반영했어요.`,
+    });
+  }
   if (missingRegistrationTimes) analysis.insights.unshift({
     tone: "warn",
     title: `원본 등록일시가 없는 ${num(missingRegistrationTimes)}건이 있어요`,
@@ -536,7 +591,7 @@ export function buildInsights(a: RegistrationAnalysis): Insight[] {
     out.push({
       tone: "info",
       title: `방문자 ${pct(kpi.visitorMix.onsite / kpi.visitors.unique)}는 현장등록이었어요`,
-      detail: `방문자 ${num(kpi.visitors.unique)}명 중 현장등록 ${num(kpi.visitorMix.onsite)}명. 현장등록자의 방문율은 ${pct(kpi.showUp.onsite.rate)}로, 등록만 하고 입장 스캔이 없는 사람이 ${num(kpi.registrations.onsite - kpi.showUp.onsite.visited)}명이에요.`,
+      detail: `방문자 ${num(kpi.visitors.unique)}명 중 현장등록 ${num(kpi.visitorMix.onsite)}명. 현장등록자의 방문율은 ${pct(kpi.showUp.onsite.rate)}로, 등록만 하고 방문 기록이 없는 사람이 ${num(kpi.registrations.onsite - kpi.showUp.onsite.visited)}명이에요.`,
     });
   }
 

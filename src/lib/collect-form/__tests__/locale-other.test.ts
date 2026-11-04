@@ -34,7 +34,7 @@ describe("폼 언어", () => {
   });
   it("언어는 기본 정보만 바꾼다 — 빌더 자동저장의 낡은 값이 되돌리지 않는다", () => {
     const db = { defaultLocale: "ko", fields: [] };
-    expect(mergeFormConfigUpdate(db, { defaultLocale: "en", fields: [] }, undefined).defaultLocale).toBe("ko");
+    expect(mergeFormConfigUpdate(db, { defaultLocale: "en", fields: [] }, undefined)!.defaultLocale).toBe("ko");
     expect(mergeFormConfigUpdate(db, undefined, undefined, "en")!.defaultLocale).toBe("en");
     expect(mergeFormConfigUpdate(db, undefined, undefined, "ja")!.defaultLocale).toBe("ja");
     expect(mergeFormConfigUpdate(db, undefined, undefined, "de")!.defaultLocale).toBe("ko");

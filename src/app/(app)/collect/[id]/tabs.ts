@@ -33,7 +33,7 @@ export type Tab = typeof TABS[number]["id"];
 /** 연동형에만 있는 탭 — 빌더형은 폼을 여기서 만드니 스크립트·매핑·설치가 의미를 잃는다. */
 const CAPTURE_ONLY: ReadonlySet<Tab> = new Set(["fields", "script", "install"]);
 /** 빌더형에만 있는 탭 — 현장 체크인은 등록번호·QR 이 있어야 한다(연동형 레코드에는 없다). */
-const BUILDER_ONLY: ReadonlySet<Tab> = new Set(["analysis", "form", "checkin", "survey"]);
+const BUILDER_ONLY: ReadonlySet<Tab> = new Set(["form", "checkin", "survey"]);
 
 /**
  * 안 쓰는 탭을 남겨 두면 운영자가 "여기서 뭘 해야 하나" 를 매번 다시 판단하게 된다.

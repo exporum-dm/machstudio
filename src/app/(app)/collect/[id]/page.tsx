@@ -1192,7 +1192,7 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
   }
 
   // 입장 열 — 체크인을 켰거나, 끈 뒤에도 이미 스캔 기록이 있으면 보인다(기록이 사라져 보이지 않게).
-  const showCheckinCol = source.mode === "builder" && (Boolean(source.checkinEnabled) || records.some((r) => r.checkIn));
+  const showCheckinCol = Boolean(source.checkinEnabled) || records.some((r) => r.checkIn);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6">

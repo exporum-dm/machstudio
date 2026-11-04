@@ -7,7 +7,8 @@ import "server-only";
  */
 import { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
-import { collectColumnsFor } from "@/lib/collect-columns";
+import type { CollectColumn } from "@/lib/collect-columns";
+import { collectAnalysisColumnsFor } from "@/lib/collect-analysis-columns";
 import { normalizeCollectForm } from "@/lib/collect-form-config";
 import {
   audienceInsights,
@@ -35,11 +36,12 @@ export async function loadCollectAnalysis(source: {
   mode: string;
   formConfig: unknown;
   checkinTimezone: string;
+  fieldMappings?: CollectColumn[];
 }): Promise<CollectAnalysisBundle> {
   const config = normalizeCollectForm(source.formConfig);
-  const { fields, companionKey, visitDateKey, regionKey, textFields } = pickAnalysisFields(collectColumnsFor(source));
+  const { fields, companionKey, visitDateKey, regionKey, textFields } = pickAnalysisFields(collectAnalysisColumnsFor(source));
 
-  const keys = Array.from(new Set(["__import_timestamp_missing", ...fields.map((f) => f.key), ...textFields.map((t) => t.key), companionKey, visitDateKey, regionKey].filter((k): k is string => Boolean(k))));
+  const keys = Array.from(new Set(["__attendance_import", "__import_timestamp_missing", ...fields.map((f) => f.key), ...textFields.map((t) => t.key), companionKey, visitDateKey, regionKey].filter((k): k is string => Boolean(k))));
   const [records, checkIns] = await Promise.all([
     prisma.$queryRaw<{ id: string; registrationNo: string | null; createdAt: Date; entryChannel: string | null; utm: string | null; d: Record<string, unknown> | null }[]>(Prisma.sql`
       SELECT id, "registrationNo", "createdAt", "entryChannel",

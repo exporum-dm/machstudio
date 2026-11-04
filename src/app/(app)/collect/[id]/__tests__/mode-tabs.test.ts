@@ -12,7 +12,7 @@ describe("tabsFor", () => {
 
   /** 2026-10-08: 현황은 맨 앞에 두고 설정·접수·분석·관리를 업무 순서로 잇는다. */
   it("연동형은 현황→설정·설치→응답→관리 순서로 모든 탭을 유지한다", () => {
-    expect(ids("capture")).toEqual(["overview", "info", "fields", "script", "install", "records", "activity", "settings", "data-mgmt"]);
+    expect(ids("capture")).toEqual(["overview", "info", "fields", "script", "install", "records", "analysis", "activity", "settings", "data-mgmt"]);
   });
 
   it("빌더형은 스크립트·필드 매핑·설치 대신 등록 폼 · 현장 체크인 · 만족도 조사", () => {

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * "결과 분석" 탭 — 빌더형 등록 전용. 행사가 끝난 뒤 결과보고·내년 기획에 쓰는 **읽는 영역**이다.
+ * "응답 분석" 탭 — 연동형·빌더형 공통. 행사가 끝난 뒤 결과보고·내년 기획에 쓰는 읽는 영역이다.
  *
  * 위계: 헤드라인 숫자(방문객) → 인사이트 문장 → 등록→방문 전환 → 추이·패턴 → 누가 왔나(인구통계) → 용어·데이터 품질.
  * 숫자는 전부 /api/collect-sources/[id]/analysis(lib/registration-analysis.ts) 한 곳에서 온다 — 정의가 화면마다 갈리지 않게.
@@ -34,6 +34,7 @@ interface Payload {
 const n = (x: number) => x.toLocaleString("ko-KR");
 const pct = (x: number, digits = 1) => `${(x * 100).toFixed(digits)}%`;
 const md = (date: string) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
+const minutes = (seconds: number | null) => seconds === null ? "—" : `${(seconds / 60).toFixed(1)}분`;
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <section className={`${R.panel} ${FINISH.s1} min-w-0 bg-card p-5 ${className}`}>{children}</section>;
@@ -408,7 +409,13 @@ export default function AnalysisTab({ sourceId }: { sourceId: string }) {
         ["순방문자 (동반 포함)", k.visitors.uniqueWithCompanions, "한 사람은 몇 번 와도 1 + 동반 자녀 1번"],
         ["순방문자 (등록자만)", k.visitors.unique, ""],
         ["동반 자녀 (순)", k.visitors.companionsUnique, "방문자 수에만 더함 — 인구통계 없음"],
-        ["바코드 스캔", k.visitors.scans, "같은 날 재입장·중복 스캔 포함"],
+        [a.attendance ? "입장시각 기록" : "바코드 스캔", k.visitors.scans, a.attendance ? "과거 원본의 일자별 입장 태그 포함" : "같은 날 재입장·중복 스캔 포함"],
+        ...(a.attendance ? [
+          ["입장시각 보유 방문자", a.attendance.visitorsWithEntryTime, "시간대별 입장 그래프의 범위"],
+          ["방문일만 확인된 방문자", a.attendance.dateOnlyVisitors, "방문율·방문일·재방문에는 포함"],
+          ["평균 체류", minutes(a.attendance.stay.averageSeconds), `입·퇴장 모두 있는 ${n(a.attendance.stay.sessions)}건 기준`],
+          ["중앙 체류", minutes(a.attendance.stay.medianSeconds), "완전한 입·퇴장 구간만 사용"],
+        ] : []),
         ["총 등록", k.registrations.total, ""],
         ["사전등록", k.registrations.pre, `현장등록 시작 전 등록 (${csvDateTimeIn(a.definitions.timezone, a.definitions.onsiteFrom)} 현지 이전)`],
         ["현장등록", k.registrations.onsite, "행사 기간 등록 — 스캔이 없으면 방문 아님"],
@@ -425,6 +432,7 @@ export default function AnalysisTab({ sourceId }: { sourceId: string }) {
       const segRows = a.segments.flatMap((s) => s.rows.map((r) => ({ 문항: s.label, 값: r.value, 등록: r.regs, 방문: r.visited, 방문율: pct(r.rate), 사전등록: r.preRegs, 현장등록: r.onsiteRegs, "사전 방문": r.preVisited, "현장 방문": r.onsiteVisited })));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(segRows), "문항별");
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(a.insights.map((i) => ({ 인사이트: i.title, 설명: i.detail }))), "인사이트");
+      if (a.attendance?.stay.sessions) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(a.attendance.stay.byDay.map((row) => ({ 날짜: row.date, "확인된 입퇴장 구간": row.sessions, "평균 체류(분)": row.averageSeconds / 60, "중앙 체류(분)": row.medianSeconds / 60 }))), "체류시간");
       if (data.audienceRows.length) {
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.audienceRows.map((r) => ({
           유형: r.value, 등록: r.regs, 사전등록: r.pre, 현장등록: r.onsite, 순방문: r.visitors, 동반: r.companions, "순방문(동반 포함)": r.visitorsWithCompanions,
@@ -453,9 +461,9 @@ export default function AnalysisTab({ sourceId }: { sourceId: string }) {
       {/* 머리 */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-base font-semibold">결과 분석</h2>
+          <h2 className="text-base font-semibold">응답 분석</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            시간은 {tzLabel} 기준 · 현장등록 = {csvDateTimeIn(a.definitions.timezone, a.definitions.onsiteFrom).slice(0, 16)} 이후 등록 · 방문 = 입장 스캔 1번 이상
+            시간은 {tzLabel} 기준 · {a.attendance ? "사전·현장 구분은 원본 등록 경로 기준 · 방문은 확인된 방문 명단과 입장 기록 기준" : `현장등록 = ${csvDateTimeIn(a.definitions.timezone, a.definitions.onsiteFrom).slice(0, 16)} 이후 등록 · 방문 = 입장 스캔 1번 이상`}
           </p>
         </div>
         <div className="flex items-center gap-1.5">
@@ -526,7 +534,7 @@ export default function AnalysisTab({ sourceId }: { sourceId: string }) {
       {!noVisits && (
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
           <Card>
-            <SectionTitle title="등록 → 실제 방문" hint="현장등록도 온라인 폼이라, 입장 스캔이 없으면 방문으로 치지 않아요." />
+            <SectionTitle title="등록 → 실제 방문" hint={a.attendance ? "방문 명단에 있거나 입장 기록이 확인된 등록자를 집계해요. 시각이 없는 방문자도 포함합니다." : "현장등록도 온라인 폼이라, 입장 스캔이 없으면 방문으로 치지 않아요."} />
             {[
               { label: "사전등록", r: k.showUp.pre, color: seriesPre },
               { label: "현장등록", r: k.showUp.onsite, color: seriesOnsite },
@@ -572,6 +580,20 @@ export default function AnalysisTab({ sourceId }: { sourceId: string }) {
         </div>
       )}
 
+      {a.attendance && !noVisits && (
+        <Card>
+          <SectionTitle title="입장시각·체류시간" hint={`입장시각이 있는 ${n(a.attendance.visitorsWithEntryTime)}명만 시간대별 입장 그래프에 포함합니다. 방문일만 확인된 ${n(a.attendance.dateOnlyVisitors)}명도 방문율·방문일·재방문에는 포함해요.`} />
+          {a.attendance.stay.sessions > 0 && <>
+            <div className="grid grid-cols-2 gap-4">
+              <div><p className="text-xs text-muted-foreground">평균 체류</p><p className="mt-1 text-2xl font-semibold tabular-nums">{minutes(a.attendance.stay.averageSeconds)}</p></div>
+              <div><p className="text-xs text-muted-foreground">중앙 체류</p><p className="mt-1 text-2xl font-semibold tabular-nums">{minutes(a.attendance.stay.medianSeconds)}</p></div>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">입장·퇴장이 모두 있는 {n(a.attendance.stay.sessions)}개 구간 기준입니다. 퇴장 누락과 역전된 시각은 체류 평균에서 제외했어요.</p>
+            <div className="mt-4 overflow-x-auto"><table className="w-full text-xs tabular-nums"><thead><tr className="text-muted-foreground"><th className="py-2 text-left font-medium">방문일</th><th className="py-2 text-right font-medium">입·퇴장 확인 구간</th><th className="py-2 text-right font-medium">평균 체류</th><th className="py-2 text-right font-medium">중앙 체류</th></tr></thead><tbody className="divide-y divide-border">{a.attendance.stay.byDay.map((row) => <tr key={row.date}><td className="py-2">{row.date}</td><td className="py-2 text-right">{n(row.sessions)}</td><td className="py-2 text-right">{minutes(row.averageSeconds)}</td><td className="py-2 text-right">{minutes(row.medianSeconds)}</td></tr>)}</tbody></table></div>
+          </>}
+        </Card>
+      )}
+
       {/* 등록 추이 */}
       <Card>
         <SectionTitle title="등록 추이" hint="날짜별 등록(현지 날짜). 막대 위에 마우스를 올리면 사전·현장 수가 나와요." />
@@ -604,7 +626,7 @@ export default function AnalysisTab({ sourceId }: { sourceId: string }) {
                     <th className="py-1.5 pr-3 text-right font-medium">동반</th>
                     <th className="py-1.5 pr-3 text-right font-medium">합계</th>
                     <th className="py-1.5 pr-3 text-right font-medium">사전 / 현장</th>
-                    <th className="py-1.5 text-right font-medium">스캔</th>
+                    <th className="py-1.5 text-right font-medium">{a.attendance ? "입장 기록" : "스캔"}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border tabular-nums">
@@ -757,8 +779,8 @@ export default function AnalysisTab({ sourceId }: { sourceId: string }) {
         <details>
           <summary className="flex cursor-pointer items-center gap-1.5 text-sm font-semibold"><Info className="h-4 w-4 text-muted-foreground" /> 용어와 데이터 품질</summary>
           <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 text-xs leading-relaxed sm:grid-cols-[140px_1fr]">
-            <dt className="font-medium">사전 / 현장등록</dt><dd className="text-muted-foreground">등록 시각이 현장등록 시작({csvDateTimeIn(a.definitions.timezone, a.definitions.onsiteFrom).slice(0, 16)}, {tzLabel}) 이전이면 사전등록. 둘 다 온라인 폼이라 구분은 시각으로만 해요.</dd>
-            <dt className="font-medium">방문</dt><dd className="text-muted-foreground">입장 스캔이 1번 이상 있는 등록자. 현장등록을 했어도 스캔이 없으면 방문이 아니에요.</dd>
+            <dt className="font-medium">사전 / 현장등록</dt><dd className="text-muted-foreground">{a.attendance ? "과거 참관객 명단은 원본의 사전·현장등록 구분을 우선합니다. 원본 등록일시가 없는 자료는 등록 추이에서 제외해요." : `등록 시각이 현장등록 시작(${csvDateTimeIn(a.definitions.timezone, a.definitions.onsiteFrom).slice(0, 16)}, ${tzLabel}) 이전이면 사전등록. 둘 다 온라인 폼이라 구분은 시각으로만 해요.`}</dd>
+            <dt className="font-medium">방문</dt><dd className="text-muted-foreground">{a.attendance ? "원본 방문 명단에 있거나 실제 입장 기록이 있는 등록자. 입장시각을 모르는 방문일도 반영하며 시각은 임의로 만들지 않아요." : "입장 스캔이 1번 이상 있는 등록자. 현장등록을 했어도 스캔이 없으면 방문이 아니에요."}</dd>
             <dt className="font-medium">순방문자 / 연인원</dt><dd className="text-muted-foreground">순방문자는 한 사람을 한 번만, 연인원(누적 방문객)은 날마다 각각 세요. 같은 날 다시 찍힌 스캔은 그날 1명이에요.</dd>
             <dt className="font-medium">동반 인원</dt><dd className="text-muted-foreground">
               등록자가 적은 동반 자녀 수{data.fields.companionKey ? ` (항목: ${data.fields.companionKey})` : " — 이 폼에는 해당 항목이 없어요"}. 방문자 수에만 더하고 인구통계에는 넣지 않아요.
