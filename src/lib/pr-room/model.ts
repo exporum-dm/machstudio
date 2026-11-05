@@ -21,6 +21,24 @@ export interface PrMention {
 
 export interface ExcludedMentionRule { title:string; excerpt:string; source:string; channel:PrMention["channel"] }
 
+/**
+ * 조직이 직접 운영하는 채널(홈페이지·SNS·행사 플랫폼 등록글)인지 — "언급·반응 조사"는 제3자
+ * 반응을 보는 도구라 우리가 직접 올린 글은 대상이 아니다(그건 우리가 직접 본다). URL 접두사로
+ * 매칭한다 — "instagram.com/koreaexpo" 는 그 계정 글만 걸리고 "instagram.com/koreaexpo_fan"
+ * 같은 남의 계정은 안 걸리도록 경계(끝 또는 "/")를 확인한다. 서버(수집기)·클라이언트(Claude
+ * 조사 가져오기) 양쪽에서 쓰여서 이 파일(순수 로직, 서버 전용 의존성 없음)에 둔다.
+ */
+export function isOwnChannel(url: string, ownChannels: string[]): boolean {
+  if (!ownChannels.length) return false;
+  const normalize = (u: string) => u.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/+$/, "");
+  const target = normalize(url);
+  if (!target) return false;
+  return ownChannels.some((c) => {
+    const prefix = normalize(c);
+    return !!prefix && (target === prefix || target.startsWith(`${prefix}/`));
+  });
+}
+
 export interface PressRelease {
   id: string;
   /** archived = 실제로 배포·게재된 원고를 그대로 보관(생성기를 거치지 않음). */
@@ -48,23 +66,33 @@ export function buildClaudeResearchPrompt({
   lastCollectedAt,
   knownUrls = [],
   excludedRules = [],
+  ownChannels = [],
 }: {
   eventNames: string[];
   lastCollectedAt: string | null;
   knownUrls?: string[];
   excludedRules?: ExcludedMentionRule[];
+  ownChannels?: string[];
 }) {
   const names = eventNames.map((x) => x.trim()).filter(Boolean);
   const since = lastCollectedAt ? new Date(lastCollectedAt).toISOString().slice(0, 10) : "행사 관련 자료가 검색되는 전체 기간";
-  return `웹 검색을 사용해 아래 행사의 온라인 언급을 조사해 주세요.
+  return `웹 검색을 사용해 아래 행사의 온라인 언급을 조사해 주세요. 이 조사는 제3자(우리가 아닌 다른 사람·매체)의 반응만 찾는 것입니다.
 
 행사명과 검색어: ${names.join(" / ")}
 조사 범위: 행사 관련 자료가 검색되는 전체 기간. 마지막 수집 기준(${since}) 이전에 놓친 자료도 포함하세요.
 
-행사명의 한글·영문·약칭·띄어쓰기 변형과 공식 해시태그를 각각 검색하고, 개최 도시·연도·주최자와 조합해 동명이벤트를 구분하세요. 뉴스, 블로그·커뮤니티, SNS·동영상 채널별로 나누어 여러 검색어로 조사하세요. 공식 계정뿐 아니라 참가사·참관객·기자의 게시물도 찾으세요. 제목에 행사명이 없더라도 본문에서 해당 행사와의 직접 관련성을 확인하면 포함하세요.
+행사명의 한글·영문·약칭·띄어쓰기 변형과 공식 해시태그를 각각 검색하고, 개최 도시·연도·주최자와 조합해 동명이벤트를 구분하세요. 뉴스, 블로그·커뮤니티, SNS·동영상 채널별로 나누어 여러 검색어로 조사하세요. 참가사·참관객·기자 등 제3자의 게시물을 찾으세요. 제목에 행사명이 없더라도 본문에서 해당 행사와의 직접 관련성을 확인하면 포함하세요.
 가능하면 검증된 고유 URL 50건 이상을 목표로 하되 개수를 채우려고 자료를 만들지 마세요. 10~20건의 대표 사례에서 멈추지 말고 검색어와 채널을 바꿔 추가 조사하세요. 응답 길이가 부족하면 선택 필드와 요약을 줄이고, 배열이 잘리지 않게 완성한 뒤 다음 응답에서 기존 URL을 제외하고 계속 조사할 수 있게 하세요.
 
 뉴스·보도자료와 공개된 Instagram, Facebook, Threads, X, LinkedIn, TikTok, YouTube, 블로그·커뮤니티를 행사명 정확 일치 위주로 검색하세요. 행사와 직접 관련되지 않은 동명이벤트와 일반적인 엑스포·축제 자료는 제외하세요. 검색 결과 페이지가 아니라 실제 원문 URL만 사용하고, 확인하지 못한 제목·작성자·날짜·수치는 만들지 마세요. 같은 원문의 재게시와 중복 URL은 하나만 남기세요.
+
+**절대 포함하지 마세요 — 우리(주최 측)가 직접 올린 내용은 대상이 아닙니다:**
+- 아래 "우리 채널" 목록에 해당하는 홈페이지·SNS 계정의 게시물
+- 주최 측이 직접 행사를 등록한 행사 소개·티켓 플랫폼 페이지(Eventbrite, 온오프믹스, 이벤터스, tradeKorea 전시 안내 등) — 제3자가 쓴 후기·댓글이 아니라 행사 등록 정보 자체라면 제외
+이미 포함했더라도 위 두 경우에 해당하면 결과에서 빼주세요.
+
+우리 채널 목록(이 URL들과 그 하위 게시물은 전부 제외):
+${ownChannels.slice(0, 50).join("\n") || "없음 — 행사 공식 홈페이지·공식 SNS 계정이 있다면 '조사 설정'에 등록해 두면 더 정확히 걸러져요."}
 
 이미 저장된 URL(다시 내보내지 않기):
 ${knownUrls.slice(0, 300).join("\n") || "없음"}

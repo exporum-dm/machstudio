@@ -25,6 +25,7 @@ import {
   analyzeMention,
   buildClaudeResearchPrompt,
   buildPressReleasePrompt,
+  isOwnChannel,
   parseClaudeResearch,
   releaseLabel,
   type PressAnswers,
@@ -40,6 +41,7 @@ interface Room {
   project: { name: string };
   keywords: unknown;
   referenceUrls: unknown;
+  ownChannelUrls: unknown;
   excludedMentionUrls: unknown;
   excludedMentionRules: unknown;
   mentions: unknown;
@@ -314,11 +316,13 @@ function AiResearchWorkspace({
   const eventNames = keywords.length ? keywords : [data.room.project.name];
   const excludedUrls = new Set(Array.isArray(data.room.excludedMentionUrls) ? data.room.excludedMentionUrls.filter((x): x is string => typeof x === "string") : []);
   const excludedRules = Array.isArray(data.room.excludedMentionRules) ? data.room.excludedMentionRules as ExcludedMentionRule[] : [];
+  const ownChannels = Array.isArray(data.room.ownChannelUrls) ? data.room.ownChannelUrls.filter((x): x is string => typeof x === "string") : [];
   const prompt = buildClaudeResearchPrompt({
     eventNames,
     lastCollectedAt: data.room.lastCollectedAt,
     knownUrls: mentions.map((x) => x.url),
     excludedRules,
+    ownChannels,
   });
   const start = () => {
     window.open("https://claude.ai/new", "_blank", "noopener,noreferrer");
@@ -332,7 +336,9 @@ function AiResearchWorkspace({
     try {
       const known = new Set(mentions.map((x) => x.url));
       const parsed = parseClaudeResearch(value);
-      const rows = parsed.filter((x) => !known.has(x.url) && !excludedUrls.has(x.url));
+      // 프롬프트에서 우리 채널은 빼 달라고 했지만, Claude 가 그래도 포함할 수 있어 한 번 더 거른다.
+      const rows = parsed.filter((x) => !known.has(x.url) && !excludedUrls.has(x.url) && !isOwnChannel(x.url, ownChannels));
+      const skippedOwnChannel = parsed.length - parsed.filter((x) => !isOwnChannel(x.url, ownChannels)).length;
       if (!rows.length) {
         toast.info(parsed.length ? "모두 이미 저장되었거나 제외한 URL이에요. Claude에 기존 URL을 제외하고 추가 조사해 달라고 요청해 주세요." : "조사 결과가 비어 있어요. Claude에서 추가 조사한 결과를 붙여 넣어 주세요.");
         return;
@@ -348,7 +354,7 @@ function AiResearchWorkspace({
       }));
       setData(await save(projectId, { mentions: [...added, ...mentions], lastCollectedAt: now }, data.room.updatedAt));
       setValue("");
-      toast.success(`Claude 조사 결과 ${added.length}건을 가져왔어요.${parsed.length > added.length ? ` 기존·제외 URL ${parsed.length - added.length}건은 건너뛰었어요.` : ""}`);
+      toast.success(`Claude 조사 결과 ${added.length}건을 가져왔어요.${parsed.length > added.length ? ` 기존·제외 URL ${parsed.length - added.length}건은 건너뛰었어요.` : ""}${skippedOwnChannel ? ` (우리 채널 ${skippedOwnChannel}건 포함)` : ""}`);
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "결과를 가져오지 못했어요.");
       await reload();
@@ -808,6 +814,10 @@ function MentionSettings({
         .join(", ")
     : "";
   const [keywords, setKeywords] = useState(words);
+  const channelText = Array.isArray(data.room.ownChannelUrls)
+    ? data.room.ownChannelUrls.filter((x): x is string => typeof x === "string").join("\n")
+    : "";
+  const [ownChannels, setOwnChannels] = useState(channelText);
   const rules = Array.isArray(data.room.excludedMentionRules) ? data.room.excludedMentionRules as ExcludedMentionRule[] : [];
   const removeRule = async (index: number) => {
     try {
@@ -835,6 +845,18 @@ function MentionSettings({
       <p className="text-xs text-muted-foreground">
         공식 행사명, 영문명, 해시태그를 쉼표로 구분하세요. 입력한 검색어로 네이버·Google과 공개 SNS를 직접 조사합니다.
       </p>
+      <label className="block text-sm font-medium">
+        우리 채널(조사에서 제외)
+        <textarea
+          value={ownChannels}
+          onChange={(e) => setOwnChannels(e.target.value)}
+          className={`mt-2 min-h-24 w-full bg-background p-3 text-sm ${R.control}`}
+          placeholder={"https://en.k-expo.org\nhttps://instagram.com/koreaexpo_official"}
+        />
+      </label>
+      <p className="text-xs text-muted-foreground">
+        공식 홈페이지·공식 SNS 계정 URL을 한 줄에 하나씩 적으세요. 조사는 제3자 반응만 찾는 도구라, 여기 등록한 채널(그 하위 게시물 포함)은 수집·Claude 조사 결과에서 자동으로 빠집니다.
+      </p>
       <Btn
         tone="key"
         disabled={!data.canWrite}
@@ -844,6 +866,10 @@ function MentionSettings({
             await save(projectId, {
               keywords: keywords
                 .split(",")
+                .map((x) => x.trim())
+                .filter(Boolean),
+              ownChannelUrls: ownChannels
+                .split("\n")
                 .map((x) => x.trim())
                 .filter(Boolean),
             }, data.room.updatedAt),

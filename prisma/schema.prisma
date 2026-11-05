@@ -1159,6 +1159,10 @@ model PrRoom {
   lastCollectedAt   DateTime?
   keywords          Json     @default("[]")
   referenceUrls     Json     @default("[]")
+  /// 조직이 직접 운영하는 홈페이지·SNS 계정·행사 플랫폼 등록 URL — 조사·수집에서 제외한다.
+  /// "언급·반응 조사"는 제3자 반응을 보는 도구라, 우리가 직접 올린 글은 대상이 아니다(그건 우리가
+  /// 직접 본다). URL 접두사로 매칭 — 예: "https://instagram.com/koreaexpo_official".
+  ownChannelUrls    Json     @default("[]")
   excludedMentionUrls Json   @default("[]")
   excludedMentionRules Json  @default("[]")
   mentions          Json     @default("[]")

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { analyzeMention, buildClaudeResearchPrompt, buildPressReleasePrompt, parseClaudeResearch } from "../model";
+import { analyzeMention, buildClaudeResearchPrompt, buildPressReleasePrompt, isOwnChannel, parseClaudeResearch } from "../model";
 import { dedupeByTitle, isRelevantMention, isSimilarToExcluded, isUnresolvedGoogleNews, parseNaverNews, parseSocialPage, publicComments } from "../collect";
 
 describe("홍보실 조사", () => {
@@ -26,6 +26,14 @@ it("Claude 조사는 마지막 수집일 이전 누락 자료와 여러 채널�
   expect(prompt).toContain("이전에 놓친 자료도 포함");
   expect(prompt).toContain("50건 이상");
   expect(prompt).toContain("참가사·참관객");
+});
+
+it("Claude 조사는 우리 채널·행사 등록 플랫폼은 제외하라고 안내한다", () => {
+  const prompt = buildClaudeResearchPrompt({ eventNames: ["Korea Expo LA"], lastCollectedAt: null, ownChannels: ["https://en.k-expo.org", "https://instagram.com/koreaexpo_official"] });
+  expect(prompt).toContain("en.k-expo.org");
+  expect(prompt).toContain("instagram.com/koreaexpo_official");
+  expect(prompt).toContain("제3자");
+  expect(prompt).toContain("Eventbrite");
 });
 
 it("인스타 반응 수치를 읽는다",()=>{
@@ -75,6 +83,17 @@ it("같은 제목(문장부호만 다름)의 글이 여러 URL로 들어오면 �
   const result = dedupeByTitle(rows);
   expect(result).toHaveLength(1);
   expect(result[0].url).toBe("https://www.donga.com/news/1");
+});
+
+it("우리 채널 목록에 있는 URL(그 하위 글 포함)은 걸러낸다",()=>{
+  const own = ["https://en.k-expo.org", "https://www.instagram.com/koreaexpo_official"];
+  expect(isOwnChannel("https://en.k-expo.org/overview", own)).toBe(true);
+  expect(isOwnChannel("https://instagram.com/koreaexpo_official", own)).toBe(true);
+  expect(isOwnChannel("https://instagram.com/koreaexpo_official/p/123", own)).toBe(true);
+  // 경계 확인 — 비슷한 남의 계정·도메인은 안 걸려야 한다
+  expect(isOwnChannel("https://instagram.com/koreaexpo_official_fan", own)).toBe(false);
+  expect(isOwnChannel("https://en.k-expo.org.evil.com/", own)).toBe(false);
+  expect(isOwnChannel("https://www.donga.com/news/1", own)).toBe(false);
 });
 
 it("제목이 다른 글은 합치지 않는다",()=>{
