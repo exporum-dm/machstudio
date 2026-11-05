@@ -85,7 +85,7 @@ export interface Insight { tone: "good" | "warn" | "info"; title: string; detail
 export interface RegistrationAnalysis {
   definitions: { timezone: string; eventDates: string[]; onsiteFrom: string; firstEventDate: string };
   kpi: {
-    registrations: { total: number; pre: number; onsite: number };
+    registrations: { total: number; pre: number; onsite: number; unknown?: number };
     visitors: {
       unique: number;
       uniqueWithCompanions: number;
@@ -309,7 +309,7 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
   // 레코드 1회 순회
   const companionFlagged: { registrationNo: string | null; raw: string }[] = [];
   let textAsZero = 0, blank = 0, visitorsWithKids = 0, companionsUnique = 0, companionsDays = 0;
-  let pre = 0, onsite = 0, preVisited = 0, onsiteVisited = 0;
+  let pre = 0, onsite = 0, preVisited = 0, onsiteVisited = 0, unknownChannel = 0;
   let missingRegistrationTimes = 0;
   const dailyMap = new Map<string, { pre: number; onsite: number }>();
   const onsiteHourMap = new Map<string, number>();
@@ -341,6 +341,8 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
     // 가져온 일시는 원본 등록일이 아니다. 시간이 없는 과거 자료는 알려진 접수 유형만 쓴다.
     const timeKnown = r.data.__import_timestamp_missing !== true;
     const importedChannel = histories.get(r.id)?.channel;
+    // 날짜·경로가 모두 없는 연락처 목록은 현장등록으로 추정하지 않는다.
+    const channelUnknown = !timeKnown && !importedChannel && !r.entryChannel;
     const isPre = importedChannel ? importedChannel === "online" : !timeKnown && r.entryChannel ? r.entryChannel === "online" : r.createdAt < onsiteFrom;
     if (!timeKnown) missingRegistrationTimes++;
     isPreById.set(r.id, isPre);
@@ -348,7 +350,9 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
     const visited = Boolean(days?.size);
     const { date: regDate, hour: regHour } = parts(r.createdAt);
 
-    if (isPre) { pre++; if (visited) preVisited++; } else { onsite++; if (visited) onsiteVisited++; }
+    if (channelUnknown) unknownChannel++;
+    else if (isPre) pre++; else onsite++;
+    if (visited) { if (isPre) preVisited++; else onsiteVisited++; }
     if (timeKnown) {
       const dm = dailyMap.get(regDate) ?? { pre: 0, onsite: 0 };
       if (isPre) dm.pre++; else dm.onsite++;
@@ -421,7 +425,7 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
       for (const v of new Set(values)) {
         const row = acc.rows.get(v) ?? { regs: 0, visited: 0, preRegs: 0, onsiteRegs: 0, preVisited: 0, onsiteVisited: 0 };
         row.regs++;
-        if (isPre) row.preRegs++; else row.onsiteRegs++;
+        if (!channelUnknown) { if (isPre) row.preRegs++; else row.onsiteRegs++; }
         if (visited) { row.visited++; if (isPre) row.preVisited++; else row.onsiteVisited++; }
         acc.rows.set(v, row);
       }
@@ -513,7 +517,7 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
   const analysis: RegistrationAnalysis = {
     definitions: { timezone, eventDates, onsiteFrom: onsiteFrom.toISOString(), firstEventDate },
     kpi: {
-      registrations: { total: records.length, pre, onsite },
+      registrations: { total: records.length, pre, onsite, ...(unknownChannel ? { unknown: unknownChannel } : {}) },
       visitors: {
         unique: visitorsUnique,
         uniqueWithCompanions: visitorsUnique + companionsUnique,

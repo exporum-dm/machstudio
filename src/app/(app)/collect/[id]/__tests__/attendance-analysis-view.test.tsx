@@ -13,12 +13,14 @@ vi.mock("@/components/ui/use-chart-colors", () => ({ useChartColors: () => ({ se
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 it("shows registration answers without implying zero attendance for unmeasured events", async () => {
-  const analysis = buildRegistrationAnalysis({ timezone: "Asia/Tokyo", eventDates: ["2025-03-27"], fields: [{ key: "gender", label: "성별", kind: "single", options: ["여성"] }], companionKey: null, visitDateKey: null, regionKey: null, records: [{ id: "a", registrationNo: null, createdAt: new Date("2025-03-01"), utmSource: null, data: { gender: "여성", __attendance_import: { version: 1, kind: "visitor-history", measured: false, channel: "online", visitDates: [], sessions: [] } } }], checkIns: [] });
+  const analysis = buildRegistrationAnalysis({ timezone: "Asia/Tokyo", eventDates: ["2025-03-27"], fields: [{ key: "gender", label: "성별", kind: "single", options: ["여성"] }], companionKey: null, visitDateKey: null, regionKey: null, records: [{ id: "a", registrationNo: null, createdAt: new Date("2025-03-01"), utmSource: null, data: { gender: "여성", __import_timestamp_missing: true, __attendance_import: { version: 1, kind: "visitor-history", measured: false, channel: null, visitDates: [], sessions: [] } } }], checkIns: [] });
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ sourceName: "Osaka", analysis, audiences: [], audienceRows: [] }) }));
   render(<AnalysisTab sourceId="osaka" />);
   expect(await screen.findByRole("button", { name: /등록 분석 엑셀/ })).toBeEnabled();
   expect(screen.getAllByText(/미집계/).length).toBeGreaterThan(0);
   expect(screen.getByText("여성")).toBeInTheDocument();
+  expect(screen.getByText("등록 경로 미상")).toBeInTheDocument();
+  expect(screen.queryByText("현장등록")).not.toBeInTheDocument();
   expect(screen.queryByText("0.0%")).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /결과보고용 엑셀/ })).not.toBeInTheDocument();
 });
