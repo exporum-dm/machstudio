@@ -1,3 +1,4 @@
+import { projectAdCampaignScope } from "@/lib/ad-campaign-scope";
 /**
  * 웨비나 분석 — 퍼널 / UTM 소스·매체별 분해 / 등록 추이 / 인터랙션 아카이브 / 리드 스코어링.
  * 수동 새로고침만 (폴링 없음 — egress 배려). 라이브 KPI 는 dashboard 엔드포인트가 담당.
@@ -175,6 +176,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         by: ["campaignName"],
         where: {
           projectId: webinar.projectId,
+          AND: [projectAdCampaignScope(await prisma.adPerformanceFolder.findMany({ where: { projectId: webinar.projectId }, select: { id: true, mediaAccounts: true } }))],
           OR: [
             { reportDate: { gte: costFrom, lte: costTo } },
             { AND: [{ reportDate: null }, { reportStart: { lte: costTo } }, { reportEnd: { gte: costFrom } }] },

@@ -1,3 +1,4 @@
+import { projectAdCampaignScope } from "@/lib/ad-campaign-scope";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
@@ -96,8 +97,9 @@ export async function POST(request: Request) {
   const fromD = new Date(now.getTime() - 30 * 86400_000);
   const toD = now;
 
+  const campaignScope = projectAdCampaignScope(await prisma.adPerformanceFolder.findMany({ where: { projectId: project.id, workspaceId: project.workspaceId }, select: { id: true, mediaAccounts: true } }));
   const cacheKey = "pub-analytics:" + createHash("sha1")
-    .update(JSON.stringify({ token, from: fromD.toISOString(), to: toD.toISOString() }))
+    .update(JSON.stringify({ token, from: fromD.toISOString(), to: toD.toISOString(), campaignScope }))
     .digest("hex");
   const cached = dashboardCache.get(cacheKey);
   if (cached) return NextResponse.json(cached);
@@ -114,6 +116,7 @@ export async function POST(request: Request) {
     projectId: project.id,
     workspaceId: project.workspaceId,
     ...rangeWhere,
+    AND: [campaignScope],
   };
 
   const [totalsAgg, mediaGroups, campaignGroups, trendGroups] = await Promise.all([

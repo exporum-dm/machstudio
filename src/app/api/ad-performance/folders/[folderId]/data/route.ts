@@ -1,3 +1,5 @@
+import { kstDateOnly } from "@/lib/ad-sync/shared";
+import { adCampaignScope } from "@/lib/ad-campaign-scope";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAdFolderAccess } from "@/lib/ad-folder-access";
@@ -58,9 +60,12 @@ export async function GET(request: Request, context: Context) {
   const sourceType = searchParams.get("sourceType");
   const campaignId = searchParams.get("campaignId");
   const adGroupId = searchParams.get("adGroupId");
+  const from = new Date(`${kstDateOnly(access.folder.reportStart)}T00:00:00+09:00`);
+  const to = new Date(`${kstDateOnly(access.folder.reportEnd)}T23:59:59.999+09:00`);
   const records = await prisma.adPerformanceRecord.findMany({
     where: {
       folderId,
+      AND: [adCampaignScope(access.folder.mediaAccounts), { OR: [{ reportDate: { gte: from, lte: to } }, { reportDate: null, reportStart: { lte: to }, reportEnd: { gte: from } }, { reportDate: null, reportStart: null, reportEnd: null, createdAt: { gte: from, lte: to } }] }],
       ...(sourceType && sourceType !== "ALL" ? { sourceType } : {}),
       ...(campaignId ? { campaignId } : {}),
       ...(adGroupId ? { adGroupId } : {}),

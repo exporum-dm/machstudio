@@ -42,6 +42,7 @@ type Folder = {
     platform: string;
     accountId: string;
     accountName: string;
+    campaignIds?: string[];
   }>;
 };
 type DataRow = {

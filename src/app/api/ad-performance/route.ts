@@ -1,3 +1,4 @@
+import { adCampaignScope, projectAdCampaignScope } from "@/lib/ad-campaign-scope";
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { Prisma } from "@/generated/prisma";
@@ -175,11 +176,15 @@ export async function GET(request: Request) {
     where: { id: projectId, workspaceId, deletedAt: null }, select: { id: true },
   });
   if (!project) return NextResponse.json({ error: "프로젝트를 찾을 수 없습니다." }, { status: 404 });
+  let campaignScope: Prisma.AdPerformanceRecordWhereInput = {};
   if (folderId) {
     const folder = await prisma.adPerformanceFolder.findFirst({
-      where: { id: folderId, workspaceId, projectId }, select: { id: true },
+      where: { id: folderId, workspaceId, projectId }, select: { id: true, mediaAccounts: true },
     });
     if (!folder) return NextResponse.json({ error: "광고 성과 폴더를 찾을 수 없습니다." }, { status: 404 });
+    campaignScope = adCampaignScope(folder.mediaAccounts);
+  } else {
+    campaignScope = projectAdCampaignScope(await prisma.adPerformanceFolder.findMany({ where: { projectId, workspaceId }, select: { id: true, mediaAccounts: true } }));
   }
 
   const rangeWhere = from || to
@@ -219,6 +224,7 @@ export async function GET(request: Request) {
     ...(campaignName ? { campaignName } : {}),
     ...(adGroupName ? { adGroupName } : {}),
     ...rangeWhere,
+    AND: [campaignScope],
   };
 
   // mediaSummary: date range only (no source/campaign/adGroup filter — shows all media)
@@ -227,6 +233,7 @@ export async function GET(request: Request) {
     projectId,
     ...(folderId ? { folderId } : {}),
     ...rangeWhere,
+    AND: [campaignScope],
   };
 
   // campaignSummary: source filter + date range (no campaign/adGroup filter — shows all campaigns in source)
@@ -236,6 +243,7 @@ export async function GET(request: Request) {
     ...(folderId ? { folderId } : {}),
     ...sourceWhere,
     ...rangeWhere,
+    AND: [campaignScope],
   };
 
   // adGroupSummary: source + campaign filter + date range
@@ -246,6 +254,7 @@ export async function GET(request: Request) {
     ...sourceWhere,
     ...(campaignName ? { campaignName } : {}),
     ...rangeWhere,
+    AND: [campaignScope],
   };
 
   const [totalsAgg, mediaSummaryGroups, campaignGroups, adGroupGroups, trendGroups, batches] = await Promise.all([

@@ -1,3 +1,4 @@
+import { adCampaignScope } from "@/lib/ad-campaign-scope";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAdFolderAccess } from "@/lib/ad-folder-access";
@@ -16,7 +17,7 @@ export async function GET(request: Request, context: Context) {
   if (!adId) return NextResponse.json({ error: "adId가 필요합니다." }, { status: 400 });
 
   // 폴더에 실제로 속한 광고인지 먼저 확인 — 다른 광고 계정의 소재를 이 폴더 권한으로 들여다볼 수 없게 막는다.
-  const owned = await prisma.adPerformanceRecord.findFirst({ where: { folderId, adId, sourceType: "META" }, select: { id: true } });
+  const owned = await prisma.adPerformanceRecord.findFirst({ where: { folderId, adId, sourceType: "META", AND: [adCampaignScope(access.folder.mediaAccounts)] }, select: { id: true } });
   if (!owned) return NextResponse.json({ error: "이 폴더에 속한 광고가 아닙니다." }, { status: 404 });
 
   const connection = await findMetaConnection(access.folder.projectId, access.user.id);

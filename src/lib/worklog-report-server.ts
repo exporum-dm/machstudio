@@ -1,3 +1,4 @@
+import { projectAdCampaignScope } from "@/lib/ad-campaign-scope";
 import "server-only";
 /**
  * 주간 보고 초안 — 업무일지 줄 + 행사 + (선택) 지표. GET 보고서·AI 다듬기·엑셀이 같이 쓴다.
@@ -26,12 +27,13 @@ async function weeklyMetrics(projectIds: string[], week: { start: string; end: s
   if (projectIds.length === 0) return out;
   const from = kstStart(week.start);
   const to = kstStart(shiftDay(week.end, 1));
+  const campaignScope = projectAdCampaignScope(await prisma.adPerformanceFolder.findMany({ where: { projectId: { in: projectIds } }, select: { id: true, mediaAccounts: true } }));
   const [weekly, totals, ads] = await Promise.all([
     prisma.collectRecord.groupBy({ by: ["projectId"], where: { projectId: { in: projectIds }, createdAt: { gte: from, lt: to }, source: { deletedAt: null } }, _count: { _all: true } }),
     prisma.collectRecord.groupBy({ by: ["projectId"], where: { projectId: { in: projectIds }, createdAt: { lt: to }, source: { deletedAt: null } }, _count: { _all: true } }),
     prisma.adPerformanceRecord.groupBy({
       by: ["projectId", "currency"],
-      where: { projectId: { in: projectIds }, reportDate: { gte: from, lt: to } },
+      where: { AND: [campaignScope], projectId: { in: projectIds }, reportDate: { gte: from, lt: to } },
       _sum: { cost: true, conversions: true },
     }),
   ]);

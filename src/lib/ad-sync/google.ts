@@ -9,7 +9,7 @@ import {
 } from "@/lib/google-ads";
 import { AdSyncError, kstDateOnly, type AdSyncFolder } from "@/lib/ad-sync/shared";
 
-type Account = { platform: string; accountId: string; accountName?: string };
+type Account = { platform: string; accountId: string; accountName?: string; campaignIds?: string[] };
 type AssetRef = { asset?: string };
 type GoogleAd = {
   id?: string;
@@ -162,9 +162,10 @@ export async function syncGoogleFolder(folder: AdSyncFolder, userId: string) {
     const query = `SELECT customer.id, customer.descriptive_name, customer.currency_code, campaign.id, campaign.name, ad_group.id, ad_group.name, ad_group_ad.status, ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.ad.type, ad_group_ad.ad.image_ad.name, ad_group_ad.ad.image_ad.image_url, ad_group_ad.ad.image_ad.preview_image_url, ad_group_ad.ad.responsive_display_ad.marketing_images, ad_group_ad.ad.responsive_display_ad.square_marketing_images, ad_group_ad.ad.responsive_display_ad.youtube_videos, ad_group_ad.ad.video_ad.video.asset, ad_group_ad.ad.video_responsive_ad.videos, ad_group_ad.ad.demand_gen_multi_asset_ad.marketing_images, ad_group_ad.ad.demand_gen_multi_asset_ad.square_marketing_images, ad_group_ad.ad.demand_gen_multi_asset_ad.portrait_marketing_images, ad_group_ad.ad.demand_gen_video_responsive_ad.videos, segments.date, metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.ctr, metrics.average_cpc, metrics.average_cpm, metrics.conversions, metrics.cost_per_conversion FROM ad_group_ad WHERE segments.date BETWEEN '${since}' AND '${until}'`;
 
     for (const account of accounts) {
+      if (account.campaignIds?.length === 0) continue;
       const customerId = googleCustomerId(account.accountId);
-      const accountRows = await fetchAccountRows(customerId, token, query);
-      rows.push(...accountRows);
+      const accountRows = await fetchAccountRows(customerId, token, query + (account.campaignIds ? ` AND campaign.id IN (${account.campaignIds.join(",")})` : ""));
+      rows.push(...accountRows.filter(row => !account.campaignIds || account.campaignIds.includes(row.campaign?.id || "")));
       const names = [
         ...new Set(accountRows.flatMap((row) => assetRefs(row.adGroupAd?.ad))),
       ];
