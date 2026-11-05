@@ -25,6 +25,7 @@ import {
   analyzeMention,
   buildClaudeResearchPrompt,
   buildPressReleasePrompt,
+  isOwnChannel,
   parseClaudeResearch,
   releaseLabel,
   type PressAnswers,
@@ -40,6 +41,7 @@ interface Room {
   project: { name: string };
   keywords: unknown;
   referenceUrls: unknown;
+  ownChannelUrls: unknown;
   excludedMentionUrls: unknown;
   excludedMentionRules: unknown;
   mentions: unknown;
@@ -55,6 +57,14 @@ const dateTime = (value: string | null) =>
         timeStyle: "short",
       })
     : "아직 조사 전";
+// 수집 일자만 보이면 "오늘 조사했다"는 정보만 주지만, 실제로 언제 나간 기사·게시물인지(원문 일자)가
+// 더 중요하다 — 알면 둘 다, 모르면 수집 일자만 보여준다.
+function mentionDateLabel(mention: Pick<PrMention, "publishedAt" | "collectedAt">) {
+  const collected = new Date(mention.collectedAt).toLocaleDateString("ko-KR");
+  if (!mention.publishedAt) return `수집 ${collected}`;
+  const published = new Date(mention.publishedAt).toLocaleDateString("ko-KR");
+  return published === collected ? `원문 ${published}` : `원문 ${published} · 수집 ${collected}`;
+}
 function mentionSource(mention: PrMention) {
   try {
     const host = new URL(mention.url).hostname.replace(/^www\./, "");
@@ -306,11 +316,13 @@ function AiResearchWorkspace({
   const eventNames = keywords.length ? keywords : [data.room.project.name];
   const excludedUrls = new Set(Array.isArray(data.room.excludedMentionUrls) ? data.room.excludedMentionUrls.filter((x): x is string => typeof x === "string") : []);
   const excludedRules = Array.isArray(data.room.excludedMentionRules) ? data.room.excludedMentionRules as ExcludedMentionRule[] : [];
+  const ownChannels = Array.isArray(data.room.ownChannelUrls) ? data.room.ownChannelUrls.filter((x): x is string => typeof x === "string") : [];
   const prompt = buildClaudeResearchPrompt({
     eventNames,
     lastCollectedAt: data.room.lastCollectedAt,
     knownUrls: mentions.map((x) => x.url),
     excludedRules,
+    ownChannels,
   });
   const start = () => {
     window.open("https://claude.ai/new", "_blank", "noopener,noreferrer");
@@ -324,7 +336,9 @@ function AiResearchWorkspace({
     try {
       const known = new Set(mentions.map((x) => x.url));
       const parsed = parseClaudeResearch(value);
-      const rows = parsed.filter((x) => !known.has(x.url) && !excludedUrls.has(x.url));
+      // 프롬프트에서 우리 채널은 빼 달라고 했지만, Claude 가 그래도 포함할 수 있어 한 번 더 거른다.
+      const rows = parsed.filter((x) => !known.has(x.url) && !excludedUrls.has(x.url) && !isOwnChannel(x.url, ownChannels));
+      const skippedOwnChannel = parsed.length - parsed.filter((x) => !isOwnChannel(x.url, ownChannels)).length;
       if (!rows.length) {
         toast.info(parsed.length ? "모두 이미 저장되었거나 제외한 URL이에요. Claude에 기존 URL을 제외하고 추가 조사해 달라고 요청해 주세요." : "조사 결과가 비어 있어요. Claude에서 추가 조사한 결과를 붙여 넣어 주세요.");
         return;
@@ -340,7 +354,7 @@ function AiResearchWorkspace({
       }));
       setData(await save(projectId, { mentions: [...added, ...mentions], lastCollectedAt: now }, data.room.updatedAt));
       setValue("");
-      toast.success(`Claude 조사 결과 ${added.length}건을 가져왔어요.${parsed.length > added.length ? ` 기존·제외 URL ${parsed.length - added.length}건은 건너뛰었어요.` : ""}`);
+      toast.success(`Claude 조사 결과 ${added.length}건을 가져왔어요.${parsed.length > added.length ? ` 기존·제외 URL ${parsed.length - added.length}건은 건너뛰었어요.` : ""}${skippedOwnChannel ? ` (우리 채널 ${skippedOwnChannel}건 포함)` : ""}`);
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "결과를 가져오지 못했어요.");
       await reload();
@@ -573,7 +587,7 @@ function MentionList({
                   {{ press: "뉴스·보도", sns: "SNS", comment: "댓글", community: "커뮤니티", web: "웹" }[x.channel]} · {mentionSource(x)}
                   {x.origin && <span className="ml-2 rounded-full bg-secondary px-2 py-0.5">{x.origin === "claude" ? "Claude 가져오기" : x.origin === "reference" ? "참고 링크" : "자동 수집"}</span>}
                   {x.author ? ` · ${x.channel === "press" ? "기자 " : "@"}${x.author.replace(/^@/, "")}` : ""}
-                  {` · ${x.publishedAt ? "게시" : "수집"} ${new Date(x.publishedAt ?? x.collectedAt).toLocaleDateString("ko-KR")}`}
+                  {` · ${mentionDateLabel(x)}`}
                 </span>
                 <h3 className="mt-2 text-sm font-semibold leading-6">{x.title}</h3>
                 {x.excerpt && x.excerpt !== x.title && <p className="mt-1 line-clamp-3 text-sm leading-6 text-muted-foreground">{x.excerpt}</p>}
@@ -678,7 +692,7 @@ function ResponseList({
         <article key={x.id} className={`${R.panel} ${FINISH.s1} bg-card p-5`}>
           <h3 className="font-semibold">{x.title}</h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            {x.source} · {x.publishedAt ? "게시" : "수집"} {new Date(x.publishedAt ?? x.collectedAt).toLocaleDateString("ko-KR")}
+            {x.source} · {mentionDateLabel(x)}
           </p>
           <div className="mt-3 flex gap-2">
             <select
@@ -800,6 +814,10 @@ function MentionSettings({
         .join(", ")
     : "";
   const [keywords, setKeywords] = useState(words);
+  const channelText = Array.isArray(data.room.ownChannelUrls)
+    ? data.room.ownChannelUrls.filter((x): x is string => typeof x === "string").join("\n")
+    : "";
+  const [ownChannels, setOwnChannels] = useState(channelText);
   const rules = Array.isArray(data.room.excludedMentionRules) ? data.room.excludedMentionRules as ExcludedMentionRule[] : [];
   const removeRule = async (index: number) => {
     try {
@@ -827,6 +845,18 @@ function MentionSettings({
       <p className="text-xs text-muted-foreground">
         공식 행사명, 영문명, 해시태그를 쉼표로 구분하세요. 입력한 검색어로 네이버·Google과 공개 SNS를 직접 조사합니다.
       </p>
+      <label className="block text-sm font-medium">
+        우리 채널(조사에서 제외)
+        <textarea
+          value={ownChannels}
+          onChange={(e) => setOwnChannels(e.target.value)}
+          className={`mt-2 min-h-24 w-full bg-background p-3 text-sm ${R.control}`}
+          placeholder={"https://en.k-expo.org\nhttps://instagram.com/koreaexpo_official"}
+        />
+      </label>
+      <p className="text-xs text-muted-foreground">
+        공식 홈페이지·공식 SNS 계정 URL을 한 줄에 하나씩 적으세요. 조사는 제3자 반응만 찾는 도구라, 여기 등록한 채널(그 하위 게시물 포함)은 수집·Claude 조사 결과에서 자동으로 빠집니다.
+      </p>
       <Btn
         tone="key"
         disabled={!data.canWrite}
@@ -836,6 +866,10 @@ function MentionSettings({
             await save(projectId, {
               keywords: keywords
                 .split(",")
+                .map((x) => x.trim())
+                .filter(Boolean),
+              ownChannelUrls: ownChannels
+                .split("\n")
                 .map((x) => x.trim())
                 .filter(Boolean),
             }, data.room.updatedAt),

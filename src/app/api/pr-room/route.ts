@@ -24,6 +24,7 @@ export async function PATCH(request: Request) {
   if (typeof body?.lastCollectedAt === "string" && !Number.isNaN(new Date(body.lastCollectedAt).getTime())) data.lastCollectedAt = new Date(body.lastCollectedAt);
   if (Array.isArray(body?.keywords)) data.keywords = body.keywords.filter((x) => typeof x === "string").slice(0, 20);
   if (Array.isArray(body?.referenceUrls)) data.referenceUrls = body.referenceUrls.filter((x) => typeof x === "string").slice(0, 20);
+  if (Array.isArray(body?.ownChannelUrls)) data.ownChannelUrls = body.ownChannelUrls.filter((x) => typeof x === "string").slice(0, 50);
   if (Array.isArray(body?.mentions)) data.mentions = body.mentions.slice(0, 5000);
   if (Array.isArray(body?.excludedMentionUrls)) data.excludedMentionUrls = body.excludedMentionUrls.filter((x) => typeof x === "string").slice(0, 5000);
   if (Array.isArray(body?.excludedMentionRules)) data.excludedMentionRules = body.excludedMentionRules.filter((x) => x && typeof x === "object").slice(0, 5000);

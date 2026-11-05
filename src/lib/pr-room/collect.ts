@@ -3,7 +3,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { safeFetchText } from "@/lib/brief/link-preview";
 import { googleNewsUrl, parseFeed } from "@/lib/brief/sources";
-import { analyzeMention, type ExcludedMentionRule, type PrMention } from "./model";
+import { analyzeMention, isOwnChannel, type ExcludedMentionRule, type PrMention } from "./model";
 
 const SOCIAL_SOURCES = [
   { domain: "instagram.com", channel: "sns" as const, label: "Instagram" },
@@ -316,6 +316,7 @@ export async function collectPrRoom(roomId: string, now = new Date()) {
   const queries = keywords.length ? keywords : [room.project.name];
   const excluded = new Set(Array.isArray(room.excludedMentionUrls) ? room.excludedMentionUrls.filter((x):x is string=>typeof x==="string") : []);
   const excludedRules=(Array.isArray(room.excludedMentionRules)?room.excludedMentionRules.filter((x)=>Boolean(x)&&typeof x==="object"&&typeof (x as unknown as ExcludedMentionRule).title==="string"):[]) as unknown as ExcludedMentionRule[];
+  const ownChannels = Array.isArray(room.ownChannelUrls) ? room.ownChannelUrls.filter((x): x is string => typeof x === "string") : [];
   const days = 30;
   const counts: Record<string, number> = {};
   const errors: string[] = [];
@@ -359,13 +360,13 @@ export async function collectPrRoom(roomId: string, now = new Date()) {
       }
     }),
   );
-  const rows = dedupeByTitle((await enrichRows(settled.flat())).filter(row=>!excluded.has(row.url)&&!isSimilarToExcluded(row,excludedRules,queries)));
+  const rows = dedupeByTitle((await enrichRows(settled.flat())).filter(row=>!excluded.has(row.url)&&!isSimilarToExcluded(row,excludedRules,queries)&&!isOwnChannel(row.url,ownChannels)));
   const naverRetentionCutoff = now.getTime() - 21 * 86_400_000;
   const previous = (
     Array.isArray(room.mentions)
       ? (room.mentions as unknown as PrMention[])
       : []
-  ).filter((row) => !excluded.has(row.url) && !isSimilarToExcluded(row,excludedRules,queries) && row.origin !== "reference" && (row.origin !== "naver-api" || new Date(row.collectedAt).getTime() >= naverRetentionCutoff) && isRelevantMention(`${row.title} ${row.excerpt}`, queries));
+  ).filter((row) => !excluded.has(row.url) && !isSimilarToExcluded(row,excludedRules,queries) && !isOwnChannel(row.url,ownChannels) && row.origin !== "reference" && (row.origin !== "naver-api" || new Date(row.collectedAt).getTime() >= naverRetentionCutoff) && isRelevantMention(`${row.title} ${row.excerpt}`, queries));
   const currentByUrl = new Map(rows.map((row) => [row.url, row]));
   const refreshed = previous.map((item) => {
     const row = currentByUrl.get(item.url);
