@@ -49,6 +49,8 @@ export interface PressRelease {
   /** 언급 조사 결과에서 가져왔을 때의 출처 — 직접 작성·붙여넣기면 비워 둔다. */
   sourceUrl?: string;
   sourceOutlet?: string;
+  /** 원문(기사·게시물)이 실제로 나간 날짜 — 언급에서 아카이브했을 때만 안다. updatedAt(저장한 날)과는 다르다. */
+  publishedAt?: string;
 }
 
 export interface PressAnswers {
