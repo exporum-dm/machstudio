@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
   Archive,
+  CalendarDays,
   Clipboard,
   Copy,
   Download,
@@ -121,6 +122,7 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
   const confirm = useConfirm();
   const [tab, setTab] = useQueryTab(["mentions", "ai", "response", "report", "settings"] as const, "mentions", "monitorTab");
   const [running, setRunning] = useState(false);
+  const [fillingDates, setFillingDates] = useState(false);
   const [runSummary, setRunSummary] = useState("");
   if (error) return <ErrorState message={error} retry={load} />;
   if (!data) return <Loading />;
@@ -214,6 +216,23 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
       setRunning(false);
     }
   };
+  const fillDates = async () => {
+    setFillingDates(true);
+    try {
+      const r = await api<{ checked: number; filled: number }>("/api/pr-room/fill-dates", {
+        method: "POST",
+        body: JSON.stringify({ projectId }),
+      });
+      await load();
+      toast.success(r.checked ? `${r.checked}건 확인 · ${r.filled}건 원문 일자를 채웠어요` : "채울 게 없어요");
+    } catch (e) {
+      toast.error((e as Error).message);
+      await load();
+    } finally {
+      setFillingDates(false);
+    }
+  };
+  const missingDates = mentions.filter((x) => !x.publishedAt).length;
   const positive = mentions.filter((x) => x.sentiment === "positive").length,
     negative = mentions.filter((x) => x.sentiment === "negative").length,
     neutral = mentions.length - positive - negative;
@@ -231,6 +250,12 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {missingDates > 0 && (
+            <Btn tone="ghost" disabled={!data.canWrite || fillingDates} onClick={fillDates} aria-label="원문 일자 빠진 글 채우기">
+              {fillingDates ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
+              원문 일자 채우기({missingDates})
+            </Btn>
+          )}
           <Btn tone="ghost" disabled={!data.canWrite} onClick={() => setTab("ai")}>
             <WandSparkles className="h-4 w-4" />
             Claude로 조사

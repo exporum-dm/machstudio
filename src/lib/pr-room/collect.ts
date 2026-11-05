@@ -77,6 +77,28 @@ function metaDescription(html: string) {
   );
 }
 function meta(html:string,key:string){return decodeText(html.match(new RegExp(`<meta[^>]+(?:property|name)=["']${key}["'][^>]+content=["']([^"']*)`,"i"))?.[1]??html.match(new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+(?:property|name)=["']${key}["']`,"i"))?.[1]??"")}
+/**
+ * Claude 웹 조사가 날짜를 못 찾아 null 로 남긴 글의 원문 일자를, 페이지를 직접 받아 메타 태그·
+ * JSON-LD 에서 찾아 채운다(국내 언론사 사이트는 바이라인 날짜가 눈에만 보이고 메타 태그가 없는
+ * 경우도 많아 전부 채워지진 않는다 — 찾은 것만 채우고, 모르면 그대로 null 로 둔다).
+ */
+export function extractPublishedDate(html: string): Date | null {
+  const candidates = [
+    meta(html, "article:published_time"),
+    meta(html, "og:article:published_time"),
+    meta(html, "datePublished"),
+    meta(html, "publishdate"),
+    meta(html, "pubdate"),
+    meta(html, "parsely-pub-date"),
+  ].filter(Boolean);
+  const jsonLd = html.match(/"datePublished"\s*:\s*"([^"]+)"/i)?.[1];
+  if (jsonLd) candidates.push(jsonLd);
+  for (const c of candidates) {
+    const d = new Date(c);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  return null;
+}
 export function publicComments(html:string){const rows:NonNullable<PrMention["comments"]>=[];const seen=new Set<string>();for(const m of html.matchAll(/"text":"((?:\\.|[^"\\]){2,500})"[\s\S]{0,500}?"(?:username|uniqueId)":"([^"\\]+)"[\s\S]{0,180}?"(?:comment_like_count|diggCount)":(\d+)/g)){let text=m[1];try{text=JSON.parse(`"${text}"`)}catch{}text=cleanText(text);if(text&&!seen.has(text)){seen.add(text);rows.push({text,author:m[2],likes:Number(m[3])})}if(rows.length===20)break}return rows}
 export function parseSocialPage(url: string, html: string): Found | null {
   const host = new URL(url).hostname;
@@ -419,4 +441,36 @@ export async function collectPrRoom(roomId: string, now = new Date()) {
   });
   if (!saved.count) throw new Error("PR_ROOM_CHANGED");
   return { roomId, added: added.length, counts, errors };
+}
+
+/**
+ * Claude 웹 조사는 날짜를 모르면 정직하게 null 로 둔다(지어내지 않음) — 그런데 실제로는 원문
+ * 페이지에 메타 태그로 날짜가 있는데 Claude 가 요약하며 놓친 경우가 많다. publishedAt 이 없는
+ * 글만 골라 페이지를 직접 받아 extractPublishedDate 로 다시 찾는다. 많으면 느려지니 한 번에
+ * 40건까지만 — 나머지는 다음 클릭에서 이어 처리된다.
+ */
+export async function fillMissingPublishedDates(roomId: string): Promise<{ checked: number; filled: number }> {
+  const room = await prisma.prRoom.findUnique({ where: { id: roomId } });
+  if (!room) throw new Error("홍보실을 찾을 수 없어요");
+  const mentions = Array.isArray(room.mentions) ? (room.mentions as unknown as PrMention[]) : [];
+  const targets = mentions.filter((m) => !m.publishedAt).slice(0, 40);
+  if (!targets.length) return { checked: 0, filled: 0 };
+  const found = new Map<string, string>();
+  for (let i = 0; i < targets.length; i += 24) {
+    const batch = targets.slice(i, i + 24);
+    await Promise.all(batch.map(async (m) => {
+      const r = await safeFetchText(m.url, { maxBytes: 1_200_000, timeoutMs: 8_000 });
+      if (!r) return;
+      const d = extractPublishedDate(r.text);
+      if (d) found.set(m.url, d.toISOString());
+    }));
+  }
+  if (!found.size) return { checked: targets.length, filled: 0 };
+  const updated = mentions.map((m) => (found.has(m.url) ? { ...m, publishedAt: found.get(m.url)! } : m));
+  const saved = await prisma.prRoom.updateMany({
+    where: { id: room.id, updatedAt: room.updatedAt },
+    data: { mentions: JSON.parse(JSON.stringify(updated)) as Prisma.InputJsonValue },
+  });
+  if (!saved.count) throw new Error("PR_ROOM_CHANGED");
+  return { checked: targets.length, filled: found.size };
 }

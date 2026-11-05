@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { analyzeMention, buildClaudeResearchPrompt, buildPressReleasePrompt, isOwnChannel, parseClaudeResearch } from "../model";
-import { dedupeByTitle, isRelevantMention, isSimilarToExcluded, isUnresolvedGoogleNews, parseNaverNews, parseSocialPage, publicComments } from "../collect";
+import { dedupeByTitle, extractPublishedDate, isRelevantMention, isSimilarToExcluded, isUnresolvedGoogleNews, parseNaverNews, parseSocialPage, publicComments } from "../collect";
 
 describe("홍보실 조사", () => {
   it("부정 이슈를 보수적으로 올린다", () => expect(analyzeMention("운영 부실 논란")).toMatchObject({ sentiment: "negative", status: "issue" }));
@@ -94,6 +94,12 @@ it("우리 채널 목록에 있는 URL(그 하위 글 포함)은 걸러낸다",(
   expect(isOwnChannel("https://instagram.com/koreaexpo_official_fan", own)).toBe(false);
   expect(isOwnChannel("https://en.k-expo.org.evil.com/", own)).toBe(false);
   expect(isOwnChannel("https://www.donga.com/news/1", own)).toBe(false);
+});
+
+it("Claude 조사가 놓친 원문 일자를 메타 태그·JSON-LD 에서 찾아낸다",()=>{
+  expect(extractPublishedDate('<meta property="article:published_time" content="2026-10-25T09:00:00+09:00">')?.toISOString().slice(0,10)).toBe("2026-10-25");
+  expect(extractPublishedDate('<script type="application/ld+json">{"@type":"NewsArticle","datePublished":"2026-10-23T00:00:00Z"}</script>')?.toISOString().slice(0,10)).toBe("2026-10-23");
+  expect(extractPublishedDate("<html><body>아무 날짜도 없음</body></html>")).toBeNull();
 });
 
 it("제목이 다른 글은 합치지 않는다",()=>{
