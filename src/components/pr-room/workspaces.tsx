@@ -55,6 +55,14 @@ const dateTime = (value: string | null) =>
         timeStyle: "short",
       })
     : "아직 조사 전";
+// 수집 일자만 보이면 "오늘 조사했다"는 정보만 주지만, 실제로 언제 나간 기사·게시물인지(원문 일자)가
+// 더 중요하다 — 알면 둘 다, 모르면 수집 일자만 보여준다.
+function mentionDateLabel(mention: Pick<PrMention, "publishedAt" | "collectedAt">) {
+  const collected = new Date(mention.collectedAt).toLocaleDateString("ko-KR");
+  if (!mention.publishedAt) return `수집 ${collected}`;
+  const published = new Date(mention.publishedAt).toLocaleDateString("ko-KR");
+  return published === collected ? `원문 ${published}` : `원문 ${published} · 수집 ${collected}`;
+}
 function mentionSource(mention: PrMention) {
   try {
     const host = new URL(mention.url).hostname.replace(/^www\./, "");
@@ -573,7 +581,7 @@ function MentionList({
                   {{ press: "뉴스·보도", sns: "SNS", comment: "댓글", community: "커뮤니티", web: "웹" }[x.channel]} · {mentionSource(x)}
                   {x.origin && <span className="ml-2 rounded-full bg-secondary px-2 py-0.5">{x.origin === "claude" ? "Claude 가져오기" : x.origin === "reference" ? "참고 링크" : "자동 수집"}</span>}
                   {x.author ? ` · ${x.channel === "press" ? "기자 " : "@"}${x.author.replace(/^@/, "")}` : ""}
-                  {` · ${x.publishedAt ? "게시" : "수집"} ${new Date(x.publishedAt ?? x.collectedAt).toLocaleDateString("ko-KR")}`}
+                  {` · ${mentionDateLabel(x)}`}
                 </span>
                 <h3 className="mt-2 text-sm font-semibold leading-6">{x.title}</h3>
                 {x.excerpt && x.excerpt !== x.title && <p className="mt-1 line-clamp-3 text-sm leading-6 text-muted-foreground">{x.excerpt}</p>}
@@ -678,7 +686,7 @@ function ResponseList({
         <article key={x.id} className={`${R.panel} ${FINISH.s1} bg-card p-5`}>
           <h3 className="font-semibold">{x.title}</h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            {x.source} · {x.publishedAt ? "게시" : "수집"} {new Date(x.publishedAt ?? x.collectedAt).toLocaleDateString("ko-KR")}
+            {x.source} · {mentionDateLabel(x)}
           </p>
           <div className="mt-3 flex gap-2">
             <select
