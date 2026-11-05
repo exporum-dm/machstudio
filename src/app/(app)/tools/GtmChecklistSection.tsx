@@ -4,12 +4,15 @@
  * 프로젝트별 GTM 설치 체크리스트 — 엑셀 "이벤트 택소노미" 시트를 대체한다(2026-11-05).
  * 워크스페이스 공통 이벤트 사전(위 섹션)과 달리 프로젝트(+ Korea Expo 처럼 쇼가 여럿이면 행사)로
  * 묶이고, 이름은 자유 텍스트다. 고치는 화면이다(AGENTS §2): 값은 표에서 바로 고치고 벗어나면 저장.
+ *
+ * 한 프로젝트에 줄이 많아(수십 줄) 카드형 펼치기는 스크롤이 너무 길어진다 — 원래 엑셀처럼
+ * 한 행 = 한 줄, 칸마다 바로 입력하는 표로 보여준다(2026-11-05, 카드형에서 교체).
  */
 import { useCallback, useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { FIELD_CLS, FINISH, R } from "@/components/ui/primitives";
+import { FIELD_CLS } from "@/components/ui/primitives";
 
 interface ChecklistRow {
   id: string;
@@ -27,13 +30,18 @@ interface ChecklistRow {
 
 interface WorkGroupOption { id: string; name: string; projectId: string | null }
 
+// 빽빽한 표 전용 — FIELD_CLS(최소 36px·넉넉한 패딩)를 쓰면 h-7 로 줄여도 min-h-9 가 이긴다.
+// 표 칸은 테두리를 TD 가 이미 그려서 칸마다 또 테두리를 두르지 않는다.
+const CELL = "h-7 w-full border-0 bg-transparent px-1.5 text-xs text-foreground placeholder:text-muted-foreground/40 outline-none";
+const TH = "whitespace-nowrap border-b border-border px-1.5 py-1.5 text-left font-medium text-muted-foreground";
+const TD = "border-b border-border p-0 align-top";
+
 export default function GtmChecklistSection({ workspaceId, projects }: { workspaceId: string; projects: { id: string; name: string }[] }) {
   const confirm = useConfirm();
   const [projectId, setProjectId] = useState("");
   const [allGroups, setAllGroups] = useState<WorkGroupOption[]>([]);
   const [groupId, setGroupId] = useState("");
   const [rows, setRows] = useState<ChecklistRow[] | null>(null);
-  const [openId, setOpenId] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/worklog/groups?workspaceId=${workspaceId}`).then((r) => r.json()).then((d) => setAllGroups(d.groups ?? [])).catch(() => {});
@@ -52,15 +60,15 @@ export default function GtmChecklistSection({ workspaceId, projects }: { workspa
 
   const addRow = async () => {
     if (!projectId) return;
+    const nextStep = Math.max(0, ...(rows ?? []).map((r) => r.step ?? 0)) + 1;
     const res = await fetch("/api/event-taxonomy", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ workspaceId, projectId, groupId: groupId || null, name: "새 단계" }),
+      body: JSON.stringify({ workspaceId, projectId, groupId: groupId || null, name: "새 단계", step: nextStep }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) { toast.error(data.error ?? "추가하지 못했어요"); return; }
     setRows((prev) => [...(prev ?? []), data.event]);
-    setOpenId(data.event.id);
   };
   const patchRow = async (id: string, patch: Partial<ChecklistRow>) => {
     setRows((prev) => (prev ?? []).map((x) => (x.id === id ? { ...x, ...patch } : x)));
@@ -114,20 +122,38 @@ export default function GtmChecklistSection({ workspaceId, projects }: { workspa
       ) : rows === null ? (
         <div className="flex h-24 items-center justify-center"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
       ) : (
-        <div className={`overflow-hidden bg-background ${R.panel} ${FINISH.s1}`}>
-          {rows.length === 0 && <p className="px-4 py-5 text-center text-xs text-muted-foreground">아직 등록한 단계가 없어요</p>}
-          {rows.map((row) => (
-            <ChecklistRowView
-              key={row.id}
-              row={row}
-              open={openId === row.id}
-              onToggle={() => setOpenId((v) => (v === row.id ? null : row.id))}
-              onPatch={(patch) => void patchRow(row.id, patch)}
-              onRemove={() => void removeRow(row)}
-            />
-          ))}
-          <div className="flex items-center gap-2 border-t border-border p-3">
-            <button onClick={() => void addRow()} className={`flex items-center gap-1 bg-violet-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-600 ${R.control}`}>
+        <div className="overflow-x-auto rounded-xl border border-border bg-background">
+          {rows.length === 0 ? (
+            <p className="px-4 py-5 text-center text-xs text-muted-foreground">아직 등록한 단계가 없어요</p>
+          ) : (
+            <table className="w-full min-w-[1100px] table-fixed border-collapse">
+              <thead>
+                <tr className="bg-secondary/40">
+                  <th className={`${TH} w-12`}>단계</th>
+                  <th className={`${TH} w-40`}>이름</th>
+                  <th className={`${TH} w-40`}>트리거</th>
+                  <th className={`${TH} w-40`}>트리거 조건</th>
+                  <th className={`${TH} w-64`}>내용</th>
+                  <th className={`${TH} w-32`}>class명</th>
+                  <th className={`${TH} w-14 text-center`}>태깅</th>
+                  <th className={`${TH} w-40`}>비고</th>
+                  <th className={`${TH} w-8`} />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <ChecklistTableRow
+                    key={row.id}
+                    row={row}
+                    onPatch={(patch) => void patchRow(row.id, patch)}
+                    onRemove={() => void removeRow(row)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          )}
+          <div className="flex items-center gap-2 border-t border-border p-2">
+            <button onClick={() => void addRow()} className="flex items-center gap-1 rounded-lg bg-violet-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-600">
               <Plus className="h-3 w-3" />단계 추가
             </button>
           </div>
@@ -137,77 +163,50 @@ export default function GtmChecklistSection({ workspaceId, projects }: { workspa
   );
 }
 
-function ChecklistRowView({
-  row, open, onToggle, onPatch, onRemove,
+function ChecklistTableRow({
+  row, onPatch, onRemove,
 }: {
   row: ChecklistRow;
-  open: boolean;
-  onToggle: () => void;
   onPatch: (patch: Partial<ChecklistRow>) => void;
   onRemove: () => void;
 }) {
   return (
-    <div className="border-t border-border first:border-t-0">
-      <div className="flex flex-wrap items-center gap-2 px-4 py-2.5">
-        <button onClick={onToggle} className="rounded p-0.5 text-muted-foreground hover:text-foreground" aria-label={open ? "접기" : "펼치기"}>
-          {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-        </button>
+    <tr className="group hover:bg-secondary/20">
+      <td className={TD}>
         <input
           type="number"
           defaultValue={row.step ?? ""}
           onBlur={(e) => { const v = e.target.value === "" ? null : Number(e.target.value); if (v !== row.step) onPatch({ step: v }); }}
-          placeholder="단계"
-          className={`${FIELD_CLS} h-7 w-14 text-xs`}
+          className={CELL}
           aria-label="단계"
         />
-        <input
-          defaultValue={row.name}
-          onBlur={(e) => { if (e.target.value !== row.name) onPatch({ name: e.target.value }); }}
-          placeholder="이벤트명(이름)"
-          className={`${FIELD_CLS} h-7 min-w-0 flex-1 text-xs`}
-          aria-label="이름"
-        />
-        <input
-          defaultValue={row.triggerCondition}
-          onBlur={(e) => { if (e.target.value !== row.triggerCondition) onPatch({ triggerCondition: e.target.value }); }}
-          placeholder="트리거 조건"
-          className={`${FIELD_CLS} h-7 w-40 font-mono text-xs`}
-          aria-label="트리거 조건"
-        />
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <input type="checkbox" checked={row.tagged} onChange={(e) => onPatch({ tagged: e.target.checked })} className="accent-violet-500" />
-          태깅 완료
-        </label>
-        <button onClick={onRemove} className="rounded p-1 text-muted-foreground hover:text-red-500" aria-label={`${row.name} 지우기`}>
+      </td>
+      <td className={TD}>
+        <input defaultValue={row.name} onBlur={(e) => { if (e.target.value !== row.name) onPatch({ name: e.target.value }); }} className={CELL} aria-label="이름" />
+      </td>
+      <td className={TD}>
+        <input defaultValue={row.trigger} onBlur={(e) => { if (e.target.value !== row.trigger) onPatch({ trigger: e.target.value }); }} className={CELL} aria-label="트리거" />
+      </td>
+      <td className={TD}>
+        <input defaultValue={row.triggerCondition} onBlur={(e) => { if (e.target.value !== row.triggerCondition) onPatch({ triggerCondition: e.target.value }); }} className={`${CELL} font-mono`} aria-label="트리거 조건" />
+      </td>
+      <td className={TD}>
+        <input defaultValue={row.content} onBlur={(e) => { if (e.target.value !== row.content) onPatch({ content: e.target.value }); }} className={`${CELL} font-mono`} aria-label="내용" />
+      </td>
+      <td className={TD}>
+        <input defaultValue={row.className} onBlur={(e) => { if (e.target.value !== row.className) onPatch({ className: e.target.value }); }} className={`${CELL} font-mono`} aria-label="class명" />
+      </td>
+      <td className={`${TD} text-center`}>
+        <input type="checkbox" checked={row.tagged} onChange={(e) => onPatch({ tagged: e.target.checked })} className="accent-violet-500" aria-label="태깅 완료" />
+      </td>
+      <td className={TD}>
+        <input defaultValue={row.note} onBlur={(e) => { if (e.target.value !== row.note) onPatch({ note: e.target.value }); }} className={CELL} aria-label="비고" />
+      </td>
+      <td className={`${TD} text-center`}>
+        <button onClick={onRemove} className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100" aria-label={`${row.name} 지우기`}>
           <Trash2 className="h-3.5 w-3.5" />
         </button>
-      </div>
-      {open && (
-        <div className="space-y-2 border-t border-border bg-secondary/20 px-4 py-3">
-          <label className="block space-y-1">
-            <span className="text-[11px] text-muted-foreground">이벤트 발생 조건(트리거)</span>
-            <input defaultValue={row.trigger} onBlur={(e) => { if (e.target.value !== row.trigger) onPatch({ trigger: e.target.value }); }}
-              placeholder="예: 맞춤 이벤트 · 맞춤 HTML" className={`${FIELD_CLS} h-8 text-xs`} />
-          </label>
-          <label className="block space-y-1">
-            <span className="text-[11px] text-muted-foreground">내용 — 설치 코드</span>
-            <textarea defaultValue={row.content} onBlur={(e) => { if (e.target.value !== row.content) onPatch({ content: e.target.value }); }}
-              rows={6} placeholder="GTM 태그·픽셀 코드" className={`${FIELD_CLS} font-mono text-xs leading-relaxed`} />
-          </label>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <label className="space-y-1">
-              <span className="text-[11px] text-muted-foreground">class명</span>
-              <input defaultValue={row.className} onBlur={(e) => { if (e.target.value !== row.className) onPatch({ className: e.target.value }); }}
-                className={`${FIELD_CLS} h-8 font-mono text-xs`} />
-            </label>
-            <label className="space-y-1">
-              <span className="text-[11px] text-muted-foreground">비고</span>
-              <input defaultValue={row.note} onBlur={(e) => { if (e.target.value !== row.note) onPatch({ note: e.target.value }); }}
-                className={`${FIELD_CLS} h-8 text-xs`} />
-            </label>
-          </div>
-        </div>
-      )}
-    </div>
+      </td>
+    </tr>
   );
 }
