@@ -540,7 +540,7 @@ function ResultsView({ surveyId, config }: { surveyId: string; config: SurveyCon
   }, [surveyId, audience, by]);
   useEffect(() => { void Promise.resolve().then(load); }, [load]);
   if (!data) return <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
-  const label = (a: string) => config.audienceLabels[a] ?? a;
+  const label = (a: string) => a === "(없음)" ? "유형 미수집" : config.audienceLabels[a] ?? a;
   // 대표 지표 — 추천 점수(NPS) 먼저, 그다음 점수 문항 순서대로(보통 전반 만족도가 첫 점수 문항이다).
   const headline = [...data.summaries.filter((s) => s.type === "nps" && s.answered), ...data.summaries.filter((s) => s.type === "scale" && s.average !== undefined)].slice(0, 3);
 
@@ -573,7 +573,7 @@ function ResultsView({ surveyId, config }: { surveyId: string; config: SurveyCon
           {data.scoreQuestions.length > 0 && data.segmentable.length > 0 && (
             <div className={`space-y-2 overflow-x-auto bg-background p-4 ${R.panel} ${FINISH.s1}`}>
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-sm font-semibold">등록 정보로 나눠 보기</h3>
+                <h3 className="text-sm font-semibold">{data.anonymous === data.total ? "조사 응답으로 나눠 보기" : "등록 정보로 나눠 보기"}</h3>
                 <select value={data.by} onChange={(e) => setBy(e.target.value)} className={`${FIELD_CLS} h-7 w-auto text-xs`}>
                   {data.segmentable.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
                 </select>
