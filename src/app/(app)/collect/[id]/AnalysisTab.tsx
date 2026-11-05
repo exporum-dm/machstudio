@@ -142,6 +142,11 @@ type SegView = "visitors" | "prePost";
 type QColors = { pre: string; onsite: string; reg: string; grid: string; axis: string };
 const shortLabel = (v: string, max = 26) => (v.length > max ? `${v.slice(0, max - 1)}…` : v);
 
+function RegistrationQuestionCard({ seg, color }: { seg: Segment; color: string }) {
+  const max = Math.max(...seg.rows.map((row) => row.regs), 1);
+  return <Card><SectionTitle title={seg.label} hint={`${seg.kind === "multi" ? "복수 선택 · " : ""}응답 ${n(seg.answered)}명`} /><div className="space-y-3">{seg.rows.map((row) => <div key={row.value}><div className="mb-1 flex justify-between gap-3 text-xs"><span className="min-w-0 break-words">{row.value}</span><span className="shrink-0 tabular-nums">{n(row.regs)}명 · {pct(seg.answered ? row.regs / seg.answered : 0)}</span></div><ShareBar value={row.regs} max={max} color={color} /></div>)}</div></Card>;
+}
+
 /** 질문 하나 = 카드 하나. 가로 막대(값마다 두 줄) + 표로 보기. 같은 축(0~최대 비중)이라 막대 길이를 바로 비교할 수 있다. */
 function QuestionCard({ seg, view, colors }: { seg: Segment; view: SegView; colors: QColors }) {
   const visitorsPre = seg.rows.reduce((x, r) => x + r.preVisited, 0);
@@ -401,6 +406,13 @@ export default function AnalysisTab({ sourceId }: { sourceId: string }) {
       const XLSX = await import("xlsx");
       const wb = XLSX.utils.book_new();
       const k = a.kpi;
+      if (a.attendance?.measurementAvailable === false) {
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["항목", "값"], ["범위", audience || "전체"], ["전체 등록", k.registrations.total], ["사전등록", k.registrations.pre], ["현장등록", k.registrations.onsite], ...(k.registrations.unknown ? [["등록 경로 미상", k.registrations.unknown]] : []), ["방문 기록", "미수집 — 실제 방문·방문율 미집계"]]), "요약");
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(a.daily.map((row) => ({ 날짜: row.date, 사전등록: row.pre, 현장등록: row.onsite, 누적: row.cumulative }))), "등록 추이");
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(a.segments.flatMap((seg) => seg.rows.map((row) => ({ 문항: seg.label, 응답: row.value, 등록: row.regs })))), "문항별 등록");
+        XLSX.writeFile(wb, `${data.sourceName.replace(/[^a-zA-Z0-9가-힣_-]+/g, "_")}_등록분석.xlsx`);
+        return;
+      }
       const summary = [
         ["항목", "값", "설명"],
         ["범위", audience || "전체", audience ? "이 유형 등록자만" : "모든 유형"],
@@ -455,6 +467,17 @@ export default function AnalysisTab({ sourceId }: { sourceId: string }) {
   const arrivals = hourly(a.arrivalsHourly);
   const onsiteRegs = hourly(a.onsiteHourly);
   const visitorMixOnsite = k.visitors.unique ? k.visitorMix.onsite / k.visitors.unique : 0;
+
+  if (a.attendance?.measurementAvailable === false) return (
+    <div className="max-w-6xl space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-base font-semibold">응답 분석</h2><p className="mt-1 text-xs text-muted-foreground">등록·응답 기준 분석 · 방문 기록 미수집</p></div><div className="flex gap-2"><Btn tone="ghost" onClick={() => void load()} disabled={loading}>새로 계산</Btn><Btn onClick={() => void exportXlsx()}><Download className="h-4 w-4" />등록 분석 엑셀</Btn></div></div>
+      {data.audiences.length > 1 && <Segmented<string> label="분석 범위" value={audience} onChange={setAudience} options={[{value:"",label:"전체"},...data.audiences.map((item)=>({value:item.value,label:`${item.value} (${n(item.analysis.kpi.registrations.total)})`}))]} />}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3"><Card className="col-span-2 lg:col-span-1"><p className="text-xs text-muted-foreground">전체 등록</p><p className="mt-1 text-3xl font-semibold tabular-nums">{n(k.registrations.total)}명</p></Card>{k.registrations.unknown === k.registrations.total ? <Card><p className="text-xs text-muted-foreground">등록 경로 미상</p><p className="mt-1 text-2xl font-semibold tabular-nums">{n(k.registrations.unknown)}건</p><p className="mt-1 text-xs text-muted-foreground">원본에 사전·현장 구분이 없습니다.</p></Card> : <><Card><p className="text-xs text-muted-foreground">사전등록</p><p className="mt-1 text-2xl font-semibold tabular-nums">{n(k.registrations.pre)}명</p></Card><Card><p className="text-xs text-muted-foreground">현장등록</p><p className="mt-1 text-2xl font-semibold tabular-nums">{n(k.registrations.onsite)}명</p></Card>{Boolean(k.registrations.unknown) && <Card><p className="text-xs text-muted-foreground">등록 경로 미상</p><p className="mt-1 text-2xl font-semibold tabular-nums">{n(k.registrations.unknown!)}건</p></Card>}</>}</div>
+      <Card><SectionTitle title="실제 방문·방문율 미집계" hint="이 행사는 바코드·입장 기록을 수집하지 않았습니다. 현장등록 이력은 등록 경로에 반영하며, 방문자 수나 미방문 여부를 추정하지 않습니다." /></Card>
+      <Card><SectionTitle title="등록 추이" hint={a.daily.length ? "원본 응답시간 기준" : "원본 등록일시가 없어 등록 추이를 집계하지 않습니다."} /><div className="h-56"><ResponsiveContainer width="100%" height="100%"><LineChart data={a.daily} margin={{top:8,right:8,left:-16,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke={colors.grid} /><XAxis dataKey="date" tickFormatter={md} tick={{fontSize:10,fill:colors.axis}} /><YAxis tick={{fontSize:10,fill:colors.axis}} /><Tooltip content={<ChartTip />} /><Legend /><Line type="monotone" dataKey="pre" name="사전등록" stroke={seriesPre} dot={false} /><Line type="monotone" dataKey="onsite" name="현장등록" stroke={seriesOnsite} dot={false} /></LineChart></ResponsiveContainer></div></Card>
+      <section className="space-y-3"><h3 className="text-sm font-semibold">질문별 등록 응답</h3><div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">{a.segments.filter((seg)=>!seg.key.startsWith("__")).map((seg)=><RegistrationQuestionCard key={seg.key} seg={seg} color={colors.chat} />)}</div></section>
+    </div>
+  );
 
   return (
     <div className="max-w-6xl space-y-5">
@@ -582,7 +605,7 @@ export default function AnalysisTab({ sourceId }: { sourceId: string }) {
 
       {a.attendance && !noVisits && (
         <Card>
-          <SectionTitle title="입장시각·체류시간" hint={`입장시각이 있는 ${n(a.attendance.visitorsWithEntryTime)}명만 시간대별 입장 그래프에 포함합니다. 방문일만 확인된 ${n(a.attendance.dateOnlyVisitors)}명도 방문율·방문일·재방문에는 포함해요.`} />
+          <SectionTitle title={a.attendance.stay.sessions ? "입장시각·체류시간" : "입장시각 자료"} hint={`입장시각이 있는 ${n(a.attendance.visitorsWithEntryTime)}명만 시간대별 입장 그래프에 포함합니다. 방문일만 확인된 ${n(a.attendance.dateOnlyVisitors)}명도 방문율·방문일·재방문에는 포함해요.`} />
           {a.attendance.stay.sessions > 0 && <>
             <div className="grid grid-cols-2 gap-4">
               <div><p className="text-xs text-muted-foreground">평균 체류</p><p className="mt-1 text-2xl font-semibold tabular-nums">{minutes(a.attendance.stay.averageSeconds)}</p></div>

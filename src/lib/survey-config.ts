@@ -389,6 +389,7 @@ const SURVEY_MIN_N = 20;
 const num = (x: number) => x.toLocaleString("ko-KR");
 
 export interface SurveyInsightResponse {
+  channel?: string;
   recordId: string | null;
   /** 응답자 유형(등록 폼의 유형 값 — 비면 구분 없음) */
   audience: string;
@@ -429,7 +430,9 @@ export function surveyInsights(input: SurveyInsightInput): Insight[] {
 
   // 1) 응답률 — 낮으면 "이 결과를 대표값으로 믿기 어렵다 + 어떻게 올릴지" 를 같이 말한다.
   const registered = responses.filter((r) => r.recordId).length;
-  if (registrantsTotal >= SURVEY_MIN_N) {
+  const anonymous = responses.filter((r) => r.channel === "anonymous-import").length;
+  if (anonymous) out.push({ tone: "info", title: `${surveyName}: 익명 원본 ${num(anonymous)}건 포함`, detail: "개별 등록자와 연결할 수 없는 원본입니다. 전체 점수와 조사 자체의 유형·인구통계는 집계하며 등록자 응답률이나 사전·현장 차이로 해석하지 않습니다." });
+  if (registrantsTotal >= SURVEY_MIN_N && !anonymous) {
     const rate = registered / registrantsTotal;
     if (rate < 0.15) {
       out.push({
@@ -441,7 +444,7 @@ export function surveyInsights(input: SurveyInsightInput): Insight[] {
   }
 
   // 2) 등록 없이 온 사람 vs 사전등록자 — 사전 기대와 현장 경험의 간극을 보여준다.
-  const walkIn = responses.filter((r) => !r.recordId);
+  const walkIn = responses.filter((r) => !r.recordId && r.channel !== "anonymous-import");
   const preRegistered = responses.filter((r) => r.recordId);
   if (walkIn.length >= SURVEY_MIN_N && preRegistered.length >= SURVEY_MIN_N) {
     for (const q of qs) {

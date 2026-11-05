@@ -7,6 +7,21 @@ const dates = ["2026-09-17", "2026-09-18"];
 const history = (channel: string, visitDates: string[], sessions: unknown[] = []) => ({ version: 1, kind: "visitor-history", channel, visitDates, sessions });
 
 describe("historical attendance evidence", () => {
+  it("does not classify an undated contact list as onsite registrations", () => {
+    const a = buildRegistrationAnalysis({ timezone: "Europe/Paris", eventDates: ["2025-06-13"], fields: [{ key: "gender", label: "성별", kind: "multi", options: ["여성"] }], companionKey: null, visitDateKey: null, regionKey: null, records: [{ id: "old", registrationNo: null, createdAt: new Date("2026-11-05"), entryChannel: null, utmSource: null, data: { gender: ["여성"], __import_timestamp_missing: true, __attendance_import: { version: 1, kind: "visitor-history", measured: false, channel: null, visitDates: [], sessions: [] } } }], checkIns: [] });
+    expect(a.kpi.registrations).toEqual({ total: 1, pre: 0, onsite: 0, unknown: 1 });
+    expect(a.daily).toEqual([]);
+    expect(a.segments[0].rows[0]).toMatchObject({ regs: 1, preRegs: 0, onsiteRegs: 0 });
+  });
+  it("distinguishes unmeasured attendance from confirmed absence", () => {
+    const record: AnalysisRecord = { id: "a", registrationNo: null, createdAt: new Date("2026-09-01"), utmSource: null, data: { gender: "여성", __attendance_import: { ...history("online", []), measured: false } } };
+    const input = { timezone: "Asia/Seoul", eventDates: dates, fields: [{ key: "gender", label: "성별", kind: "single" as const, options: ["여성"] }], companionKey: null, visitDateKey: null, regionKey: null, records: [record], checkIns: [] };
+    const a = buildRegistrationAnalysis(input);
+    expect(a.attendance?.measurementAvailable).toBe(false);
+    expect(a.kpi.registrations.total).toBe(1);
+    expect(a.segments[0].rows[0].regs).toBe(1);
+    expect(buildRegistrationAnalysis({ ...input, checkIns: [{ recordId: "a", eventDate: dates[0], scannedAt: new Date("2026-09-17T01:00:00Z") }] }).attendance?.measurementAvailable).toBe(true);
+  });
   it("accepts dated attendance without inventing a clock or using unrelated import metadata", () => {
     expect(readAttendanceHistory({ __attendance_import: history("online", [dates[0], dates[0], "1900-01-01"]) }, dates)?.dates).toEqual([dates[0]]);
     expect(readAttendanceHistory({ __attendance_import: { file: "old.xlsx", visitDates: dates } }, dates)).toBeNull();

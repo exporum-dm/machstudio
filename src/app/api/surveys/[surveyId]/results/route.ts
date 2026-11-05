@@ -47,7 +47,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ surv
         new Date(r.updatedAt).toISOString().replace("T", " ").slice(0, 16),
         r.channel,
         config.audienceLabels[r.audience] ?? r.audience,
-        r.recordId ? "사전등록" : "등록 없이",
+        r.recordId ? "사전등록" : r.channel === "anonymous-import" ? "익명 원본 (개별 연결 없음)" : "등록 없이",
         r.record?.registrationNo ?? "",
         // 등록 없이 참여한 사람은 등록 폼과 같은 key 로 답했다 — 같은 열에 넣는다.
         ...regColumns.map((f) => { const v = r.recordId ? data[f.key] : answers[f.key]; return Array.isArray(v) ? v.join(", ") : v == null ? "" : String(v); }),
@@ -107,6 +107,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ surv
   return NextResponse.json({
     total: responses.length,
     registered: responses.filter((r) => r.recordId).length,
+    anonymous: responses.filter((r) => r.channel === "anonymous-import").length,
     byAudience: countBy((r) => r.audience || "(없음)"),
     byChannel: countBy((r) => r.channel || "direct"),
     summaries: summarizeSurvey(config, filtered),

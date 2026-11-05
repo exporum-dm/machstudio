@@ -85,7 +85,7 @@ export interface Insight { tone: "good" | "warn" | "info"; title: string; detail
 export interface RegistrationAnalysis {
   definitions: { timezone: string; eventDates: string[]; onsiteFrom: string; firstEventDate: string };
   kpi: {
-    registrations: { total: number; pre: number; onsite: number };
+    registrations: { total: number; pre: number; onsite: number; unknown?: number };
     visitors: {
       unique: number;
       uniqueWithCompanions: number;
@@ -129,6 +129,7 @@ export interface RegistrationAnalysis {
   companionDist: { bucket: string; visitors: number }[];
   insights: Insight[];
   attendance?: {
+    measurementAvailable: boolean;
     historicalVisitors: number;
     visitorsWithEntryTime: number;
     dateOnlyVisitors: number;
@@ -308,7 +309,7 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
   // 레코드 1회 순회
   const companionFlagged: { registrationNo: string | null; raw: string }[] = [];
   let textAsZero = 0, blank = 0, visitorsWithKids = 0, companionsUnique = 0, companionsDays = 0;
-  let pre = 0, onsite = 0, preVisited = 0, onsiteVisited = 0;
+  let pre = 0, onsite = 0, preVisited = 0, onsiteVisited = 0, unknownChannel = 0;
   let missingRegistrationTimes = 0;
   const dailyMap = new Map<string, { pre: number; onsite: number }>();
   const onsiteHourMap = new Map<string, number>();
@@ -340,6 +341,8 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
     // 가져온 일시는 원본 등록일이 아니다. 시간이 없는 과거 자료는 알려진 접수 유형만 쓴다.
     const timeKnown = r.data.__import_timestamp_missing !== true;
     const importedChannel = histories.get(r.id)?.channel;
+    // 날짜·경로가 모두 없는 연락처 목록은 현장등록으로 추정하지 않는다.
+    const channelUnknown = !timeKnown && !importedChannel && !r.entryChannel;
     const isPre = importedChannel ? importedChannel === "online" : !timeKnown && r.entryChannel ? r.entryChannel === "online" : r.createdAt < onsiteFrom;
     if (!timeKnown) missingRegistrationTimes++;
     isPreById.set(r.id, isPre);
@@ -347,7 +350,9 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
     const visited = Boolean(days?.size);
     const { date: regDate, hour: regHour } = parts(r.createdAt);
 
-    if (isPre) { pre++; if (visited) preVisited++; } else { onsite++; if (visited) onsiteVisited++; }
+    if (channelUnknown) unknownChannel++;
+    else if (isPre) pre++; else onsite++;
+    if (visited) { if (isPre) preVisited++; else onsiteVisited++; }
     if (timeKnown) {
       const dm = dailyMap.get(regDate) ?? { pre: 0, onsite: 0 };
       if (isPre) dm.pre++; else dm.onsite++;
@@ -420,7 +425,7 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
       for (const v of new Set(values)) {
         const row = acc.rows.get(v) ?? { regs: 0, visited: 0, preRegs: 0, onsiteRegs: 0, preVisited: 0, onsiteVisited: 0 };
         row.regs++;
-        if (isPre) row.preRegs++; else row.onsiteRegs++;
+        if (!channelUnknown) { if (isPre) row.preRegs++; else row.onsiteRegs++; }
         if (visited) { row.visited++; if (isPre) row.preVisited++; else row.onsiteVisited++; }
         acc.rows.set(v, row);
       }
@@ -512,7 +517,7 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
   const analysis: RegistrationAnalysis = {
     definitions: { timezone, eventDates, onsiteFrom: onsiteFrom.toISOString(), firstEventDate },
     kpi: {
-      registrations: { total: records.length, pre, onsite },
+      registrations: { total: records.length, pre, onsite, ...(unknownChannel ? { unknown: unknownChannel } : {}) },
       visitors: {
         unique: visitorsUnique,
         uniqueWithCompanions: visitorsUnique + companionsUnique,
@@ -548,6 +553,7 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
     const ids = new Set(records.map((r) => r.id));
     const timedIds = new Set(checkIns.filter((c) => ids.has(c.recordId)).map((c) => c.recordId));
     analysis.attendance = {
+      measurementAvailable: timedIds.size > 0 || [...histories.values()].some((history) => history && (history.measured || history.dates.length > 0)),
       historicalVisitors: [...histories.values()].filter((history) => history && history.dates.length > 0).length,
       visitorsWithEntryTime: timedIds.size,
       dateOnlyVisitors: [...visitDays.keys()].filter((id) => ids.has(id) && !timedIds.has(id)).length,
@@ -558,6 +564,10 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
         byDay: [...staysByDay.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, values]) => ({ date, sessions: values.length, averageSeconds: mean(values), medianSeconds: median(values) })),
       },
     };
+    if (!analysis.attendance.measurementAvailable) analysis.insights.unshift({
+      tone: "info", title: "방문 기록을 수집하지 않은 행사입니다",
+      detail: "등록 현황과 응답 분포만 분석합니다. 실제 방문자·방문율·방문일을 0으로 해석하지 마세요.",
+    });
     if (analysis.attendance.dateOnlyVisitors) analysis.insights.unshift({
       tone: "info", title: "방문 명단과 입장시각 자료의 범위가 달라요",
       detail: `방문 ${num(visitorsUnique)}명 중 입장시각이 있는 ${num(timedIds.size)}명만 시간대별 그래프에 포함했어요. 시각이 없는 방문 기록도 방문율·방문일·재방문에는 반영했어요.`,

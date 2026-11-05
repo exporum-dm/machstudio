@@ -27,6 +27,7 @@ export function readAttendanceHistory(data: Record<string, unknown>, eventDates:
     sessions.push({ date: item.date, enteredAt, exitedAt, durationSeconds: seconds !== null && seconds >= 0 && seconds <= 86_400 ? seconds : null });
   }
   return {
+    measured: value.measured !== false,
     channel: value.channel === "online" || value.channel === "onsite" ? value.channel : null,
     dates: [...dateSet].sort(),
     sessions,

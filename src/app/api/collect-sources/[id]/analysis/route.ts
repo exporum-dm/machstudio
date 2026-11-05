@@ -44,7 +44,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   });
   for (const s of surveyRows) {
     const surveyConfig = resolveLinkedQuestions(normalizeSurveyConfig(s.config), config);
-    const responses = await prisma.surveyResponse.findMany({ where: { surveyId: s.id }, select: { answers: true, recordId: true, audience: true } });
+    const responses = await prisma.surveyResponse.findMany({ where: { surveyId: s.id }, select: { answers: true, recordId: true, audience: true, channel: true } });
     analysis.insights.push(...surveyInsights({
       surveyName: s.name,
       registrantsTotal: analysis.kpi.registrations.total,
