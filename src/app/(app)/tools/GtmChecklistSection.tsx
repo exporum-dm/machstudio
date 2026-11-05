@@ -137,7 +137,7 @@ export default function GtmChecklistSection({ workspaceId, projects }: { workspa
                   <th className={`${TH} w-32`}>class명</th>
                   <th className={`${TH} w-14 text-center`}>태깅</th>
                   <th className={`${TH} w-40`}>비고</th>
-                  <th className={`${TH} w-8`} />
+                  <th className={`${TH} w-10 text-center`}>삭제</th>
                 </tr>
               </thead>
               <tbody>
@@ -171,7 +171,7 @@ function ChecklistTableRow({
   onRemove: () => void;
 }) {
   return (
-    <tr className="group hover:bg-secondary/20">
+    <tr className="hover:bg-secondary/20">
       <td className={TD}>
         <input
           type="number"
@@ -203,7 +203,7 @@ function ChecklistTableRow({
         <input defaultValue={row.note} onBlur={(e) => { if (e.target.value !== row.note) onPatch({ note: e.target.value }); }} className={CELL} aria-label="비고" />
       </td>
       <td className={`${TD} text-center`}>
-        <button onClick={onRemove} className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100" aria-label={`${row.name} 지우기`}>
+        <button onClick={onRemove} className="rounded p-1 text-muted-foreground transition-colors hover:text-red-500" aria-label={`${row.name} 지우기`}>
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       </td>
