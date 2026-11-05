@@ -1,6 +1,6 @@
 /**
- * 이벤트 택소노미 — 워크스페이스 공통 이벤트 이름 규칙(GA4/GTM).
- * GET ?workspaceId · POST { workspaceId, name, ... } · PATCH { id, ... } · DELETE ?id
+ * 이벤트 택소노미 — 워크스페이스 공통 이벤트 이름 규칙(GA4/GTM) + 프로젝트별 GTM 설치 체크리스트.
+ * GET ?workspaceId[&projectId][&groupId] · POST { workspaceId, name, ... } · PATCH { id, ... } · DELETE ?id
  */
 import { NextResponse } from "next/server";
 import { Prisma } from "@/generated/prisma";
@@ -9,11 +9,18 @@ import { requireWorkspaceMember } from "@/lib/workspace-access";
 import { normalizeTaxonomyInput, type TaxonomyData } from "@/lib/event-taxonomy";
 
 export async function GET(request: Request) {
-  const workspaceId = new URL(request.url).searchParams.get("workspaceId");
+  const url = new URL(request.url);
+  const workspaceId = url.searchParams.get("workspaceId");
   const access = await requireWorkspaceMember(workspaceId);
   if ("error" in access) return NextResponse.json({ error: access.error }, { status: access.status });
+  const projectId = url.searchParams.get("projectId");
+  const groupId = url.searchParams.get("groupId");
   const events = await prisma.eventTaxonomy.findMany({
-    where: { workspaceId: workspaceId! },
+    where: {
+      workspaceId: workspaceId!,
+      projectId: projectId || null,
+      ...(groupId ? { groupId } : {}),
+    },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
   });
   return NextResponse.json({ events });
@@ -25,9 +32,21 @@ export async function POST(request: Request) {
   if ("error" in access) return NextResponse.json({ error: access.error }, { status: access.status });
   const parsed = normalizeTaxonomyInput(body);
   if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
-  const last = await prisma.eventTaxonomy.findFirst({ where: { workspaceId: body.workspaceId }, orderBy: { sortOrder: "desc" }, select: { sortOrder: true } });
+  const d = parsed.data as TaxonomyData; // partial 아님 — 모든 키가 채워져 있다
+  if (d.projectId) {
+    const project = await prisma.project.findFirst({ where: { id: d.projectId, workspaceId: body.workspaceId, deletedAt: null }, select: { id: true } });
+    if (!project) return NextResponse.json({ error: "프로젝트를 찾을 수 없습니다." }, { status: 404 });
+    if (d.groupId) {
+      const group = await prisma.workGroup.findFirst({ where: { id: d.groupId, projectId: d.projectId }, select: { id: true } });
+      if (!group) return NextResponse.json({ error: "행사(쇼)를 찾을 수 없습니다." }, { status: 404 });
+    }
+  }
+  const last = await prisma.eventTaxonomy.findFirst({
+    where: { workspaceId: body.workspaceId, projectId: d.projectId, groupId: d.groupId },
+    orderBy: { sortOrder: "desc" },
+    select: { sortOrder: true },
+  });
   try {
-    const d = parsed.data as TaxonomyData; // partial 아님 — 모든 키가 채워져 있다
     const event = await prisma.eventTaxonomy.create({
       data: { ...d, parameters: d.parameters as unknown as Prisma.InputJsonValue, workspaceId: body.workspaceId, sortOrder: (last?.sortOrder ?? 0) + 1 },
     });

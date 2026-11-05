@@ -195,6 +195,7 @@ model Project {
   detailPages          DetailPage[]
   workGroups           WorkGroup[]
   contentItems         ContentItem[]
+  eventTaxonomies      EventTaxonomy[]
 }
 
 model AdPerformanceImportBatch {
@@ -842,28 +843,49 @@ model ShortLinkClick {
 
 /// 브리프 — 프로젝트별로 운영하는 큐레이션 시리즈(예: Korea Expo 의 "The Action").
 /// 링크를 모아 **채택**한 것만 카톡 텍스트·공개 페이지로 내보낸다.
-/// 이벤트 택소노미 — 워크스페이스 공통 이벤트 이름 규칙(GA4/GTM). UTM 값은 UTMPreset 이 맡는다.
+/// 이벤트 택소노미 — 워크스페이스 공통 이벤트 이름 규칙(GA4/GTM) + 프로젝트별 GTM 설치 체크리스트(2026-11-05).
+/// projectId 가 없으면 워크스페이스 공통 이벤트 사전(이름은 GA4 snake_case 강제). projectId 가 있으면
+/// 그 프로젝트(Korea Expo 처럼 쇼가 여러 개면 groupId 로 WorkGroup 까지)의 GTM 설치 체크리스트 한 줄 —
+/// 이름은 자유 텍스트고 step·triggerCondition·content(설치 코드)·className·tagged·note 를 같이 쓴다.
+/// UTM 값은 UTMPreset 이 맡는다.
 model EventTaxonomy {
   id          String   @id @default(cuid())
   workspaceId String
-  /// event_name (snake_case)
+  /// 설치 체크리스트 항목일 때만 — 그 프로젝트
+  projectId   String?
+  /// Korea Expo 처럼 프로젝트 안에 쇼가 여러 개면 그 쇼(WorkGroup 재사용)
+  groupId     String?
+  /// event_name(snake_case) — 설치 체크리스트 항목이면 자유 텍스트 라벨
   name        String
   category    String   @default("")
   description String   @default("")
-  /// 언제 발생하나
+  /// 언제 발생하나 / 설치 체크리스트면 트리거 종류(맞춤 이벤트·맞춤 HTML 등)
   trigger     String   @default("")
-  /// [{ key, description, example }]
+  /// [{ key, description, example }] — 워크스페이스 공통 이벤트 사전 전용
   parameters  Json     @default("[]")
   platforms   String[] @default([])
   /// "active" | "deprecated"
   status      String   @default("active")
   sortOrder   Int      @default(0)
+  /// --- 설치 체크리스트 전용(projectId 있을 때만) ---
+  /// 시트의 단계 번호
+  step             Int?
+  /// 트리거 조건(예: CE-generate_lead)
+  triggerCondition String   @default("")
+  /// 설치 코드(메타 픽셀 JS 등) — 길 수 있다
+  content          String   @default("")
+  className        String   @default("")
+  tagged           Boolean  @default(false)
+  note             String   @default("")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  group     WorkGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
 
-  @@unique([workspaceId, name])
+  @@index([workspaceId, name])
+  @@index([workspaceId, projectId, groupId, sortOrder])
 }
 
 /// 주간업무보고의 "행사" 줄 — 프로젝트와 1:1 이 아니다(한 프로젝트에 LA·도쿄·파리 행사가 따로 있다).
@@ -882,9 +904,10 @@ model WorkGroup {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  project   Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  entries   WorkEntry[]
+  workspace       Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project         Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  entries         WorkEntry[]
+  eventTaxonomies EventTaxonomy[]
 
   @@index([workspaceId])
 }

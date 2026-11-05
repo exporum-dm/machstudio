@@ -69,7 +69,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ surv
   }
 
   const audience = searchParams.get("audience") ?? "";
-  const filtered = audience ? responses.filter((r) => r.audience === audience) : responses;
+  const filtered = audience ? responses.filter((r) => audience === "(없음)" ? !r.audience : r.audience === audience) : responses;
   const countBy = (pick: (r: (typeof responses)[number]) => string) => {
     const m = new Map<string, number>();
     for (const r of responses) m.set(pick(r), (m.get(pick(r)) ?? 0) + 1);
@@ -77,13 +77,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ surv
   };
 
   // 등록 정보로 나눠 보기 — 선택지가 있는 등록 항목만(자유 입력은 값이 흩어져 의미가 없다).
-  const segmentable = regColumns.filter((f) => f.options.length > 0).map((f) => ({ key: f.key, label: localize(f.label, form.defaultLocale) || f.key }));
-  const by = searchParams.get("by") || config.audienceFieldKey || segmentable[0]?.key || "";
+  const segmentValue = (r: (typeof responses)[number], key: string) => r.record ? (r.record.data as Record<string, unknown>)?.[key] : (r.answers as Record<string, unknown>)?.[key];
+  const segmentable = regColumns.filter((f) => f.options.length > 0 && responses.some((r) => {
+    const value = segmentValue(r, f.key);
+    return Array.isArray(value) ? value.some((v) => v != null && v !== "") : value != null && value !== "";
+  })).map((f) => ({ key: f.key, label: localize(f.label, form.defaultLocale) || f.key }));
+  const preferred = searchParams.get("by") || config.audienceFieldKey;
+  const by = segmentable.some((f) => f.key === preferred) ? preferred : segmentable[0]?.key || "";
   const scoreQuestions = questions.filter((q) => q.type === "scale" || q.type === "nps");
   const segMap = new Map<string, typeof filtered>();
   for (const r of filtered) {
     // 등록자는 등록 정보, 등록 없이 참여한 사람은 같은 key 로 받은 답 — 같은 조건으로 받았으니 한 표에 합친다.
-    const raw = r.record ? (r.record.data as Record<string, unknown>)?.[by] : (r.answers as Record<string, unknown>)?.[by];
+    const raw = segmentValue(r, by);
     if (!r.record && raw === undefined) continue;
     for (const v of Array.isArray(raw) ? raw : [raw]) {
       const key = v == null || v === "" ? "(빈 값)" : String(v);

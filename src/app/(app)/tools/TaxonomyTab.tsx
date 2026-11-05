@@ -24,6 +24,7 @@ import {
   toEventName,
   type TaxonomyParameter,
 } from "@/lib/event-taxonomy";
+import GtmChecklistSection from "./GtmChecklistSection";
 
 interface EventRow {
   id: string; name: string; category: string; description: string; trigger: string;
@@ -40,7 +41,7 @@ const DESIGN_STEPS = [
 ] as const;
 
 export default function TaxonomyTab({ onOpenUtm }: { onOpenUtm?: () => void }) {
-  const { workspace } = useWorkspace();
+  const { workspace, projects } = useWorkspace();
   const confirm = useConfirm();
   const [events, setEvents] = useState<EventRow[] | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -125,6 +126,8 @@ export default function TaxonomyTab({ onOpenUtm }: { onOpenUtm?: () => void }) {
           에서 정해요.
         </p>
       </section>
+
+      {workspace && <GtmChecklistSection workspaceId={workspace.id} projects={projects} />}
 
       {/* ── 이벤트 ── */}
       <section className="space-y-3">
