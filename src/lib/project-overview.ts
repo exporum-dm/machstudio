@@ -1,3 +1,4 @@
+import { projectAdCampaignScope } from "@/lib/ad-campaign-scope";
 /**
  * 프로젝트 대시보드 — "지금 진행 중인 것" 을 메뉴마다 한 줄씩.
  *
@@ -188,7 +189,7 @@ export async function buildProjectOverview(workspaceId: string, projectId: strin
   const adSums = dueFolders.length
     ? await prisma.adPerformanceRecord.groupBy({
         by: ["folderId"],
-        where: { folderId: { in: dueFolders.map((f) => f.id) } },
+        where: { folderId: { in: dueFolders.map((f) => f.id) }, AND: [projectAdCampaignScope(dueFolders)] },
         _sum: { cost: true, impressions: true, clicks: true, conversions: true },
       })
     : [];

@@ -1,3 +1,4 @@
+import { normalizeMediaAccounts } from "@/lib/ad-campaign-scope";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAdFolderAccess } from "@/lib/ad-folder-access";
@@ -26,7 +27,10 @@ export async function PATCH(request: Request, context: Context) {
   const data: { name?: string; description?: string | null; mediaAccounts?: object[]; reportStart?: Date; reportEnd?: Date; detailColumns?: string[] } = {};
   if (typeof body?.name === "string" && body.name.trim()) data.name = body.name.trim().slice(0, 100);
   if (typeof body?.description === "string") data.description = body.description.trim().slice(0, 500) || null;
-  if (Array.isArray(body?.mediaAccounts)) data.mediaAccounts = body.mediaAccounts.slice(0, 20);
+  if (body?.mediaAccounts !== undefined) {
+    try { data.mediaAccounts = normalizeMediaAccounts(body.mediaAccounts); }
+    catch (e) { return NextResponse.json({ error: (e as Error).message }, { status: 400 }); }
+  }
   if (body?.detailColumns !== undefined) data.detailColumns = normalizeAdDetailColumns(body.detailColumns);
   if (body?.reportStart !== undefined || body?.reportEnd !== undefined) {
     const reportStart = dateOnly(body?.reportStart) ?? access.folder.reportStart;
@@ -35,7 +39,20 @@ export async function PATCH(request: Request, context: Context) {
     data.reportStart = reportStart;
     data.reportEnd = reportEnd;
   }
-  const folder = await prisma.adPerformanceFolder.update({ where: { id: folderId }, data });
+  const folder = await prisma.$transaction(async tx => {
+    if (data.mediaAccounts) {
+      await tx.$queryRaw`SELECT id FROM "AdPerformanceFolder" WHERE id=${folderId} FOR UPDATE`;
+      const current = await tx.adPerformanceFolder.findUniqueOrThrow({ where: { id: folderId } });
+      const previous = normalizeMediaAccounts(current.mediaAccounts);
+      // 계정 추가·삭제는 기존 캠페인 범위를 유지한다. 범위 변경은 검증된 전용 API만 담당한다.
+      data.mediaAccounts = normalizeMediaAccounts(data.mediaAccounts).map(a => {
+        const saved = previous.find(p => p.platform === a.platform && p.accountId === a.accountId);
+        const base = { platform: a.platform, accountId: a.accountId, accountName: a.accountName };
+        return saved?.campaignIds ? { ...base, campaignIds: saved.campaignIds } : base;
+      });
+    }
+    return tx.adPerformanceFolder.update({ where: { id: folderId }, data });
+  });
   return NextResponse.json({ folder });
 }
 

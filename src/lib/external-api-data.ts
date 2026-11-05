@@ -1,3 +1,4 @@
+import { projectAdCampaignScope } from "@/lib/ad-campaign-scope";
 import { Prisma } from "@/generated/prisma";
 import { generateDashboardReport, type ReportFilters } from "@/app/api/dashboard-report/route";
 import { prisma } from "@/lib/prisma";
@@ -100,6 +101,7 @@ export async function getApiAdPerformance(options: {
   sourceType?: string | null;
 }) {
   const where: Prisma.AdPerformanceRecordWhereInput = {
+    AND: [projectAdCampaignScope(await prisma.adPerformanceFolder.findMany({ where: { projectId: options.projectId, workspaceId: options.workspaceId }, select: { id: true, mediaAccounts: true } }))],
     workspaceId: options.workspaceId,
     projectId: options.projectId,
     ...(options.sourceType && options.sourceType !== "ALL" ? { sourceType: options.sourceType.toUpperCase() } : {}),

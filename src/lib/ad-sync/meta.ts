@@ -7,7 +7,7 @@ import { findMetaConnection } from "@/lib/meta-connection";
 import { fetchAdCreatives, type CreativeInfo } from "@/lib/meta-ad-creatives";
 import { AdSyncError, kstDateOnly, type AdSyncFolder } from "@/lib/ad-sync/shared";
 
-type MetaAccount = { platform: string; accountId: string; accountName?: string };
+type MetaAccount = { platform: string; accountId: string; accountName?: string; campaignIds?: string[] };
 type MetaInsight = {
   date_start: string; date_stop: string; account_id?: string; account_name?: string;
   campaign_id?: string; campaign_name?: string; adset_id?: string; adset_name?: string;
@@ -33,14 +33,15 @@ export async function syncMetaFolder(folder: AdSyncFolder, userId: string) {
   const insights: MetaInsight[] = [];
 
   for (const account of metaAccounts) {
+    if (account.campaignIds?.length === 0) continue;
     const act = account.accountId.startsWith("act_") ? account.accountId : `act_${account.accountId}`;
     const fields = "date_start,date_stop,account_id,account_name,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,reach,inline_link_clicks,inline_link_click_ctr,cost_per_inline_link_click,cpm,results,objective_results,cost_per_result,actions";
-    let next: string | null = `https://graph.facebook.com/${version}/${act}/insights?level=ad&time_increment=1&limit=500&use_unified_attribution_setting=true&fields=${fields}&time_range=${encodeURIComponent(JSON.stringify({ since, until }))}&access_token=${encodeURIComponent(token)}`;
+    let next: string | null = `https://graph.facebook.com/${version}/${act}/insights?level=ad&time_increment=1&limit=500&use_unified_attribution_setting=true&fields=${fields}&time_range=${encodeURIComponent(JSON.stringify({ since, until }))}&access_token=${encodeURIComponent(token)}${account.campaignIds ? `&filtering=${encodeURIComponent(JSON.stringify([{ field: "campaign.id", operator: "IN", value: account.campaignIds }]))}` : ""}`;
     while (next) {
       const response: Response = await fetch(next, { cache: "no-store" });
       const data: { data?: MetaInsight[]; paging?: { next?: string }; error?: { message?: string } } = await response.json();
       if (!response.ok) throw new AdSyncError(data?.error?.message || "Meta 데이터를 가져오지 못했습니다.", 502);
-      insights.push(...(data.data ?? []));
+      insights.push(...(data.data ?? []).filter(row => !account.campaignIds || account.campaignIds.includes(row.campaign_id || "")));
       next = data.paging?.next ?? null;
     }
   }
