@@ -518,7 +518,7 @@ function ShareView({ link, token, name, onToken }: { link: string; token: string
 // ── 결과 ──────────────────────────────────────────────────────────────
 
 interface Results {
-  total: number; registered: number;
+  total: number; registered: number; anonymous?: number;
   byAudience: Array<{ value: string; count: number }>;
   byChannel: Array<{ value: string; count: number }>;
   summaries: QuestionSummary[];
@@ -560,7 +560,7 @@ function ResultsView({ surveyId, config }: { surveyId: string; config: SurveyCon
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi label="응답" value={data.total.toLocaleString()} sub={`사전등록 연결 ${data.registered} · 경로 ${data.byChannel.map((c) => `${c.value} ${c.count}`).join(" · ") || "-"}`} />
+        <Kpi label="응답" value={data.total.toLocaleString()} sub={`사전등록 연결 ${data.registered}${data.anonymous ? ` · 익명 원본 ${data.anonymous}` : ""} · 경로 ${data.byChannel.map((c) => `${c.value === "anonymous-import" ? "익명 가져오기" : c.value} ${c.count}`).join(" · ") || "-"}`} />
         {headline.map((s) => (
           <Kpi key={s.key} label={s.title} value={s.type === "nps" ? (s.nps ?? "-").toString() : (s.average ?? "-").toString()} sub={s.type === "nps" ? `NPS · 평균 ${s.average ?? "-"}점 · ${s.answered}명` : `평균 · ${s.answered}명`} />
         ))}
@@ -577,7 +577,7 @@ function ResultsView({ surveyId, config }: { surveyId: string; config: SurveyCon
                 <select value={data.by} onChange={(e) => setBy(e.target.value)} className={`${FIELD_CLS} h-7 w-auto text-xs`}>
                   {data.segmentable.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
                 </select>
-                <span className="text-[11px] text-muted-foreground">사전등록 응답 + 등록 없이 같은 문항으로 답한 응답 · 30명 미만은 참고치</span>
+                <span className="text-[11px] text-muted-foreground">{data.anonymous ? "익명 원본은 조사 자체의 응답으로 분류 · 개별 등록자 연결 없음" : "사전등록 응답 + 등록 없이 같은 문항으로 답한 응답"} · 30명 미만은 참고치</span>
               </div>
               <table className="w-full min-w-[560px] text-xs">
                 <thead><tr className="text-left text-muted-foreground"><th className="py-1.5 pr-3 font-medium">값</th><th className="py-1.5 pr-3 font-medium">응답</th>{data.scoreQuestions.map((q) => <th key={q.key} className="py-1.5 pr-3 font-medium">{q.title}</th>)}</tr></thead>

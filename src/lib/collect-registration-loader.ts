@@ -96,7 +96,7 @@ export async function loadCollectAnalysis(source: {
       };
     });
     const rows = summarizeAudiences(audiences);
-    analysis.insights.splice(2, 0, ...audienceInsights(rows, audienceField?.label ?? "유형"));
+    if (analysis.attendance?.measurementAvailable !== false) analysis.insights.splice(2, 0, ...audienceInsights(rows, audienceField?.label ?? "유형"));
   }
 
   return {

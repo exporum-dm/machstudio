@@ -129,6 +129,7 @@ export interface RegistrationAnalysis {
   companionDist: { bucket: string; visitors: number }[];
   insights: Insight[];
   attendance?: {
+    measurementAvailable: boolean;
     historicalVisitors: number;
     visitorsWithEntryTime: number;
     dateOnlyVisitors: number;
@@ -548,6 +549,7 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
     const ids = new Set(records.map((r) => r.id));
     const timedIds = new Set(checkIns.filter((c) => ids.has(c.recordId)).map((c) => c.recordId));
     analysis.attendance = {
+      measurementAvailable: timedIds.size > 0 || [...histories.values()].some((history) => history && (history.measured || history.dates.length > 0)),
       historicalVisitors: [...histories.values()].filter((history) => history && history.dates.length > 0).length,
       visitorsWithEntryTime: timedIds.size,
       dateOnlyVisitors: [...visitDays.keys()].filter((id) => ids.has(id) && !timedIds.has(id)).length,
@@ -558,6 +560,10 @@ export function buildRegistrationAnalysis(input: AnalysisInput): RegistrationAna
         byDay: [...staysByDay.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, values]) => ({ date, sessions: values.length, averageSeconds: mean(values), medianSeconds: median(values) })),
       },
     };
+    if (!analysis.attendance.measurementAvailable) analysis.insights.unshift({
+      tone: "info", title: "방문 기록을 수집하지 않은 행사입니다",
+      detail: "등록 현황과 응답 분포만 분석합니다. 실제 방문자·방문율·방문일을 0으로 해석하지 마세요.",
+    });
     if (analysis.attendance.dateOnlyVisitors) analysis.insights.unshift({
       tone: "info", title: "방문 명단과 입장시각 자료의 범위가 달라요",
       detail: `방문 ${num(visitorsUnique)}명 중 입장시각이 있는 ${num(timedIds.size)}명만 시간대별 그래프에 포함했어요. 시각이 없는 방문 기록도 방문율·방문일·재방문에는 반영했어요.`,

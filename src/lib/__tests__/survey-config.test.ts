@@ -62,6 +62,12 @@ describe("만족도 조사 — 집계", () => {
 });
 
 describe("만족도 조사 — 결과 분석 탭에 붙는 인사이트(등록 분석과 교차하는 것만)", () => {
+  it("익명 원본을 등록 없이 온 사람이나 응답률 0%로 해석하지 않는다", () => {
+    const responses = Array.from({ length: 25 }, () => ({ recordId: null, channel: "anonymous-import", audience: "General", answers: { overall: 5 } }));
+    const out = surveyInsights({ surveyName: "Tokyo", registrantsTotal: 1000, config, responses });
+    expect(out.some(i => i.title.includes("익명 원본 25건"))).toBe(true);
+    expect(out.some(i => i.title.includes("응답률") || i.title.includes("등록 없이 온 사람"))).toBe(false);
+  });
   it("응답이 하나도 없으면 빈 배열", () => {
     expect(surveyInsights({ surveyName: "kela2026", registrantsTotal: 1000, config, responses: [] })).toEqual([]);
   });
