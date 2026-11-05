@@ -1,5 +1,5 @@
 /**
- * 등록 결과 분석 — 등록 상세의 "결과 분석" 탭(빌더형 전용). 읽기만 한다.
+ * 등록 응답 분석 — 연동형·빌더형 공통. 읽기만 한다.
  *
  * 숫자는 lib/registration-analysis.ts 가 만든다. 여기서는 레코드에서 **분석에 쓰는 항목만** 골라
  * 읽는다(이메일·전화·이름은 DB 에서 꺼내지도 않는다 — 2만 건이 넘어 전송량도 아낀다).
@@ -19,13 +19,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "인증 필요" }, { status: 401 });
-  const source = await prisma.collectSource.findUnique({ where: { id } });
+  const source = await prisma.collectSource.findUnique({ where: { id }, include: { fieldMappings: { orderBy: { sortOrder: "asc" } } } });
   if (!source || source.deletedAt) return NextResponse.json({ error: "소스를 찾을 수 없어요" }, { status: 404 });
   const membership = await prisma.workspaceMember.findUnique({
     where: { userId_workspaceId: { userId: user.id, workspaceId: source.workspaceId } },
   });
   if (!membership) return NextResponse.json({ error: "접근 권한 없음" }, { status: 403 });
-  if (source.mode !== "builder") return NextResponse.json({ error: "빌더형 등록에서만 볼 수 있어요" }, { status: 400 });
 
   const config = normalizeCollectForm(source.formConfig);
   const { analysis, audiences, audienceRows, audienceKey, companionKey, visitDateKey, regionKey } = await loadCollectAnalysis(source);
