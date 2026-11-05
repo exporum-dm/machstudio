@@ -21,8 +21,11 @@ export function normalizeMediaAccounts(value: unknown): MediaAccount[] {
   });
 }
 
+export const AD_EXCLUDED_DUPLICATE_STATUS = "EXCLUDED_DUPLICATE";
+const includedRecords: Prisma.AdPerformanceRecordWhereInput = { OR: [{ status: null }, { status: { not: AD_EXCLUDED_DUPLICATE_STATUS } }] };
+
 /** undefined = 전체(기존 동작), [] = 명시적으로 선택 없음. */
-export function adCampaignScope(raw: unknown): Prisma.AdPerformanceRecordWhereInput {
+function accountCampaignScope(raw: unknown): Prisma.AdPerformanceRecordWhereInput {
   const accounts = (Array.isArray(raw) ? raw : []) as MediaAccount[];
   const platforms = [...new Set(accounts.filter(a => Array.isArray(a.campaignIds)).map(a => a.platform))];
   if (!platforms.length) return {};
@@ -36,7 +39,12 @@ export function adCampaignScope(raw: unknown): Prisma.AdPerformanceRecordWhereIn
   ] })) };
 }
 
+/** 합계와 상세를 같이 가져온 것으로 확인된 중복 행은 원문을 남기고 분석에서만 제외한다. */
+export function adCampaignScope(raw: unknown): Prisma.AdPerformanceRecordWhereInput {
+  return { AND: [includedRecords, accountCampaignScope(raw)] };
+}
+
 export function projectAdCampaignScope(folders: Array<{ id: string; mediaAccounts: unknown }>): Prisma.AdPerformanceRecordWhereInput {
-  const restricted = folders.map(f => ({ id: f.id, scope: adCampaignScope(f.mediaAccounts) })).filter(f => Object.keys(f.scope).length);
-  return restricted.length ? { OR: [{ folderId: null }, { folderId: { notIn: restricted.map(f => f.id) } }, ...restricted.map(f => ({ folderId: f.id, ...f.scope }))] } : {};
+  const restricted = folders.map(f => ({ id: f.id, scope: accountCampaignScope(f.mediaAccounts) })).filter(f => Object.keys(f.scope).length);
+  return { AND: [includedRecords, restricted.length ? { OR: [{ folderId: null }, { folderId: { notIn: restricted.map(f => f.id) } }, ...restricted.map(f => ({ folderId: f.id, ...f.scope }))] } : {}] };
 }
