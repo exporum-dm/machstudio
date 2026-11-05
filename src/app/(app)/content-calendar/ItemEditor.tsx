@@ -6,14 +6,15 @@
  * 칸은 노션 "DM 업무 관리 › 콘텐츠"와 같다(2026-11-03): 상태 7단계, 형식·채널·담당 여러 개, 캠페인 하나.
  */
 import { useEffect, useRef, useState } from "react";
-import { ExternalLink, Trash2, X } from "lucide-react";
+import { Copy, ExternalLink, Loader2, Trash2, X } from "lucide-react";
 import { motion } from "framer-motion";
 import { FieldArea, FieldSelect, FINISH, R, SELECTED, UrlField } from "@/components/ui/primitives";
 import {
   CONTENT_CAMPAIGNS, CONTENT_CHANNELS, CONTENT_FORMATS, CONTENT_STATUSES, assigneeKey, isValidDay, isValidTime,
-  type ContentItemDto, type ContentMemberDto,
+  type ContentItemDto, type ContentMemberDto, type ContentRepeat,
 } from "@/lib/content-calendar";
 import { StatusDot } from "./parts";
+import RepeatControls from "./RepeatControls";
 
 export type SaveMode = "now" | "debounce" | "local";
 
@@ -67,7 +68,7 @@ function TagPicker({ label, base, known, value, onChange, multiple = true, max =
   );
 }
 
-export default function ItemEditor({ item, isNew, projects, members, known, onChange, onClose, onDelete }: {
+export default function ItemEditor({ item, isNew, projects, members, known, onChange, onCopy, onClose, onDelete }: {
   item: ContentItemDto;
   /** 아직 서버에 없는 항목 */
   isNew: boolean;
@@ -76,12 +77,26 @@ export default function ItemEditor({ item, isNew, projects, members, known, onCh
   /** 기본 목록 밖에서 이미 쓰인 값 */
   known: { channels: string[]; formats: string[]; campaigns: string[] };
   onChange: (fields: Partial<ContentItemDto>, mode: SaveMode) => void;
+  onCopy: (requestId: string, repeat?: ContentRepeat) => Promise<void>;
   onClose: () => void;
   onDelete: () => void;
 }) {
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const savedTitle = useRef(item.title);
   const [timeDraft, setTimeDraft] = useState(item.time);
+  const [copyBusy, setCopyBusy] = useState(false);
+  const [copyError, setCopyError] = useState("");
+  const lastCopy = useRef<{ signature: string; requestId: string } | null>(null);
+  const createCopies = async (repeat?: ContentRepeat) => {
+    if (copyBusy) return;
+    const signature = JSON.stringify([item.id, item.title, item.date, item.time, item.projectId, item.body, item.formats, item.channels, item.campaign, item.assignees, repeat]);
+    if (lastCopy.current?.signature !== signature) lastCopy.current = { signature, requestId: crypto.randomUUID() };
+    setCopyBusy(true); setCopyError("");
+    try { await onCopy(lastCopy.current.requestId, repeat); lastCopy.current = null; }
+    catch (e) { setCopyError(e instanceof Error ? e.message : "콘텐츠를 만들지 못했어요."); }
+    finally { setCopyBusy(false); }
+  };
+
   // 항목이 바뀌면 부모가 key 로 새로 그린다 — 위 상태들은 항목마다 처음부터.
   useEffect(() => { if (isNew) titleRef.current?.focus(); }, [isNew]);
 
@@ -139,6 +154,10 @@ export default function ItemEditor({ item, isNew, projects, members, known, onCh
         <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
           <span className="text-xs text-muted-foreground">{isNew ? "새 콘텐츠" : "콘텐츠"}</span>
           <div className="flex items-center gap-1">
+            <button type="button" disabled={copyBusy || !item.title.trim()} onClick={() => void createCopies()} className={`inline-flex min-h-9 items-center gap-1.5 px-2.5 text-xs text-foreground shadow-sm transition hover:bg-secondary active:opacity-70 focus-visible:ring-2 focus-visible:ring-violet-400 disabled:opacity-40 ${R.control}`}>
+              {copyBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" /> : <Copy className="h-3.5 w-3.5" />}복제
+            </button>
+
             {item.sourceUrl && (
               <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className={`inline-flex min-h-9 items-center gap-1 px-2.5 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground ${R.control}`}>
                 <ExternalLink className="h-3.5 w-3.5" aria-hidden />노션 원본
@@ -150,7 +169,8 @@ export default function ItemEditor({ item, isNew, projects, members, known, onCh
           </div>
         </div>
 
-        <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4">
+        <fieldset disabled={copyBusy} className="min-w-0 flex-1 space-y-5 overflow-y-auto px-4 py-4">
+          {copyError && <p role="alert" className="whitespace-pre-wrap text-xs text-red-500">{copyError}</p>}
           <div>
             <textarea
               ref={titleRef}
@@ -209,6 +229,8 @@ export default function ItemEditor({ item, isNew, projects, members, known, onCh
             )}
           </div>
 
+          <RepeatControls date={item.date} disabled={!item.title.trim()} busy={copyBusy} onCreate={repeat => void createCopies(repeat)} />
+
           <label className="block">
             <span className={LABEL}>프로젝트</span>
             <FieldSelect value={item.projectId ?? ""} onChange={(e) => onChange({ projectId: e.target.value || null }, "now")}>
@@ -261,14 +283,14 @@ export default function ItemEditor({ item, isNew, projects, members, known, onCh
               isValidHttpUrl={isHttpUrl}
             />
           </div>
-        </div>
+        </fieldset>
 
         {!isNew && (
           <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-3">
             <span className="text-[11px] text-muted-foreground">
               {new Date(item.updatedAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 수정
             </span>
-            <button type="button" onClick={onDelete} className={`inline-flex min-h-9 items-center gap-1.5 px-3 text-sm text-destructive hover:bg-destructive/10 ${R.control}`}>
+            <button type="button" onClick={onDelete} disabled={copyBusy} className={`inline-flex min-h-9 items-center gap-1.5 px-3 text-sm text-destructive hover:bg-destructive/10 ${R.control}`}>
               <Trash2 className="h-4 w-4" aria-hidden />삭제
             </button>
           </div>

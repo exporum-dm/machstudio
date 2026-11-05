@@ -3,7 +3,40 @@
  * 화면과 API 가 같이 쓰는 값·순수 함수만 둔다(서버 전용 코드 없음).
  * 2026-11-03 노션 "DM 업무 관리 › 콘텐츠" 구조에 맞춤 — 상태 7단계·형식/담당 여러 개·캠페인.
  */
-import { shiftDay } from "@/lib/worklog";
+import { isValidDay, shiftDay } from "@/lib/worklog";
+
+export const MAX_CONTENT_REPEATS = 100;
+export type ContentRepeat = { unit: "day" | "week" | "month"; interval: number; end: "count" | "date"; count?: number; until?: string };
+
+/** 원본 날짜 다음부터 생성한다. 월말 반복은 매번 원래 일자를 기준으로 말일에 맞춘다. */
+export function contentRepeatDates(start: unknown, raw: unknown): string[] {
+  if (!isValidDay(start)) throw new Error("반복할 콘텐츠의 날짜를 먼저 지정해주세요.");
+  if (!raw || typeof raw !== "object") throw new Error("반복 설정을 확인해주세요.");
+  const r = raw as ContentRepeat;
+  if (!["day", "week", "month"].includes(r.unit) || !Number.isInteger(r.interval) || r.interval < 1 || r.interval > 365) throw new Error("반복 간격은 1~365 사이의 정수로 입력해주세요.");
+  if (r.end === "count") {
+    if (!Number.isInteger(r.count) || r.count! < 1 || r.count! > MAX_CONTENT_REPEATS) throw new Error(`추가 횟수는 1~${MAX_CONTENT_REPEATS}회로 입력해주세요.`);
+  } else if (r.end !== "date" || !isValidDay(r.until) || r.until <= start) throw new Error("종료일은 원본 날짜보다 뒤로 지정해주세요.");
+  const days: string[] = [];
+  for (let i = 1; i <= MAX_CONTENT_REPEATS + 1; i++) {
+    let day: string;
+    if (r.unit === "month") {
+      const original = new Date(`${start}T00:00:00Z`);
+      const target = new Date(original);
+      target.setUTCDate(1); target.setUTCMonth(target.getUTCMonth() + i * r.interval);
+      const last = new Date(target); last.setUTCMonth(last.getUTCMonth() + 1, 0);
+      target.setUTCDate(Math.min(original.getUTCDate(), last.getUTCDate()));
+      day = target.toISOString().slice(0, 10);
+    } else day = shiftDay(start, i * r.interval * (r.unit === "week" ? 7 : 1));
+    if (!isValidDay(day)) throw new Error("생성 가능한 날짜 범위를 넘었습니다.");
+    if (r.end === "date" && day > r.until!) break;
+    if (days.length === MAX_CONTENT_REPEATS) throw new Error(`한 번에 최대 ${MAX_CONTENT_REPEATS}개까지 생성할 수 있습니다. 종료일을 줄여주세요.`);
+    days.push(day);
+    if (r.end === "count" && days.length === r.count) break;
+  }
+  if (!days.length) throw new Error("지정한 기간에 추가할 반복 날짜가 없습니다.");
+  return days;
+}
 
 export { isValidDay, kstToday, shiftDay } from "@/lib/worklog";
 

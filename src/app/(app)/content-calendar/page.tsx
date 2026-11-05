@@ -25,7 +25,7 @@ import {
   CONTENT_STATUSES, EMPTY_FILTER, NO_PROJECT_COLOR, PROJECT_COLORS, assigneeOptions, campaignOptions, channelOptions, formatOptions,
   isValidMonth, kstToday, matchesFilter,
   monthGrid, monthKey, monthLabel, monthRange, shiftMonth,
-  type ContentFilter, type ContentItemDto, type ContentMemberDto,
+  type ContentFilter, type ContentItemDto, type ContentMemberDto, type ContentRepeat,
 } from "@/lib/content-calendar";
 import CalendarView from "./CalendarView";
 import BoardView from "./BoardView";
@@ -68,6 +68,8 @@ export default function ContentCalendarPage() {
   const [error, setError] = useState(false);
   const [filter, setFilter] = useState<Omit<ContentFilter, "project">>(EMPTY_FILTER);
   const [openId, setOpenId] = useState<string | null>(null);
+  const openIdRef = useRef(openId);
+  useEffect(() => { openIdRef.current = openId; }, [openId]);
   const { remove } = useUndoableDelete();
 
   const itemsRef = useRef(items);
@@ -98,7 +100,15 @@ export default function ContentCalendarPage() {
       const data = await res.json();
       if (seq !== loadSeq.current) return;
       // 아직 서버에 없는 새 항목은 남긴다(저장되기 전에 달을 바꿔도 사라지지 않게)
-      setItems((prev) => [...(data.items as ContentItemDto[]), ...prev.filter((i) => isUnsaved(i.id))]);
+      setItems((prev) => {
+        const aliases = new Map([...realIds.current].map(([ui, real]) => [real, ui]));
+        const present = new Set(prev.map(i => i.id));
+        const saved = (data.items as ContentItemDto[]).map(i => {
+          const ui = aliases.get(i.id);
+          return ui && present.has(ui) ? { ...i, id: ui } : i;
+        });
+        return [...saved, ...prev.filter(i => isUnsaved(i.id))];
+      });
       setMembers(data.members ?? []);
       setLoadedKey(`${workspaceId}:${month}`);
     } catch {
@@ -123,7 +133,7 @@ export default function ContentCalendarPage() {
     const fields = pending.current.get(id);
     if (!fields) return;
     pending.current.delete(id);
-    void enqueue(id, async () => {
+    return enqueue(id, async () => {
       if (isUnsaved(id)) {
         const item = itemsRef.current.find((i) => i.id === id);
         if (!item) return;
@@ -192,6 +202,37 @@ export default function ContentCalendarPage() {
     setItems((prev) => [...prev, item]);
     itemsRef.current = [...itemsRef.current, item];
     setOpenId(item.id);
+  };
+
+  const copyItem = async (id: string, requestId: string, repeat?: ContentRepeat) => {
+    const template = itemsRef.current.find(i => i.id === id);
+    if (!template?.title.trim()) throw new Error("콘텐츠명을 먼저 입력해주세요.");
+    const sequence = loadSeq.current;
+    await flush(id);
+    await chains.current.get(id);
+    if (isUnsaved(id)) throw new Error("원본을 먼저 저장해야 해요. 저장 상태를 확인하고 다시 시도해주세요.");
+    const response = await fetch("/api/content-calendar/items", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ copyFromId: apiId(id), requestId, ...pickSendable(template), ...(repeat ? { repeat } : {}) }),
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(data?.error || "콘텐츠를 만들지 못했어요. 다시 시도해주세요.");
+    if (repeat) {
+      if (!data?.created?.length) throw new Error("반복 일정 생성 결과를 확인하지 못했어요. 다시 시도해주세요.");
+      if (sequence !== loadSeq.current) return;
+      if (openIdRef.current === id) setOpenId(null);
+      await load();
+      toast.success(`${data.count}개 반복 일정을 추가했어요`);
+      return;
+    }
+    if (!data?.items?.length) throw new Error("복제 결과를 확인하지 못했어요. 다시 시도해주세요.");
+    const added = data.items as ContentItemDto[];
+    if (sequence !== loadSeq.current) return;
+    const ids = new Set(added.map(i => i.id));
+    setItems(prev => [...prev.filter(i => !ids.has(apiId(i.id))), ...added]);
+    itemsRef.current = [...itemsRef.current.filter(i => !ids.has(apiId(i.id))), ...added];
+    if (openIdRef.current === id) setOpenId(added[0].id);
+    toast.success("콘텐츠를 복제했어요");
   };
 
   const closeEditor = () => {
@@ -337,6 +378,7 @@ export default function ContentCalendarPage() {
           members={members}
           known={known}
           onChange={(fields, mode) => patch(opened.id, fields, mode)}
+          onCopy={(requestId, repeat) => copyItem(opened.id, requestId, repeat)}
           onClose={closeEditor}
           onDelete={() => deleteItem(opened.id)}
         />

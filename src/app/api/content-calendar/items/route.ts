@@ -9,7 +9,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireWorkspaceMember } from "@/lib/workspace-access";
 import {
-  assigneeKey, isContentStatus, isValidDay, isValidTime, normalizeTags, parseAssignees, type ContentAssignee,
+  assigneeKey, contentRepeatDates, isContentStatus, isValidDay, isValidTime, normalizeTags, parseAssignees, type ContentAssignee,
 } from "@/lib/content-calendar";
 
 const toDateValue = (v: unknown) => (isValidDay(v) ? new Date(`${v}T00:00:00Z`) : null);
@@ -173,7 +173,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const body = await request.json().catch(() => ({}));
+  const raw = await request.json().catch(() => null);
+  const body = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  if (typeof body.copyFromId === "string") return copyItems(body);
   const workspaceId = typeof body.workspaceId === "string" ? body.workspaceId : null;
   const access = await requireWorkspaceMember(workspaceId);
   if ("error" in access) return NextResponse.json({ error: access.error }, { status: access.status });
@@ -184,6 +186,40 @@ export async function POST(request: Request) {
     data: { ...fields, assignees: fields.assignees ?? [], title: fields.title!, workspaceId: workspaceId!, createdById: access.userId },
   });
   return NextResponse.json({ item: serialize(item, new Map()) }, { status: 201 });
+}
+
+async function copyItems(body: Record<string, unknown>) {
+  const source = await prisma.contentItem.findUnique({ where: { id: body.copyFromId as string } });
+  if (!source) return NextResponse.json({ error: "원본 콘텐츠를 찾을 수 없어요" }, { status: 404 });
+  const access = await requireWorkspaceMember(source.workspaceId);
+  if ("error" in access) return NextResponse.json({ error: access.error }, { status: access.status });
+  if (typeof body.requestId !== "string" || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(body.requestId)) return NextResponse.json({ error: "생성 요청을 다시 시도해주세요." }, { status: 400 });
+  const fields = await readFields({ ...source, date: toDay(source.date), ...body, status: "waiting", link: "" }, source.workspaceId, parseAssignees(source.assignees));
+  if ("error" in fields) return NextResponse.json({ error: fields.error }, { status: 400 });
+  let dates: Array<string | null>;
+  try { dates = body.repeat ? contentRepeatDates(toDay(fields.date ?? null), body.repeat) : [toDay(fields.date ?? null)]; }
+  catch (e) { return NextResponse.json({ error: (e as Error).message }, { status: 400 }); }
+  const prefix = `content-copy:${source.id}:${body.requestId}:`;
+  const existingCopies = () => prisma.contentItem.findMany({ where: { workspaceId: source.workspaceId, recurrenceKey: { startsWith: prefix } }, orderBy: [{ date: "asc" }, { id: "asc" }] });
+  let items = await existingCopies();
+  if (!items.length) {
+    try {
+      items = await prisma.contentItem.createManyAndReturn({ data: dates.map((date, i) => ({
+        ...fields, title: body.repeat ? fields.title! : `${fields.title!.slice(0, 195).trimEnd()} (복사)`,
+        date: toDateValue(date), status: "waiting", link: "", sourceUrl: source.sourceUrl,
+        assignees: fields.assignees ?? [], workspaceId: source.workspaceId, createdById: access.userId,
+        recurrenceKey: `${prefix}${i}`,
+      })) });
+    } catch (e) {
+      // 같은 생성 요청이 동시에 재시도되어도 한 묶음만 남긴다.
+      if (!(e && typeof e === "object" && "code" in e && e.code === "P2002")) throw e;
+      items = await existingCopies();
+      if (!items.length) throw e;
+    }
+  }
+  if (body.repeat) return NextResponse.json({ created: items.map(i => ({ id: i.id, date: toDay(i.date) })), count: items.length }, { status: 201 });
+  const names = await liveNames(assigneeIds(items), []);
+  return NextResponse.json({ items: items.map(i => serialize(i, names)) }, { status: 201 });
 }
 
 export async function PATCH(request: Request) {

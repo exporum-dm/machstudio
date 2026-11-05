@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   EMPTY_FILTER, assigneeOptions, channelOptions, compareItems, groupByDay, isValidMonth, isValidTime, matchesFilter, monthGrid, monthRange,
-  normalizeTags, parseAssignees, shiftMonth, type ContentItemDto,
+  contentRepeatDates, normalizeTags, parseAssignees, shiftMonth, type ContentItemDto,
 } from "@/lib/content-calendar";
 
 const item = (over: Partial<ContentItemDto>): ContentItemDto => ({
@@ -10,6 +10,25 @@ const item = (over: Partial<ContentItemDto>): ContentItemDto => ({
   ...over,
 });
 const all = { project: "all", ...EMPTY_FILTER };
+
+describe("반복 날짜", () => {
+  it("원본 다음부터 격주 간격으로 추가한다", () => {
+    expect(contentRepeatDates("2026-12-24", { unit: "week", interval: 2, end: "count", count: 3 })).toEqual(["2027-01-07", "2027-01-21", "2027-02-04"]);
+  });
+  it("매월 원래 날짜를 기준으로 월말과 윤년을 보정한다", () => {
+    expect(contentRepeatDates("2028-01-31", { unit: "month", interval: 1, end: "count", count: 3 })).toEqual(["2028-02-29", "2028-03-31", "2028-04-30"]);
+    expect(contentRepeatDates("2027-01-31", { unit: "month", interval: 1, end: "count", count: 2 })).toEqual(["2027-02-28", "2027-03-31"]);
+  });
+  it("종료일은 포함하되 원본을 중복 생성하지 않는다", () => {
+    expect(contentRepeatDates("2026-11-05", { unit: "day", interval: 3, end: "date", until: "2026-11-11" })).toEqual(["2026-11-08", "2026-11-11"]);
+  });
+  it("무한 생성·잘못된 간격·날짜 미정을 차단한다", () => {
+    expect(() => contentRepeatDates(null, { unit: "week", interval: 1, end: "count", count: 2 })).toThrow();
+    expect(() => contentRepeatDates("2026-11-05", { unit: "day", interval: 0, end: "count", count: 2 })).toThrow();
+    expect(() => contentRepeatDates("2026-11-05", { unit: "day", interval: 1, end: "date", until: "2030-01-01" })).toThrow(/100/);
+    expect(() => contentRepeatDates("2026-11-05", { unit: "week", interval: 1, end: "date", until: "2026-11-06" })).toThrow(/없습니다/);
+  });
+});
 
 describe("monthGrid", () => {
   it("일요일부터 토요일까지, 앞뒤 달 날짜로 채운다", () => {
