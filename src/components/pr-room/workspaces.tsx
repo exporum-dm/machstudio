@@ -178,6 +178,7 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
       updatedAt: new Date().toISOString(),
       sourceUrl: mention.url,
       sourceOutlet: mention.source,
+      publishedAt: mention.publishedAt ?? undefined,
     };
     try {
       setData(await save(projectId, { pressReleases: [release, ...existing] }, data.room.updatedAt));
@@ -985,7 +986,7 @@ export function PressWorkspace({ projectId }: { projectId: string }) {
   const [type, setType] = useState<PressRelease["type"]>("advance");
   const [answers, setAnswers] = useState<PressAnswers>(emptyAnswers);
   const [draft, setDraft] = useState<
-    { title: string; body: string; sourceUrl?: string; sourceOutlet?: string } | null
+    { title: string; body: string; sourceUrl?: string; sourceOutlet?: string; publishedAt?: string } | null
   >(null);
   if (error) return <ErrorState message={error} retry={load} />;
   if (!data) return <Loading />;
@@ -1100,6 +1101,9 @@ export function PressWorkspace({ projectId }: { projectId: string }) {
               <div className="flex flex-wrap justify-between gap-2">
                 <div>
                   <h3 className="font-semibold">작성된 보도자료</h3>
+                  {draft.publishedAt && (
+                    <p className="mt-1 text-xs text-muted-foreground">원문 게재일 {new Date(draft.publishedAt).toLocaleDateString("ko-KR")}</p>
+                  )}
                   {draft.sourceUrl && (
                     <a
                       href={draft.sourceUrl}
@@ -1161,7 +1165,7 @@ export function PressWorkspace({ projectId }: { projectId: string }) {
               key={x.id}
               onClick={() => {
                 setType(x.type);
-                setDraft({ title: x.title, body: x.body, sourceUrl: x.sourceUrl, sourceOutlet: x.sourceOutlet });
+                setDraft({ title: x.title, body: x.body, sourceUrl: x.sourceUrl, sourceOutlet: x.sourceOutlet, publishedAt: x.publishedAt });
               }}
               className={`${R.surface} block w-full bg-card p-3 text-left shadow-sm`}
             >
@@ -1169,7 +1173,7 @@ export function PressWorkspace({ projectId }: { projectId: string }) {
                 {x.title}
               </span>
               <span className="mt-1 block text-xs text-muted-foreground">
-                {releaseLabel[x.type] ?? "아카이브"} · {new Date(x.updatedAt).toLocaleDateString("ko-KR")}
+                {releaseLabel[x.type] ?? "아카이브"} · {x.publishedAt ? `원문 ${new Date(x.publishedAt).toLocaleDateString("ko-KR")} · ` : ""}저장 {new Date(x.updatedAt).toLocaleDateString("ko-KR")}
                 {x.sourceOutlet ? ` · ${x.sourceOutlet}` : ""}
               </span>
             </button>
