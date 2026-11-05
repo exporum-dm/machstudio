@@ -47,18 +47,41 @@ export interface TaxonomyData {
   parameters: TaxonomyParameter[];
   platforms: string[];
   status: "active" | "deprecated";
+  /** 설치 체크리스트 항목일 때만(프로젝트별 GTM 설치) — 아래 필드들과 함께 쓴다 */
+  projectId: string | null;
+  /** Korea Expo 처럼 프로젝트 안에 쇼가 여러 개면 그 쇼(WorkGroup) */
+  groupId: string | null;
+  step: number | null;
+  triggerCondition: string;
+  content: string;
+  className: string;
+  tagged: boolean;
+  note: string;
 }
 
-/** 입력 검증. partial 이면 들어온 키만 돌려준다(PATCH). */
+/**
+ * 입력 검증. partial 이면 들어온 키만 돌려준다(PATCH).
+ * projectId 가 있으면(설치 체크리스트) 이름은 자유 텍스트 — GA4 snake_case 규칙은 워크스페이스
+ * 공통 이벤트 사전(projectId 없음)에만 강제한다.
+ */
 export function normalizeTaxonomyInput(
   body: Record<string, unknown>,
   opts: { partial?: boolean } = {},
 ): { data: Partial<TaxonomyData> } | { error: string } {
   const data: Partial<TaxonomyData> = {};
+  const isChecklistItem = typeof body.projectId === "string" && body.projectId.length > 0;
+  if (!opts.partial || body.projectId !== undefined) data.projectId = typeof body.projectId === "string" && body.projectId ? body.projectId : null;
+  if (!opts.partial || body.groupId !== undefined) data.groupId = typeof body.groupId === "string" && body.groupId ? body.groupId : null;
   if (!opts.partial || body.name !== undefined) {
-    const name = toEventName(str(body.name, 60));
-    if (!EVENT_NAME_RE.test(name)) return { error: "이벤트 이름은 영문 소문자로 시작하고 소문자·숫자·밑줄(_)만, 40자까지 쓸 수 있어요" };
-    data.name = name;
+    if (isChecklistItem) {
+      const name = str(body.name, 100);
+      if (!name) return { error: "이름을 입력해주세요" };
+      data.name = name;
+    } else {
+      const name = toEventName(str(body.name, 60));
+      if (!EVENT_NAME_RE.test(name)) return { error: "이벤트 이름은 영문 소문자로 시작하고 소문자·숫자·밑줄(_)만, 40자까지 쓸 수 있어요" };
+      data.name = name;
+    }
   }
   if (!opts.partial || body.category !== undefined) data.category = str(body.category, 60);
   if (!opts.partial || body.description !== undefined) data.description = str(body.description, 1000);
@@ -70,6 +93,12 @@ export function normalizeTaxonomyInput(
       : [];
   }
   if (!opts.partial || body.status !== undefined) data.status = body.status === "deprecated" ? "deprecated" : "active";
+  if (!opts.partial || body.step !== undefined) data.step = typeof body.step === "number" && Number.isFinite(body.step) ? Math.round(body.step) : null;
+  if (!opts.partial || body.triggerCondition !== undefined) data.triggerCondition = str(body.triggerCondition, 200);
+  if (!opts.partial || body.content !== undefined) data.content = str(body.content, 20000);
+  if (!opts.partial || body.className !== undefined) data.className = str(body.className, 200);
+  if (!opts.partial || body.tagged !== undefined) data.tagged = body.tagged === true;
+  if (!opts.partial || body.note !== undefined) data.note = str(body.note, 1000);
   return { data };
 }
 

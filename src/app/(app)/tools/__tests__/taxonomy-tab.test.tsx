@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const WS = { workspace: { id: "ws1" } };
+const WS = { workspace: { id: "ws1" }, projects: [] as { id: string; name: string }[] };
 vi.mock("@/contexts/workspace", () => ({ useWorkspace: () => WS }));
 vi.mock("@/components/ui/confirm-dialog", () => ({ useConfirm: () => async () => true }));
 
