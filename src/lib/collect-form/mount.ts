@@ -370,6 +370,14 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
     if (config.branch.enabled && config.branch.fieldKey) values[config.branch.fieldKey] = opts.forceType;
   }
 
+  const typeField = config.fields.find(f => f.key === config.branch.fieldKey);
+  const typeOptions = config.builderVariant === "domestic" && config.branch.enabled
+    ? (typeField?.options ?? []).map(o => ({label:t(o),value:localize(o,config.defaultLocale)})).filter(o=>o.label && o.value) : [];
+  if (typeOptions.length && !typeOptions.some(o=>o.value === canonicalBranchValue(config,str(values[config.branch.fieldKey])))) {
+    values[config.branch.fieldKey] = typeOptions[0].value;
+  }
+  let doneTicketKey: string | null = null;
+
   const issueFor = (key: string) => issues.find((i) => i.key === key);
   const clearIssue = (key: string) => {
     issues = issues.filter((i) => i.key !== key);
@@ -869,13 +877,18 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
   }
 
   function renderFields(): void {
+    fieldsHost.id = `msf-fields-${opts.sourceId}`;
+    if (typeOptions.length) fieldsHost.setAttribute("role", "tabpanel");
     clearNode(fieldsHost);
     const fields = visibleFields(config, values);
     if (fields.length === 0) {
       fieldsHost.appendChild(h("div", { class: "msf-hint" }, COPY.empty));
       return;
     }
-    for (const f of fields) fieldsHost.appendChild(renderField(f));
+    for (const f of fields) {
+      if (typeOptions.length && f.key === config.branch.fieldKey) continue;
+      fieldsHost.appendChild(renderField(f));
+    }
   }
 
   function markStarted(): void {
@@ -1086,7 +1099,7 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
      * 등록자가 번호를 받는 유일한 경로라 확인이 꼭 필요하다(§2).
      */
     if (preview) {
-      doneRegNo = PREVIEW_REG_NO;
+      doneRegNo = config.builderVariant === "domestic" ? `${config.registrationPrefix}000001` : PREVIEW_REG_NO;
       render();
       return;
     }
@@ -1109,7 +1122,7 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
         }),
       });
       const data = (await res.json().catch(() => null)) as
-        | { registrationNo?: string | null; rid?: string; issues?: SubmissionIssue[]; duplicateField?: string; duplicateKey?: string; status?: string }
+        | { ticketKey?: string; registrationNo?: string | null; rid?: string; issues?: SubmissionIssue[]; duplicateField?: string; duplicateKey?: string; status?: string }
         | null;
 
       /**
@@ -1125,6 +1138,7 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
 
       if (res.status === 201 && data?.registrationNo) {
         doneRegNo = data.registrationNo;
+        doneTicketKey = data.ticketKey ?? null;
         track(preview, "generate_lead", {
           visitor_type: visitorType,
           transaction_id: data.rid ?? data.registrationNo,
@@ -1258,7 +1272,7 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
     if (preview) return null;
     return h("a", {
       class: "msf-more",
-      href: `${opts.origin}/t/${encodeURIComponent(regNo)}`,
+      href: `${opts.origin}/t/${encodeURIComponent(regNo)}${doneTicketKey ? `?key=${encodeURIComponent(doneTicketKey)}` : ""}`,
       target: "_blank",
       rel: "noopener noreferrer",
       style: { marginTop: "10px", display: "inline-block" },
@@ -1426,6 +1440,34 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
       );
       track(preview, "ms_form_view", { form_status: status });
       return;
+    }
+
+    if (typeOptions.length) {
+      fieldsHost.id = `msf-fields-${opts.sourceId}`;
+      const tabs = h("div", {class:"msf-type-tabs",role:"tablist","aria-label":t(typeField?.label) || "등록 유형"});
+      typeOptions.forEach((option,index) => {
+        const selected = canonicalBranchValue(config,str(values[config.branch.fieldKey])) === option.value;
+        const button = h("button", {type:"button",class:"msf-type-tab",role:"tab","aria-selected":String(selected),"aria-controls":fieldsHost.id,tabindex:selected?"0":"-1"}, option.label);
+        const choose = () => {
+          values[config.branch.fieldKey] = option.value;
+          issues = []; markStarted();
+          track(preview,"ms_visitor_type_selected",{visitor_type:option.value});
+          if (!preview && window.location.pathname.startsWith("/register/")) {
+            const url = new URL(window.location.href); url.searchParams.set("type",option.value); window.history.replaceState(null,"",url);
+          }
+          render(); root.querySelectorAll<HTMLButtonElement>(".msf-type-tab")[index]?.focus();
+        };
+        button.addEventListener("click",choose);
+        button.addEventListener("keydown",event => {
+          if (!["ArrowLeft","ArrowRight","Home","End"].includes(event.key)) return;
+          event.preventDefault();
+          const next = event.key === "Home" ? 0 : event.key === "End" ? typeOptions.length-1 : (index+(event.key==="ArrowRight"?1:-1)+typeOptions.length)%typeOptions.length;
+          (tabs.children[next] as HTMLButtonElement)?.click();
+        });
+        tabs.appendChild(button);
+      });
+      stack.appendChild(tabs);
+      if (config.legal.eventName) stack.appendChild(h("h2",{class:"msf-state-title"},`${config.legal.eventName} ${typeOptions.find(o=>o.value===canonicalBranchValue(config,str(values[config.branch.fieldKey])))?.label ?? ""}`));
     }
 
     if (config.eventInfo.enabled) {

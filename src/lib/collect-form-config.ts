@@ -322,6 +322,8 @@ export interface CollectTheme {
 }
 
 export interface CollectFormConfig {
+  builderVariant: "international" | "domestic";
+  registrationPrefix: string;
   fields: CollectField[];
   branch: CollectBranch;
   badgeRules: CollectBadgeRule[];
@@ -354,6 +356,7 @@ export interface CollectFormConfig {
  * 빌더가 씨앗 항목을 넣어 준다(그건 UI 몫이고 이 정규화의 기본값이 아니다).
  */
 export const EMPTY_FORM_CONFIG: CollectFormConfig = {
+  builderVariant: "international", registrationPrefix: "90",
   fields: [],
   branch: { enabled: false, fieldKey: "", groups: [] },
   badgeRules: [],
@@ -603,6 +606,8 @@ export function normalizeCollectForm(raw: unknown): CollectFormConfig {
   const hhmm = (v: unknown) => (/^\d{2}:\d{2}$/.test(str(v)) ? str(v) : "");
 
   return {
+    builderVariant: c.builderVariant === "domestic" ? "domestic" : "international",
+    registrationPrefix: /^[0-9]{2}$/.test(str(c.registrationPrefix)) ? str(c.registrationPrefix) : "90",
     fields,
     branch: {
       // 기준 항목이 실제로 존재할 때만 분기를 켠다 — 항목을 지웠는데 분기가 남으면
@@ -858,6 +863,8 @@ export function mergeFormConfigUpdate(currentRaw: unknown, formConfig: unknown, 
   const base = formConfig !== undefined ? normalizeCollectForm(formConfig) : current;
   return {
     ...base,
+    builderVariant: current.builderVariant,
+    registrationPrefix: obj(formConfig).registrationPrefix === undefined ? current.registrationPrefix : base.registrationPrefix,
     schedule: schedule !== undefined ? normalizeCollectForm({ ...base, schedule }).schedule : current.schedule,
     defaultLocale: isFormLocale(locale) ? locale : current.defaultLocale,
   };

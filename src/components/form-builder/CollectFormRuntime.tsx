@@ -7,6 +7,7 @@
  * `mountCollectForm` 이 한다 — 임베드가 파트너 사이트에서 돌리는 바로 그 함수다.
  * React 로 한 벌 더 그리면 "미리보기에선 괜찮았는데" 가 반드시 생긴다(설계 §16.1).
  */
+import { getPublicAppOrigin } from "@/lib/app-url";
 import { useEffect, useRef } from "react";
 import { mountCollectForm } from "@/lib/collect-form/mount";
 import type { CollectFormConfig, RegistrationStatus } from "@/lib/collect-form-config";
@@ -45,7 +46,7 @@ export function CollectFormRuntime({
       mount: host,
       config,
       // 미리보기는 우리 오리진에서 열리므로 상대경로로 충분하다(중복확인 조회만 나간다).
-      origin: "",
+      origin: preview ? "" : getPublicAppOrigin(),
       sourceId,
       preview,
       forceStatus,

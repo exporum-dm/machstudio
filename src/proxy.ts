@@ -16,6 +16,7 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/api/webinar/") ||
     pathname.startsWith("/api/webinar-embed/") || // 임베드 공개 설정/비콘 (webinar-embed-sites 어드민 CRUD는 제외)
     pathname.startsWith("/w/") || // 웨비나 로더 (외부 사이트 부착)
+    pathname.startsWith("/register/") || // 공개 등록 페이지
     pathname.startsWith("/f/") || // 등록 폼·등록 확인 로더 (외부 사이트 부착 — 설계 §17)
     pathname.startsWith("/t/") || // 티켓 페이지 (등록번호가 곧 티켓 — 설계 §9.2)
     pathname === "/webinar/sample" ||

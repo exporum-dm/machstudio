@@ -53,6 +53,18 @@ const submitBtn = () => [...host.querySelectorAll("button")].find((b) => b.class
 const labels = () => [...host.querySelectorAll(".msf-label")].map((l) => l.textContent ?? "");
 
 describe("등록 폼 렌더", () => {
+  it("domestic tabs preselect linked types, hide the duplicate type field, and preserve shared answers", () => {
+    mount({config:normalizeCollectForm({...CONFIG,builderVariant:"domestic"}),forceType:"Buyer"});
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Buyer");
+    expect(host.querySelector('select[data-msf-key="type"]')).toBeNull();
+    expect(labels().join("|")).toContain("Company");
+    const email=host.querySelector<HTMLInputElement>('[data-msf-key="email"]')!;
+    email.value="test@example.com"; email.dispatchEvent(new Event("input",{bubbles:true}));
+    (host.querySelector('[role="tab"]') as HTMLButtonElement).click();
+    expect(labels().join("|")).not.toContain("Company");
+    expect(host.querySelector<HTMLInputElement>('[data-msf-key="email"]')?.value).toBe("test@example.com");
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("General");
+  });
   it("표시 꺼진 항목은 그리지 않는다", () => {
     mount();
     expect(text()).toContain("Email");

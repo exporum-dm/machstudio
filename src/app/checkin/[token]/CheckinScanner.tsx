@@ -349,7 +349,7 @@ function ScanPanel({
       if (now - lastKey > 80) buf = ""; // 사람 타이핑은 이보다 느리다
       lastKey = now;
       if (e.key === "Enter") {
-        if (buf.length >= 13) void submit(buf, "scanner");
+        if (buf.length >= 8) void submit(buf, "scanner");
         buf = "";
       } else if (e.key.length === 1) {
         buf += e.key;
@@ -428,12 +428,12 @@ function ScanPanel({
             value={manual}
             onChange={(e) => setManual(e.target.value.replace(/\D/g, "").slice(0, 13))}
             inputMode="numeric"
-            placeholder="등록번호 13자리 직접 입력"
+            placeholder="등록번호 8자리 또는 13자리 입력"
             aria-label="등록번호 직접 입력"
             className="w-full rounded-xl bg-white/10 py-3 pl-9 pr-3 font-mono text-sm tracking-wider outline-none ring-emerald-400/60 placeholder:font-sans placeholder:tracking-normal placeholder:text-white/35 focus:ring-2"
           />
         </div>
-        <button type="submit" disabled={manual.length < 13 || sending} className="rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-neutral-950 disabled:opacity-40">
+        <button type="submit" disabled={manual.trim().length < 8 || sending} className="rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-neutral-950 disabled:opacity-40">
           확인
         </button>
       </form>

@@ -90,6 +90,8 @@ export interface TicketView {
 
 /** 조회 화면에 내보내는 것 — **이게 전부다**(§10.2 "표시 정보는 최소화"). */
 export interface LookupView {
+  /** 순차 번호의 공개 티켓을 보호한다. 본인 확인 후에만 제공한다. */
+  ticketKey?: string;
   /**
    * **showQr 이 꺼져 있으면 null 이다.**
    *
@@ -176,7 +178,7 @@ function looksLikeName(field: { key: string; label: Localized }): boolean {
  */
 export function buildLookupView(
   config: CollectFormConfig,
-  record: { registrationNo: string | null; data: unknown },
+  record: { id?: string; registrationNo: string | null; data: unknown },
 ): LookupView | null {
   const base = buildTicketView(config, record);
   if (!base) return null;
@@ -196,6 +198,7 @@ export function buildLookupView(
     visitorType: base.visitorType,
     // 화면이 안 쓰는 값은 내보내지도 않는다(lookup-mount 는 showQr 가 false 면 번호를 그리지 않는다).
     registrationNo: config.lookup.showQr ? base.registrationNo : null,
+    ...(config.lookup.showQr && base.registrationNo.length === 8 && record.id ? {ticketKey:record.id} : {}),
     showQr: config.lookup.showQr,
     maskedEmail: maskEmail(pick("email")),
     maskedPhone: maskPhone(pick("tel")),

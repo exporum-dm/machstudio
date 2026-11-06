@@ -169,6 +169,7 @@ function render(inst: Instance): void {
         origin: inst.cfg.origin,
         sourceId: inst.cfg.sourceId,
         serverNow: inst.cfg.serverNow,
+        forceType: config.builderVariant === "domestic" ? mount.getAttribute("data-mach-form-type") ?? new URLSearchParams(window.location.search).get("type") ?? undefined : undefined,
         preview,
         styleRoot,
         // 예약이 자리를 함께 줬으면 전문 팝업이 거기로 간다. 안 줬으면 document.body.

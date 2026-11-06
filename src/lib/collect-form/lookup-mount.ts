@@ -157,6 +157,7 @@ export function mountCollectLookup(opts: MountLookupOptions): LookupHandle {
    */
   function renderResult(view: {
     registrationNo: string;
+    ticketKey?: string;
     name: string;
     visitorType: string;
     showQr: boolean;
@@ -244,7 +245,7 @@ export function mountCollectLookup(opts: MountLookupOptions): LookupHandle {
         card.appendChild(
           h("a", {
             class: "msf-more",
-            href: `${opts.origin}/t/${encodeURIComponent(view.registrationNo)}`,
+            href: `${opts.origin}/t/${encodeURIComponent(view.registrationNo)}${view.ticketKey ? `?key=${encodeURIComponent(view.ticketKey)}` : ""}`,
             target: "_blank", rel: "noopener noreferrer",
             style: { marginTop: "10px", display: "inline-block" },
           }, COPY.ticketLink),
@@ -311,7 +312,7 @@ export function mountCollectLookup(opts: MountLookupOptions): LookupHandle {
     // 미리보기는 조회를 보내지 않는다 — 표본으로 화면만 확인한다(부작용 차단, §16.1).
     if (preview) {
       renderResult({
-        registrationNo: PREVIEW_REG_NO, name: "Jane Doe", visitorType: "Buyer",
+        registrationNo: config.builderVariant === "domestic" ? `${config.registrationPrefix}000001` : PREVIEW_REG_NO, name: "Jane Doe", visitorType: "Buyer",
         showQr: config.lookup.showQr, maskedEmail: "j•••@example.com", maskedPhone: "•••••• 1234",
         extras: [{ label: "Companions", value: "2" }],
       });
@@ -336,7 +337,7 @@ export function mountCollectLookup(opts: MountLookupOptions): LookupHandle {
       if (res.status === 429) { showBanner(COPY.tooMany); return; }
       const data = (await res.json().catch(() => null)) as
         | {
-            found?: boolean; registrationNo?: string; name?: string; visitorType?: string;
+            found?: boolean; ticketKey?: string; registrationNo?: string; name?: string; visitorType?: string;
             showQr?: boolean; maskedEmail?: string; maskedPhone?: string;
             extras?: Array<{ label: string; value: string }>;
           }
@@ -345,6 +346,7 @@ export function mountCollectLookup(opts: MountLookupOptions): LookupHandle {
       if (!data.found || !data.registrationNo) { showBanner(COPY.notFound); return; }
       renderResult({
         registrationNo: data.registrationNo,
+        ticketKey: data.ticketKey,
         name: data.name ?? "",
         visitorType: data.visitorType ?? "",
         showQr: data.showQr !== false,

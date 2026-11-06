@@ -18,6 +18,13 @@
  * 도배하면 정작 우리가 나중에 테마를 얹을 때 우리 자신이 못 덮는다.
  */
 export const COLLECT_FORM_CSS = `
+.msf .msf-type-tabs{display:flex;gap:6px;padding:5px;border-radius:var(--msf-radius);background:var(--msf-soft);box-shadow:0 1px 5px color-mix(in srgb,var(--msf-fg) 8%,transparent)}
+.msf .msf-type-tab{all:unset;box-sizing:border-box;flex:1;text-align:center;padding:14px 10px;border-radius:calc(var(--msf-radius) - 3px);font:inherit;font-weight:650;cursor:pointer;color:var(--msf-muted);transition:background .15s,color .15s,box-shadow .15s}
+.msf .msf-type-tab[aria-selected="true"]{background:var(--msf-accent);color:var(--msf-accent-fg);box-shadow:0 2px 5px color-mix(in srgb,var(--msf-fg) 12%,transparent)}
+.msf .msf-type-tab:hover{box-shadow:0 2px 8px color-mix(in srgb,var(--msf-fg) 16%,transparent)}
+.msf .msf-type-tab:focus-visible{outline:2px solid var(--msf-accent);outline-offset:3px}
+@media(prefers-reduced-motion:reduce){.msf .msf-type-tab{transition:none}}
+
 .msf{
   --msf-fg:#101418; --msf-muted:#5b6672; --msf-line:#dfe3e8;
   --msf-bg:#ffffff; --msf-soft:#f4f6f8;

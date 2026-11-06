@@ -23,7 +23,7 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getClientIp, rateLimitAsync } from "@/lib/ratelimit";
-import { isValidRegistrationNo } from "@/lib/collect-registration-no";
+import { isValidRegistrationNo, isDomesticRegistrationNo } from "@/lib/collect-registration-no";
 import { normalizeCollectForm } from "@/lib/collect-form-config";
 import { buildTicketView } from "@/lib/collect-lookup";
 import { visitorBadgePalette } from "@/lib/collect-badge";
@@ -43,14 +43,14 @@ function accentTint(hex: string): { border: string; background: string } {
 export const metadata: Metadata = { robots: { index: false, follow: false } };
 
 /** 티켓 조회 — **필요한 것만 읽는다.** 레코드 전체를 가져오면 나중에 화면으로 흘러든다. */
-function loadTicket(regNo: string) {
+function loadTicket(regNo: string, key?: string) {
   return prisma.collectRecord.findUnique({
-    where: { registrationNo: regNo },
+    where: { registrationNo: regNo, ...(isDomesticRegistrationNo(regNo) ? {id:key ?? ""} : {}) },
     select: { registrationNo: true, data: true, source: { select: { name: true, formConfig: true, deletedAt: true } } },
   });
 }
 
-export default async function TicketPage({ params }: { params: Promise<{ regNo: string }> }) {
+export default async function TicketPage({ params, searchParams }: { params: Promise<{ regNo: string }>; searchParams?: Promise<{key?:string}> }) {
   const { regNo } = await params;
 
   /**
@@ -58,6 +58,8 @@ export default async function TicketPage({ params }: { params: Promise<{ regNo: 
    * 막는 것이 체크digit 을 넣은 이유이고(§9.1), 동시에 무작위 조회가 매번 쿼리가 되는 것도 막는다.
    */
   if (!isValidRegistrationNo(regNo)) notFound();
+  const key = (await searchParams)?.key;
+  if (isDomesticRegistrationNo(regNo) && (typeof key !== "string" || key.length < 16)) notFound();
 
   /**
    * 한도를 **IP 가 아니라 (IP, 등록번호)** 로 센다.
@@ -93,7 +95,7 @@ export default async function TicketPage({ params }: { params: Promise<{ regNo: 
    */
   let record: Awaited<ReturnType<typeof loadTicket>> = null;
   try {
-    record = await loadTicket(regNo);
+    record = await loadTicket(regNo, key);
   } catch (e) {
     console.error("[ticket] 조회 실패", { regNo, error: e });
     return (
@@ -132,6 +134,7 @@ export default async function TicketPage({ params }: { params: Promise<{ regNo: 
   const view = buildTicketView(config, record);
   if (!view) notFound();
 
+  const korean = config.defaultLocale === "ko";
   const dates = config.eventInfo.enabled ? config.eventInfo.eventDates : [];
   const accent = accentTint(config.theme.accentColor);
 
@@ -196,10 +199,10 @@ export default async function TicketPage({ params }: { params: Promise<{ regNo: 
             style={{ borderColor: accent.border, backgroundColor: accent.background }}
           >
             <p className="text-[13px] font-extrabold" style={{ color: accent.border }}>
-              Show this QR code at the check-in desk
+              {korean ? "등록 데스크에 이 QR코드를 보여주세요" : "Show this QR code at the check-in desk"}
             </p>
             <p className="mt-0.5 text-[11px] leading-snug text-neutral-600">
-              Present it to enter the event.
+              {korean ? "QR코드를 제시하고 행사장에 입장하세요." : "Present it to enter the event."}
             </p>
           </div>
 
@@ -207,13 +210,13 @@ export default async function TicketPage({ params }: { params: Promise<{ regNo: 
             <dl className="mx-auto mt-4 grid w-full max-w-[280px] grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 rounded-xl bg-neutral-100 px-4 py-3 text-left text-xs">
               {view.maskedPhone && (
                 <>
-                  <dt className="font-medium text-neutral-500">Phone</dt>
+                  <dt className="font-medium text-neutral-500">{korean ? "연락처" : "Phone"}</dt>
                   <dd className="min-w-0 break-all text-right font-bold text-neutral-800">{view.maskedPhone}</dd>
                 </>
               )}
               {view.maskedEmail && (
                 <>
-                  <dt className="font-medium text-neutral-500">E-mail</dt>
+                  <dt className="font-medium text-neutral-500">{korean ? "이메일" : "E-mail"}</dt>
                   <dd className="min-w-0 break-all text-right font-bold text-neutral-800">{view.maskedEmail}</dd>
                 </>
               )}
@@ -230,14 +233,14 @@ export default async function TicketPage({ params }: { params: Promise<{ regNo: 
           <p className="mt-4 font-mono text-lg font-bold tracking-[0.14em] text-neutral-900">
             {view.registrationNo}
           </p>
-          <p className="mt-1 text-[11px] text-neutral-500">Show this at the venue</p>
+          <p className="mt-1 text-[11px] text-neutral-500">{korean ? "현장에서 등록번호를 보여주세요" : "Show this at the venue"}</p>
 
           {/*
             파일로도 받게 한다 — 캡처가 막힌 기기(일부 사내폰·키오스크)가 있고,
             캡처는 화면 밝기 자동 조절 때문에 QR 대비가 낮게 저장되는 경우가 있다.
             QR만 저장하지 않고 행사명·배지·이름·연락처·등록번호를 한 장으로 만든다.
           */}
-          <TicketDownloadButton ticket={{
+          <TicketDownloadButton korean={korean} ticket={{
             eventName: config.legal.eventName || record.source.name,
             registrationNo: view.registrationNo,
             qrUrl: `/api/collect/qr/${encodeURIComponent(view.registrationNo)}`,
@@ -250,12 +253,12 @@ export default async function TicketPage({ params }: { params: Promise<{ regNo: 
             extras: view.extras,
           }} />
           <p className="mt-2 text-[11px] text-neutral-500">
-            * If the button doesn&apos;t work, please take a screenshot.
+            {korean ? "* 저장이 안 되면 화면을 캡처해 주세요." : "* If the button doesn’t work, please take a screenshot."}
           </p>
         </div>
 
         <p className="mt-4 text-center text-[11px] leading-relaxed text-neutral-500">
-          Save this page to open your ticket any time. A screenshot works too.
+          {korean ? "이 페이지를 저장하면 입장권을 다시 열 수 있어요. 화면을 캡처해도 됩니다." : "Save this page to open your ticket any time. A screenshot works too."}
         </p>
       </main>
     </div>

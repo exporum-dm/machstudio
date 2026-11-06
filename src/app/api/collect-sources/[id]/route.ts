@@ -211,6 +211,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (body.formLocale !== undefined && !isFormLocale(body.formLocale)) {
     return NextResponse.json({ error: "지원하지 않는 언어예요" }, { status: 400 });
   }
+  if (body.formConfig && typeof body.formConfig === "object") {
+    const incoming = body.formConfig as Record<string, unknown>;
+    if (incoming.registrationPrefix !== undefined && (typeof incoming.registrationPrefix !== "string" || !/^[0-9]{2}$/.test(incoming.registrationPrefix))) {
+      return NextResponse.json({error:"등록번호 접두번호는 숫자 2자리로 입력하세요"},{status:400});
+    }
+    if (incoming.builderVariant !== undefined && incoming.builderVariant !== normalizeCollectForm(result.source.formConfig).builderVariant) {
+      return NextResponse.json({error:"빌더 유형은 새 등록 폼을 만들 때 선택하세요"},{status:400});
+    }
+  }
   const nextFormConfig = mergeFormConfigUpdate(result.source.formConfig, body.formConfig, body.registrationSchedule, body.formLocale);
 
   const source = await prisma.collectSource.update({

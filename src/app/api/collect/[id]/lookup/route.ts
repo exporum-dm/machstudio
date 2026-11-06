@@ -150,10 +150,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
    * 전화로 내려갔는데 **여러 건이 맞으면 아무것도 돌려주지 않는다** — 그중 하나를 고르는
    * 것은 곧 절반의 확률로 남의 티켓을 주는 일이다.
    */
-  const pick = (rows: { registrationNo: string | null; data: unknown }[]) => rows[0] ?? null;
-  const SELECT = { registrationNo: true, data: true } as const;
+  const pick = (rows: { id?: string; registrationNo: string | null; data: unknown }[]) => rows[0] ?? null;
+  const SELECT = { id: true, registrationNo: true, data: true } as const;
 
-  let record: { registrationNo: string | null; data: unknown } | null = null;
+  let record: { id?: string; registrationNo: string | null; data: unknown } | null = null;
 
   if (criteria.logic === "and") {
     // and 는 buildLookupCriteria 가 둘 다 있을 때만 통과시킨다 — 그대로 AND 로 옮긴다.

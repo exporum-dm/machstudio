@@ -13,7 +13,7 @@
 import { isValidCollectEmail, normalizeEmail } from "@/lib/collect-email";
 import { isValidPhoneForCountry, toE164 } from "@/lib/collect-phone";
 import { isKnownCountry } from "@/lib/collect-country";
-import { generateRegistrationNo } from "@/lib/collect-registration-no";
+import { generateRegistrationNo, domesticRegistrationNo } from "@/lib/collect-registration-no";
 import {
   entryChannelAt,
   resolveRegistrationStatus,
@@ -218,7 +218,7 @@ export function prepareBuilderSubmission(
     ok: true,
     prepared: {
       data: values,
-      registrationNo: generateRegistrationNo(),
+      registrationNo: config.builderVariant === "domestic" ? domesticRegistrationNo(config.registrationPrefix,1) : generateRegistrationNo(),
       emailNormalized,
       emailKey,
       phoneE164,

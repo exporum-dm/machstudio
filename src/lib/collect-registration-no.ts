@@ -1,6 +1,7 @@
 /**
  * 등록번호 — 현장에서 QR 로 스캔되고, **손으로도 입력되는** 값(설계 §9.1).
  *
+ * 국내형은 협력사 규격에 따라 8자리 순차 번호를 별도 발급한다. 공개 티켓은 별도 키로 보호한다.
  * ── 왜 순차 번호가 아닌가 ──────────────────────────────────────────────
  * 순차는 두 가지를 동시에 깨뜨린다. 1번을 받은 사람은 등록 규모를 알게 되고(경쟁 전시가
  * 우리 티켓 하나만 사면 참관객 수를 안다), 자기 번호 ±1 로 **남의 번호를 추측**할 수 있다.
@@ -51,6 +52,7 @@ export function luhnCheckDigit(payload: string): number {
 export function isValidRegistrationNo(value: unknown): boolean {
   if (typeof value !== "string") return false;
   const s = value.trim();
+  if (isDomesticRegistrationNo(s)) return true;
   if (s.length !== REGISTRATION_NO_LENGTH) return false;
   if (!/^\d+$/.test(s)) return false;
   return luhnCheckDigit(s.slice(0, -1)) === s.charCodeAt(s.length - 1) - 48;
@@ -74,6 +76,15 @@ export function generateRegistrationNo(): string {
  * 그대로 키보드 입력으로 흘리므로 `https://…/t/1234567890123` 이 통째로 입력칸에 박힌다.
  * 그래서 **양쪽 다 받는다**(설계 §9.2 "우리 앱은 둘 다 인식하게 만든다").
  */
+export function isDomesticRegistrationNo(value: string): boolean {
+  return /^[0-9]{8}$/.test(value) && value.slice(2) !== "000000";
+}
+
+export function domesticRegistrationNo(prefix: string, sequence: number): string {
+  if (!/^[0-9]{2}$/.test(prefix) || !Number.isInteger(sequence) || sequence < 1 || sequence > 999999) throw new Error("등록번호 발급 범위를 초과했어요");
+  return prefix + String(sequence).padStart(6, "0");
+}
+
 export function extractRegistrationNo(input: unknown): string | null {
   if (typeof input !== "string") return null;
   const raw = input.trim();
@@ -86,6 +97,9 @@ export function extractRegistrationNo(input: unknown): string | null {
   // 길이만 보고 고르면 타임스탬프(13자리 밀리초!)를 등록번호로 착각한다 — 실제로 섞여 들어오는 값이다.
   for (const m of raw.matchAll(/\d{13}/g)) {
     if (isValidRegistrationNo(m[0])) return m[0];
+  }
+  for (const m of raw.matchAll(/(?:^|[^0-9])([0-9]{8})(?![0-9])/g)) {
+    if (isDomesticRegistrationNo(m[1])) return m[1];
   }
   return null;
 }

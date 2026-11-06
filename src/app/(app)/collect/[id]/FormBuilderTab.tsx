@@ -30,6 +30,7 @@ import {
   type CollectFormConfig,
   type RegistrationStatus,
 } from "@/lib/collect-form-config";
+import { DomesticBuilderSettings } from "./DomesticBuilderSettings";
 import { getPublicAppOrigin } from "@/lib/app-url";
 
 /** "between" = 사전등록이 끝나고 현장등록 전 — 등록 시간을 켰을 때만 버튼이 보인다 */
@@ -128,6 +129,7 @@ export default function FormBuilderTab({
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
       <div className="space-y-3">
+        {config.builderVariant === "domestic" && <DomesticBuilderSettings config={config} patch={patch} sourceId={sourceId} />}
         <div className="flex items-center justify-between gap-2">
           <div>
             <h2 className="text-sm font-semibold">등록 항목</h2>

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { createDomesticFormConfig } from "@/lib/collect-builder-type";
 import { logActivity } from "@/lib/activity";
 
 /** 미리보기 링크 토큰 — Project.analyticsShareToken 과 같은 방식·길이. */
@@ -74,6 +75,7 @@ export async function POST(request: Request) {
       successTrigger: successTrigger || "정상적으로 접수되었습니다",
       redirectUrl: redirectUrl || null,
       mode,
+      ...(mode === "builder" && body.builderVariant === "domestic" ? { formConfig: createDomesticFormConfig() as unknown as object } : {}),
       // 빌더형만 미리보기 링크를 갖는다. 연동형은 외부 사이트의 폼을 쓰므로 미리볼 대상이 없다.
       // 소스 id 대신 난수 토큰을 쓰는 이유는 **재발급으로 링크를 끊기 위해서**다(§16.1).
       previewToken: mode === "builder" ? randomToken() : null,

@@ -1,4 +1,5 @@
 "use client";
+import { collectBuilderLabel } from "@/lib/collect-builder-type";
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -19,6 +20,7 @@ interface CollectSource {
   id: string;
   /** 방식 — 카드에서 구분되지 않으면 빌더형이 "설정이 덜 된 연동형" 처럼 보인다. */
   mode: string;
+  formConfig?: unknown;
   name: string;
   description: string | null;
   siteUrl: string | null;
@@ -39,7 +41,7 @@ export default function CollectPage() {
   const shownSources = sources.filter(source => (!query.trim() || `${source.name} ${source.description ?? ""} ${source.siteUrl ?? ""}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) && (statusFilter === "all" || (statusFilter === "active" ? source.isActive : !source.isActive)));
   const [isLoading, setIsLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: "", description: "", siteUrl: "", mode: "builder" as "capture" | "builder" });
+  const [form, setForm] = useState({ name: "", description: "", siteUrl: "", mode: "builder" as "capture" | "builder" | "domestic" });
   const [isCreating, setIsCreating] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showMembers, setShowMembers] = useState(false);
@@ -92,13 +94,14 @@ export default function CollectPage() {
           description: form.description.trim() || null,
           // 빌더형은 사이트 URL 칸 자체를 안 보여준다 — 남아 있던 값이 딸려 가지 않게 여기서도 끊는다.
           siteUrl: form.mode === "capture" ? form.siteUrl.trim() || null : null,
-          mode: form.mode,
+          mode: form.mode === "domestic" ? "builder" : form.mode,
+          builderVariant: form.mode === "domestic" ? "domestic" : "international",
         }),
       });
       const data = await res.json();
       if (!res.ok) { toast.error(data.error ?? "생성 실패"); return; }
       toast.success(`'${data.source.name}' 수집 폼이 생성됐어요`);
-      setForm({ name: "", description: "", siteUrl: "", mode: "builder" as "capture" | "builder" });
+      setForm({ name: "", description: "", siteUrl: "", mode: "builder" as "capture" | "builder" | "domestic" });
       setShowCreate(false);
       fetchSources();
     } finally {
@@ -269,9 +272,10 @@ export default function CollectPage() {
               */}
               <div>
                 <label className="text-xs text-muted-foreground mb-1.5 block">어떻게 등록받을까요? *</label>
-                <div role="radiogroup" aria-label="등록 방식" className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div role="radiogroup" aria-label="등록 방식" className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {([
-                    { value: "builder", title: "직접 만들기", desc: "신청·접수·문의에 필요한 항목을 직접 구성해요" },
+                    { value: "builder", title: "빌더형 1 · 국외형 · 무료", desc: "기존 등록 폼 · 13자리 무작위 번호" },
+                    { value: "domestic", title: "빌더형 2 · 국내형 · 시스포유 협업", desc: "일반·바이어 탭 · 접두번호 + 6자리 순번" },
                     { value: "capture", title: "기존 폼 연결", desc: "이미 있는 사이트 폼에 스크립트를 붙여 응답을 모아요" },
                   ] as const).map((opt) => {
                     const active = form.mode === opt.value;
@@ -346,7 +350,7 @@ export default function CollectPage() {
                   {isCreating ? "생성 중..." : "생성"}
                 </motion.button>
                 <button
-                  onClick={() => { setShowCreate(false); setForm({ name: "", description: "", siteUrl: "", mode: "builder" as "capture" | "builder" }); }}
+                  onClick={() => { setShowCreate(false); setForm({ name: "", description: "", siteUrl: "", mode: "builder" as "capture" | "builder" | "domestic" }); }}
                   className="px-4 py-2 rounded-xl border border-border text-sm hover:bg-secondary transition-colors"
                 >
                   취소
@@ -426,7 +430,7 @@ export default function CollectPage() {
                         {/* 방식 배지 — 빌더형은 사이트 URL 이 없어서, 배지가 없으면 "설정이 덜 된
                             연동형" 처럼 보인다. 되돌릴 수 없는 성질이라 목록에서도 구분돼야 한다. */}
                         <span className="shrink-0 rounded-full bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                          {source.mode === "builder" ? "빌더형" : "연동형"}
+                          {collectBuilderLabel(source.mode, source.formConfig)}
                         </span>
                         {source.siteUrl && (
                           <span className="flex min-w-0 max-w-full items-center gap-1 text-xs text-muted-foreground">

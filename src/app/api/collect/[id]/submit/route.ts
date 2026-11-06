@@ -17,6 +17,7 @@ import { getClientIp, rateLimitAsync } from "@/lib/ratelimit";
 import { fireWebhook } from "@/lib/webhook";
 import { normalizeCollectForm } from "@/lib/collect-form-config";
 import { submissionInputFromBody, prepareBuilderSubmission } from "@/lib/collect-submit";
+import { nextDomesticRegistrationNo } from "@/lib/collect-registration-counter";
 import { generateRegistrationNo } from "@/lib/collect-registration-no";
 import { buildCollectConfirmationEmail } from "@/lib/collect-confirmation-email";
 import { sendEmail } from "@/lib/email";
@@ -199,10 +200,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   let recordId: string | null = null;
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
-      const record = await prisma.collectRecord.create({ data: { ...base, registrationNo } });
+      const record = config.builderVariant === "domestic"
+        ? await prisma.$transaction(async tx => {
+            const nextNo = await nextDomesticRegistrationNo(tx, config.registrationPrefix);
+            return tx.collectRecord.create({ data: { ...base, registrationNo: nextNo } });
+          })
+        : await prisma.collectRecord.create({ data: { ...base, registrationNo } });
+      registrationNo = record.registrationNo ?? registrationNo;
       recordId = record.id;
       break;
     } catch (e) {
+      if (e instanceof Error && /등록번호 발급|check.*constraint/i.test(e.message)) {
+        return NextResponse.json({ error: "등록번호 발급 한도에 도달했어요. 운영자에게 문의해 주세요." }, { status: 503, headers });
+      }
       if (!isUniqueViolation(e)) throw e;
 
       if (p.emailNormalized) {
@@ -327,5 +337,5 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
    * **등록번호를 그대로 쓰지 않는다** — 그 값은 입장에 쓰이는데 광고 플랫폼과 브라우저
    * 기록에 남게 되기 때문이다(§8 "{regNo}는 URL에 넣지 않기를 권한다").
    */
-  return NextResponse.json({ ok: true, registrationNo, rid: recordId }, { status: 201, headers });
+  return NextResponse.json({ ok: true, registrationNo, rid: recordId, ...(config.builderVariant === "domestic" ? { ticketKey: recordId } : {}) }, { status: 201, headers });
 }
