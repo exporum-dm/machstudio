@@ -312,7 +312,7 @@ export function mountCollectLookup(opts: MountLookupOptions): LookupHandle {
     // 미리보기는 조회를 보내지 않는다 — 표본으로 화면만 확인한다(부작용 차단, §16.1).
     if (preview) {
       renderResult({
-        registrationNo: config.builderVariant === "domestic" ? `${config.registrationPrefix}000001` : PREVIEW_REG_NO, name: "Jane Doe", visitorType: "Buyer",
+        registrationNo: config.builderVariant === "domestic" ? `${config.registrationPrefix}000000` : PREVIEW_REG_NO, name: "Jane Doe", visitorType: "Buyer",
         showQr: config.lookup.showQr, maskedEmail: "j•••@example.com", maskedPhone: "•••••• 1234",
         extras: [{ label: "Companions", value: "2" }],
       });

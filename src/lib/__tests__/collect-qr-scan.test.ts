@@ -152,6 +152,9 @@ function ecLevelOf(img: Rgba, modules: number, margin: number): "L" | "M" | "Q" 
 }
 
 describe("QR — 우리가 내는 이미지가 실제로 읽히는가", () => {
+  it.each(["90000001","07000001"])("국내형 8자리 번호 %s를 앞자리 손실 없이 읽는다",async no=>{
+    expect(read(pngToRgba(await qrPngBuffer(no)))).toBe(no);
+  });
   it("등록번호만 인코딩한다 — URL·개인정보가 아니다(§9.2)", async () => {
     const img = pngToRgba(await qrPngBuffer(REG));
     expect(read(img)).toBe(REG);

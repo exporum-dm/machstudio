@@ -372,7 +372,7 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
 
   const typeField = config.fields.find(f => f.key === config.branch.fieldKey);
   const typeOptions = config.builderVariant === "domestic" && config.branch.enabled
-    ? (typeField?.options ?? []).map(o => ({label:t(o),value:localize(o,config.defaultLocale)})).filter(o=>o.label && o.value) : [];
+    ? (typeField?.options ?? []).map(o => ({label:t(o),value:canonicalBranchValue(config,localize(o,config.defaultLocale))})).filter(o=>o.label && o.value) : [];
   if (typeOptions.length && !typeOptions.some(o=>o.value === canonicalBranchValue(config,str(values[config.branch.fieldKey])))) {
     values[config.branch.fieldKey] = typeOptions[0].value;
   }
@@ -1014,6 +1014,7 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
 
   function updateSubmitState(): void {
     submitBtn.disabled = submitting || duplicate;
+    root.querySelectorAll<HTMLButtonElement>(".msf-type-tab").forEach(tab => { tab.disabled = submitting; });
     submitBtn.textContent = submitting ? COPY.submitting : t(config.submitLabel) || COPY.submit;
   }
 
@@ -1099,7 +1100,7 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
      * 등록자가 번호를 받는 유일한 경로라 확인이 꼭 필요하다(§2).
      */
     if (preview) {
-      doneRegNo = config.builderVariant === "domestic" ? `${config.registrationPrefix}000001` : PREVIEW_REG_NO;
+      doneRegNo = config.builderVariant === "domestic" ? `${config.registrationPrefix}000000` : PREVIEW_REG_NO;
       render();
       return;
     }
@@ -1448,7 +1449,9 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
       typeOptions.forEach((option,index) => {
         const selected = canonicalBranchValue(config,str(values[config.branch.fieldKey])) === option.value;
         const button = h("button", {type:"button",class:"msf-type-tab",role:"tab","aria-selected":String(selected),"aria-controls":fieldsHost.id,tabindex:selected?"0":"-1"}, option.label);
+        (button as HTMLButtonElement).disabled = submitting;
         const choose = () => {
+          if (submitting) return;
           values[config.branch.fieldKey] = option.value;
           issues = []; markStarted();
           track(preview,"ms_visitor_type_selected",{visitor_type:option.value});

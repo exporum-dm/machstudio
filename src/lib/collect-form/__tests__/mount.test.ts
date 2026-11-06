@@ -53,6 +53,15 @@ const submitBtn = () => [...host.querySelectorAll("button")].find((b) => b.class
 const labels = () => [...host.querySelectorAll(".msf-label")].map((l) => l.textContent ?? "");
 
 describe("등록 폼 렌더", () => {
+  it("domestic tabs match canonical group values even when translated labels differ", () => {
+    const config=normalizeCollectForm({...CONFIG,builderVariant:"domestic",defaultLocale:"ko",fields:CONFIG.fields.map(f=>f.key==="type"?{...f,options:[{en:"General",ko:"일반"},{en:"Buyer",ko:"바이어"}]}:f)});
+    mount({config,forceType:"바이어"});
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("바이어");
+    expect(labels().join("|")).toContain("Company");
+    (host.querySelector('[role="tab"]') as HTMLButtonElement).click();
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("일반");
+    expect(labels().join("|")).not.toContain("Company");
+  });
   it("domestic tabs preselect linked types, hide the duplicate type field, and preserve shared answers", () => {
     mount({config:normalizeCollectForm({...CONFIG,builderVariant:"domestic"}),forceType:"Buyer"});
     expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Buyer");
@@ -307,6 +316,30 @@ describe("제출", () => {
     cb.checked = true;
     cb.dispatchEvent(new Event("change", { bubbles: true }));
   };
+
+  it("uses an invalid domestic preview number so a screenshot cannot match a real visitor", () => {
+    const fetcher=vi.spyOn(globalThis,"fetch");
+    mount({config:normalizeCollectForm({...CONFIG,builderVariant:"domestic"})});
+    fill('input[type="email"]',"a@b.com");tickPrivacy();submit();
+    expect(host.querySelector('.msf-regno')?.textContent).toBe("90000000");
+    expect(isValidRegistrationNo(host.querySelector('.msf-regno')?.textContent)).toBe(false);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("locks domestic type selection while a registration is being saved", async () => {
+    let resolve!: (r:Response)=>void;
+    const fetcher=vi.spyOn(globalThis,"fetch").mockImplementation(()=>new Promise<Response>(r=>{resolve=r;}));
+    mount({config:normalizeCollectForm({...CONFIG,builderVariant:"domestic"}),preview:false,origin:"https://machstudio.vercel.app"});
+    fill('input[type="email"]',"a@b.com");tickPrivacy();submit();
+    const buyer=host.querySelectorAll<HTMLButtonElement>('[role="tab"]')[1];
+    expect(buyer.disabled).toBe(true);buyer.click();
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("General");
+    expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body)).values.type).toBe("General");
+    resolve(new Response(JSON.stringify({registrationNo:"90000001",rid:"private-record-id",ticketKey:"private-record-id"}),{status:201}));
+    await flush();
+    expect(host.querySelector('.msf-badge')?.textContent).toBe("General");
+    expect(host.querySelector<HTMLAnchorElement>('a[href*="/t/"]')?.href).toContain("key=private-record-id");
+  });
 
   it("빈 폼은 항목 바로 아래 인라인으로 알린다(AGENTS.md 공통)", () => {
     mount();
