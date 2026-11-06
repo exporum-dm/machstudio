@@ -1212,7 +1212,7 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
               </div>
             ) : (
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-2xl font-semibold">{source.name}</h1>
                 {/* 방식은 되돌릴 수 없는 성질이라(레코드가 쌓이면 전환 불가) 이름 옆에 상시 노출한다. */}
                 <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground">
