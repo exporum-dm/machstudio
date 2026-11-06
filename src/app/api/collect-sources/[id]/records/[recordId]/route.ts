@@ -1,3 +1,4 @@
+import { recordAttendance } from "@/lib/collect-record-attendance";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
@@ -37,17 +38,20 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!record) return NextResponse.json({ error: "레코드를 찾을 수 없어요" }, { status: 404 });
 
   // 현장 체크인 기록 — 상세에서는 스캔 시각을 전부 보여 준다(최근 순, 최대 50).
-  const [checkIns, src] = await Promise.all([
+  const [checkIns, aggregate, days] = await Promise.all([
     prisma.collectCheckIn.findMany({
-      where: { recordId },
+      where: { sourceId: id, recordId },
       orderBy: { scannedAt: "desc" },
       take: 50,
-      select: { scannedAt: true, method: true, staffLabel: true },
+      select: { scannedAt: true, eventDate: true, method: true, staffLabel: true },
     }),
-    prisma.collectSource.findUnique({ where: { id }, select: { checkinTimezone: true } }),
+    prisma.collectCheckIn.aggregate({ where: { sourceId: id, recordId }, _min: { scannedAt: true }, _max: { scannedAt: true }, _count: { _all: true } }),
+    prisma.collectCheckIn.groupBy({ by: ["eventDate"], where: { sourceId: id, recordId }, orderBy: { eventDate: "asc" } }),
   ]);
 
-  return NextResponse.json({ record: { ...record, checkIns, checkinTimezone: src?.checkinTimezone ?? "Asia/Seoul" } });
+  const scan = aggregate._count._all ? { firstAt: aggregate._min.scannedAt, lastAt: aggregate._max.scannedAt, count: aggregate._count._all, days: days.map(d => d.eventDate) } : undefined;
+  const attendance = recordAttendance(record.data, normalizeCollectForm(auth.source.formConfig).eventInfo.eventDates, scan);
+  return NextResponse.json({ record: { ...record, attendance, checkIns, checkinTimezone: auth.source.checkinTimezone ?? "Asia/Seoul" } });
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string; recordId: string }> }) {

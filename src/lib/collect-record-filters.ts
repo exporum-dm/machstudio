@@ -61,12 +61,16 @@ export function columnFilterConditions(filters: ColumnFilter[]): Prisma.Sql[] {
   const conds: Prisma.Sql[] = [];
   for (const f of filters) {
     if (f.c === "checkin") {
-      // 현장 입장 — 체크인 기록이 있는가. 포함 검색·비어 있음은 의미가 없어 값만 본다.
+      // 실제 방문 — QR 스캔뿐 아니라 원본 명단으로 확인된 방문일도 포함한다.
       const wantIn = f.values?.includes(CHECKIN_VALUES.in);
       const wantOut = f.values?.includes(CHECKIN_VALUES.out);
       if (wantIn === wantOut) continue;
-      const exists = Prisma.sql`EXISTS (SELECT 1 FROM "CollectCheckIn" ci WHERE ci."recordId" = "CollectRecord"."id")`;
-      conds.push(wantIn ? exists : Prisma.sql`NOT ${exists}`);
+      const scans = Prisma.sql`EXISTS (SELECT 1 FROM "CollectCheckIn" ci WHERE ci."recordId" = "CollectRecord"."id")`;
+      const history = Prisma.sql`("data"->'__attendance_import'->>'kind' = 'visitor-history' AND "data"->'__attendance_import'->>'version' = '1')`;
+      const dated = Prisma.sql`EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof("data"->'__attendance_import'->'visitDates') = 'array' THEN "data"->'__attendance_import'->'visitDates' ELSE '[]'::jsonb END) d WHERE d ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$')`;
+      const visited = Prisma.sql`(${scans} OR "data"->>'actual_visit_status' = '방문 확인' OR (${history} AND ${dated}))`;
+      const measured = Prisma.sql`("data"->>'actual_visit_status' IN ('방문 확인','미방문') OR (${history} AND COALESCE("data"->'__attendance_import'->>'measured','true') <> 'false') OR EXISTS (SELECT 1 FROM "CollectSource" s WHERE s.id="CollectRecord"."sourceId" AND s."checkinEnabled"))`;
+      conds.push(wantIn ? visited : Prisma.sql`(NOT COALESCE(${visited}, false) AND ${measured})`);
       continue;
     }
     if (f.contains) conds.push(Prisma.sql`${textExpr(f.c)} ILIKE ${likePattern(f.contains)}`);

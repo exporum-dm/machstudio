@@ -41,7 +41,7 @@ export async function loadCollectAnalysis(source: {
   const config = normalizeCollectForm(source.formConfig);
   const { fields, companionKey, visitDateKey, regionKey, textFields } = pickAnalysisFields(collectAnalysisColumnsFor(source));
 
-  const keys = Array.from(new Set(["__attendance_import", "__import_timestamp_missing", ...fields.map((f) => f.key), ...textFields.map((t) => t.key), companionKey, visitDateKey, regionKey].filter((k): k is string => Boolean(k))));
+  const keys = Array.from(new Set(["__attendance_import", "__import_timestamp_missing", "actual_visit_dates", "actual_visit_status", "registration_channel", ...fields.map((f) => f.key), ...textFields.map((t) => t.key), companionKey, visitDateKey, regionKey].filter((k): k is string => Boolean(k))));
   const [records, checkIns] = await Promise.all([
     prisma.$queryRaw<{ id: string; registrationNo: string | null; createdAt: Date; entryChannel: string | null; utm: string | null; d: Record<string, unknown> | null }[]>(Prisma.sql`
       SELECT id, "registrationNo", "createdAt", "entryChannel",

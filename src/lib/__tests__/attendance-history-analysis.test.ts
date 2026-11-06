@@ -7,6 +7,11 @@ const dates = ["2026-09-17", "2026-09-18"];
 const history = (channel: string, visitDates: string[], sessions: unknown[] = []) => ({ version: 1, kind: "visitor-history", channel, visitDates, sessions });
 
 describe("historical attendance evidence", () => {
+  it("includes legacy spreadsheet dates in visitor analysis without scan times", () => {
+    const a = buildRegistrationAnalysis({ timezone: "Asia/Seoul", eventDates: dates, fields: [], companionKey: null, visitDateKey: null, regionKey: null, records: [{ id: "legacy", registrationNo: null, createdAt: new Date("2026-09-01"), utmSource: null, data: { actual_visit_status: "방문 확인", actual_visit_dates: dates, registration_channel: "사전등록" } }], checkIns: [] });
+    expect(a.kpi.visitors).toMatchObject({ unique: 1 });
+    expect(readAttendanceHistory({ actual_visit_status: "방문 확인", actual_visit_dates: dates }, dates)?.sessions).toEqual([]);
+  });
   it("does not classify an undated contact list as onsite registrations", () => {
     const a = buildRegistrationAnalysis({ timezone: "Europe/Paris", eventDates: ["2025-06-13"], fields: [{ key: "gender", label: "성별", kind: "multi", options: ["여성"] }], companionKey: null, visitDateKey: null, regionKey: null, records: [{ id: "old", registrationNo: null, createdAt: new Date("2026-11-05"), entryChannel: null, utmSource: null, data: { gender: ["여성"], __import_timestamp_missing: true, __attendance_import: { version: 1, kind: "visitor-history", measured: false, channel: null, visitDates: [], sessions: [] } } }], checkIns: [] });
     expect(a.kpi.registrations).toEqual({ total: 1, pre: 0, onsite: 0, unknown: 1 });

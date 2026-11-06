@@ -1,4 +1,6 @@
 "use client";
+import { AttendanceDetails } from "./AttendanceDisplay";
+import type { RecordAttendance } from "@/lib/collect-record-attendance";
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
@@ -38,6 +40,7 @@ interface CollectRecord {
   referrer: string | null;
   createdAt: string;
   /** 현장 체크인 스캔 기록(최근 순) */
+  attendance?: RecordAttendance | null;
   checkIns?: { scannedAt: string; method: string; staffLabel: string }[];
   checkinTimezone?: string;
 }
@@ -196,6 +199,7 @@ export default function RecordDetailModal({ sourceId, recordId, fieldMappings, o
             <div className="flex items-center justify-center py-16"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
           ) : record ? (
             <>
+              <AttendanceDetails attendance={record.attendance} timezone={record.checkinTimezone ?? "Asia/Seoul"} />
               <div className="space-y-2">
                 <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">필드</p>
                 {record.registrationNo && (
@@ -206,7 +210,7 @@ export default function RecordDetailModal({ sourceId, recordId, fieldMappings, o
                 )}
                 {record.checkIns && record.checkIns.length > 0 && (
                   <div className="grid grid-cols-[120px_1fr] gap-3 items-start">
-                    <div className="text-xs text-muted-foreground pt-2">현장 입장</div>
+                    <div className="text-xs text-muted-foreground pt-2">입장 스캔 기록</div>
                     <ul className="py-2 space-y-0.5 text-sm">
                       {record.checkIns.map((c, i) => (
                         <li key={i} className="tabular-nums">

@@ -1,3 +1,5 @@
+import { recordAttendance, type RecordAttendance } from "@/lib/collect-record-attendance";
+import { normalizeCollectForm } from "@/lib/collect-form-config";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
@@ -109,7 +111,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const total = Number(countRows[0]?.count ?? 0);
 
   // 3) 레코드 본문 조회 후 raw SQL 정렬 순서대로 재정렬 (findMany 는 순서 보장 안 함)
-  let records: Array<Awaited<ReturnType<typeof prisma.collectRecord.findMany>>[number] & { checkIn?: { firstAt: Date; lastAt: Date; count: number; days: string[] } }> = [];
+  let records: Array<Awaited<ReturnType<typeof prisma.collectRecord.findMany>>[number] & { checkIn?: { firstAt: Date; lastAt: Date; count: number; days: string[] }; attendance?: RecordAttendance | null }> = [];
   if (ids.length > 0) {
     const [fetched, checkIns, checkInDays] = await Promise.all([
       prisma.collectRecord.findMany({ where: { id: { in: ids } } }),
@@ -128,7 +130,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     for (const d of checkInDays) daysById.set(d.recordId, [...(daysById.get(d.recordId) ?? []), d.eventDate]);
     const ciById = new Map(checkIns.map((c) => [c.recordId, { firstAt: c._min.scannedAt!, lastAt: c._max.scannedAt!, count: c._count._all, days: daysById.get(c.recordId) ?? [] }]));
     const byId = new Map(fetched.map((r) => [r.id, r]));
-    records = ids.map((rid) => byId.get(rid)!).filter(Boolean).map((r) => (ciById.has(r.id) ? { ...r, checkIn: ciById.get(r.id) } : r));
+    const eventDates = normalizeCollectForm(auth.source.formConfig).eventInfo.eventDates;
+    records = ids.map((rid) => byId.get(rid)!).filter(Boolean).map((r) => ({ ...r,
+      ...(ciById.has(r.id) ? { checkIn: ciById.get(r.id) } : {}),
+      attendance: recordAttendance(r.data, eventDates, ciById.get(r.id)),
+    }));
   }
 
   return NextResponse.json({ records, total, page, limit, q });
