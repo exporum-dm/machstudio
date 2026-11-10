@@ -21,9 +21,9 @@ const EXTRA_CSS = `
 .stk-live .ev-title { font-size:23px; font-weight:820; letter-spacing:-.03em; color:var(--text); margin:0; }
 .stk-live .ev-sub { margin:9px 0 24px; font-size:14px; line-height:1.6; color:var(--muted); word-break:keep-all; }
 .stk-live .ev-seg { position:relative; display:grid; grid-template-columns:1fr 1fr; gap:4px; padding:4px; border-radius:var(--radius-sm); background:color-mix(in srgb,var(--text) 5%,transparent); margin-bottom:12px; }
-.stk-live .ev-seg-btn { position:relative; z-index:1; padding:11px 0; border:0; background:transparent; border-radius:9px; font:inherit; font-size:13.5px; font-weight:700; color:var(--muted); cursor:pointer; transition:color .2s ease; }
+.stk-live .ev-seg-btn { position:relative; z-index:1; padding:11px 0; border:0; background:transparent; border-radius:calc(9px * var(--r-scale, 1)); font:inherit; font-size:13.5px; font-weight:700; color:var(--muted); cursor:pointer; transition:color .2s ease; }
 .stk-live .ev-seg-btn.on { color:#fff; }
-.stk-live .ev-knob { position:absolute; inset:4px auto 4px 4px; width:calc(50% - 4px); background:var(--key); border-radius:9px; box-shadow:var(--btn-shadow-key); z-index:0; transition:transform .28s cubic-bezier(.32,.72,0,1); }
+.stk-live .ev-knob { position:absolute; inset:4px auto 4px 4px; width:calc(50% - 4px); background:var(--key); border-radius:calc(9px * var(--r-scale, 1)); box-shadow:var(--btn-shadow-key); z-index:0; transition:transform .28s cubic-bezier(.32,.72,0,1); }
 .stk-live .ev-knob.email { transform:translateX(100%); }
 .stk-live .ev-input { width:100%; height:50px; padding:0 16px; border:1.5px solid var(--line-md); border-radius:var(--radius-sm); background:var(--card-2); color:var(--text); font:inherit; font-size:15px; outline:none; text-align:center; transition:border-color .18s ease, box-shadow .18s ease; }
 .stk-live .ev-input:focus { border-color:var(--key); box-shadow:0 0 0 4px var(--key-dim); }
@@ -56,6 +56,8 @@ interface EntryVerifyProps {
   accent: string;
   text: string;
   surface: string;
+  /** 테마의 테두리 둥글기 — 없으면 디자인 기본값 */
+  borderRadius?: string;
   targetIso: string;
   serverNowMs?: number;
   isLive: boolean;
@@ -80,7 +82,7 @@ interface EntryVerifyProps {
 }
 
 export default function EntryVerify({
-  webinar, accent, text, surface, targetIso, serverNowMs, isLive,
+  webinar, accent, text, surface, borderRadius, targetIso, serverNowMs, isLive,
   authMethod, authValue, verifyError, isVerifying,
   onAuthMethod, onAuthValueChange, onVerify, onGoSignup, canRegister = true,
   live, viewerCount, hasCalendar, onCalendar, onShare, shareCopied, onNotify, notify,
@@ -127,6 +129,7 @@ export default function EntryVerify({
         accent={accent}
         text={text}
         surface={surface}
+        borderRadius={borderRadius}
         targetIso={targetIso}
         serverNowMs={serverNowMs}
         live={live}

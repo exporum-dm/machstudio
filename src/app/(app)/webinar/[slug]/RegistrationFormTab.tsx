@@ -268,14 +268,14 @@ export function RegistrationFormPreview({
   thirdPartyDefaultChecked: boolean;
   submitLabel: string;
   successCta: WebinarLinkCtaConfig;
-  theme: { accent: string; text: string; surface: string };
+  theme: { accent: string; text: string; surface: string; radius?: string };
   slug?: string;
 }) {
   // 공개 폼과 같은 기준 — 빈 선택지 행(편집 중)은 없는 것으로 취급
   const visibleFields = fields.filter(
     (field) => field.enabled && !(CHOICE_TYPES.includes(field.type) && (field.options ?? []).filter((o) => o.trim()).length === 0),
   );
-  const css = useMemo(() => buildStkCss(theme.accent, theme.text, theme.surface) + REG_PREVIEW_CSS, [theme.accent, theme.text, theme.surface]);
+  const css = useMemo(() => buildStkCss(theme.accent, theme.text, theme.surface, theme.radius) + REG_PREVIEW_CSS, [theme.accent, theme.text, theme.surface, theme.radius]);
   const [previewMode, setPreviewMode] = useState<"form" | "done">("form");
   const previewCtaUrl = safeHttpUrl(successCta.url);
   const showPreviewCta =
@@ -340,6 +340,9 @@ export function RegistrationFormPreview({
                             {(field.options ?? []).filter((o) => o.trim()).slice(0, 3).map((o, i) => (
                               <span key={i} className="rp-consent"><span className="rp-check">✓</span>{o}</span>
                             ))}
+                            {(field.options ?? []).filter((o) => o.trim()).length > 3 && (
+                              <span className="rp-label" style={{ opacity: 0.7 }}>외 {(field.options ?? []).filter((o) => o.trim()).length - 3}개 (공개 폼에는 모두 보여요)</span>
+                            )}
                             {field.allowOther && <span className="rp-consent"><span className="rp-check">✓</span>기타(직접입력)</span>}
                             {(() => {
                               const m = maxSelectFor({ type: field.type, maxSelect: field.maxSelect, options: (field.options ?? []).filter((o) => o.trim()) });
@@ -530,6 +533,7 @@ export default function RegistrationFormTab({ webinar, onSilentUpdate, confirmLi
     accent: webinar.theme?.accentColor || "#6D28D9",
     text: webinar.theme?.textColor || "#141320",
     surface: webinar.theme?.surfaceColor || "#FFFFFF",
+    radius: webinar.theme?.borderRadius,
   }), [webinar.theme]);
 
   const addCustomField = () => {

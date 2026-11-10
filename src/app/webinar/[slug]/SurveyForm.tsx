@@ -42,10 +42,10 @@ export const SURVEY_FORM_CSS = `
 .stk-live .sv-opt.on { background:var(--key-dim); box-shadow:0 0 0 1.5px var(--key); }
 .stk-live .sv-opt .dot { width:16px; height:16px; border-radius:50%; box-shadow:inset 0 0 0 1.5px var(--line-md); flex-shrink:0; display:grid; place-items:center; background:var(--card); }
 .stk-live .sv-opt.on .dot { box-shadow:inset 0 0 0 5px var(--key); }
-.stk-live .sv-opt .sq { border-radius:5px; }
+.stk-live .sv-opt .sq { border-radius:calc(5px * var(--r-scale, 1)); }
 .stk-live .sv-opt.on .sq { box-shadow:inset 0 0 0 5px var(--key); }
 .stk-live .sv-nps { display:grid; grid-template-columns:repeat(11, 1fr); gap:5px; }
-.stk-live .sv-nps button { height:38px; border:0; border-radius:9px; background:var(--card-2); box-shadow:var(--btn-shadow); font:inherit; font-size:13px; font-weight:650; color:var(--muted); cursor:pointer; transition:transform .12s ease, background .12s ease, color .12s ease; }
+.stk-live .sv-nps button { height:38px; border:0; border-radius:calc(9px * var(--r-scale, 1)); background:var(--card-2); box-shadow:var(--btn-shadow); font:inherit; font-size:13px; font-weight:650; color:var(--muted); cursor:pointer; transition:transform .12s ease, background .12s ease, color .12s ease; }
 .stk-live .sv-nps button:hover { transform:translateY(-2px); }
 .stk-live .sv-nps button.on { background:var(--key); color:#fff; box-shadow:var(--btn-shadow-key); }
 .stk-live .sv-nps-labels { display:flex; justify-content:space-between; margin-top:6px; font-size:11px; color:var(--sub); }

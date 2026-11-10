@@ -27,6 +27,7 @@ import {
 import { toast } from "sonner";
 import { formatKst } from "@/lib/datetime";
 import { parseMemo } from "@/lib/webinar-memo";
+import { splitMultiValue } from "@/lib/webinar-config";
 import { formatSurveyAnswer, isEmptySurveyAnswer, surveyQuestionColumnLabel, type SurveyQuestion } from "@/lib/webinar-survey";
 import { qaStatusLabel } from "@/lib/webinar-qa";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -186,6 +187,8 @@ const headerAliases: Record<keyof RegistrationDraft, string[]> = {
   memo: ["메모", "사전질문", "질문", "memo", "question"],
 };
 
+type FieldLabels = Partial<Record<"company" | "department" | "jobTitle" | "industry", string>>;
+
 function parseCSV(text: string) {
   const rows: string[][] = [];
   let row: string[] = [];
@@ -283,7 +286,7 @@ const POSITIONAL_FIELDS = [
  * 열이 빈 문자열·false 로 채워져 **기존 값을 지운다**(특히 마케팅 수신 동의가 조용히 꺼진다).
  * 열이 있었던 필드만 서버가 갱신하도록 목록을 같이 보낸다.
  */
-function parseBulkText(text: string): { rows: RegistrationDraft[]; providedFields: string[] } {
+function parseBulkText(text: string, labels: FieldLabels = {}): { rows: RegistrationDraft[]; providedFields: string[] } {
   const rows = parseCSV(text);
   if (!rows.length) return { rows: [], providedFields: [] };
 
@@ -304,12 +307,13 @@ function parseBulkText(text: string): { rows: RegistrationDraft[]; providedField
     name: findHeaderIndex(headers, headerAliases.name),
     phone: findHeaderIndex(headers, headerAliases.phone),
     email: findHeaderIndex(headers, headerAliases.email),
-    company: findHeaderIndex(headers, headerAliases.company),
-    department: findHeaderIndex(headers, headerAliases.department),
-    jobTitle: findHeaderIndex(headers, headerAliases.jobTitle),
-    industry: findHeaderIndex(headers, headerAliases.industry),
+    company: findHeaderIndex(headers, labels.company ? [labels.company] : headerAliases.company),
+    department: findHeaderIndex(headers, labels.department ? [labels.department] : headerAliases.department),
+    jobTitle: findHeaderIndex(headers, labels.jobTitle ? [labels.jobTitle] : headerAliases.jobTitle),
+    industry: findHeaderIndex(headers, labels.industry ? [labels.industry] : headerAliases.industry),
     agreeMarketing: findHeaderIndex(headers, headerAliases.agreeMarketing),
-    memo: findHeaderIndex(headers, headerAliases.memo),
+    // "사전질문"처럼 폼에서 바꾼 이름이 메모 별칭과 겹치면 그 열은 해당 항목의 것이다.
+    memo: findHeaderIndex(headers, headerAliases.memo.filter((alias) => !Object.values(labels).some((label) => cleanHeader(label ?? "").includes(cleanHeader(alias))))),
   };
 
   return {
@@ -386,7 +390,8 @@ export default function RegistrantsTab({ webinarId }: { webinarId: string }) {
   const [segmentFilter, setSegmentFilter] = useState<SegmentKey | null>(null);
   const [surveys, setSurveys] = useState<Survey[]>([]);
   /** 등록폼 커스텀 항목(열 선택에서 켤 수 있다) */
-  const [customFields, setCustomFields] = useState<{ key: string; label: string }[]>([]);
+  const [customFields, setCustomFields] = useState<{ key: string; label: string; type?: string }[]>([]);
+  const [fieldLabels, setFieldLabels] = useState<FieldLabels>({});
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [page, setPage] = useState(1);
@@ -452,6 +457,7 @@ export default function RegistrantsTab({ webinarId }: { webinarId: string }) {
       if (data.scoring) setScoringMeta(data.scoring);
       setSurveys(data.surveys ?? []);
       setCustomFields(Array.isArray(data.customFields) ? data.customFields : []);
+      setFieldLabels(data.fieldLabels && typeof data.fieldLabels === "object" ? data.fieldLabels : {});
       // 선택은 항상 현재 보이는 목록으로 한정 — 새로고침으로 사라진(다른 페이지로 밀린/삭제된) 행은
       // 선택에서 자동 제거해, 보이지 않는 행이 선택된 채 일괄 삭제되는 일을 막는다.
       setSelectedIds((prev) => {
@@ -637,11 +643,15 @@ export default function RegistrantsTab({ webinarId }: { webinarId: string }) {
   }, [modalOpen]);
 
   // 상세 패널의 읽기 전용 커스텀 답변 — memo 컬럼에서 분해해 온다(편집 대상 아님).
+  /* 복수 선택은 쉼표가 든 선택지를 따옴표로 묶어 저장한다 — 화면에서는 따옴표 없이 읽히게 푼다. */
+  const customAnswerText = (key: string, value: unknown) =>
+    customFields.find((f) => f.key === key)?.type === "multiple" ? splitMultiValue(value).join(", ") : String(value);
+
   const detailCustomFields = useMemo(
     () => parseMemo(selectedRegistration?.memo ?? null).customFields,
     [selectedRegistration],
   );
-  const bulkParsed = useMemo(() => parseBulkText(bulkText), [bulkText]);
+  const bulkParsed = useMemo(() => parseBulkText(bulkText, fieldLabels), [bulkText, fieldLabels]);
   /* 이 페이지에 문의가 하나라도 있나 — 문의 열을 켤지 판단한다. 페이지 단위인 이유:
      목록 API 가 현재 페이지 등록자분만 문의를 내려주므로, 전체 기준으로 켜려면
      별도 집계가 필요하다. 문의가 있는 페이지에서만 열이 나타나는 건 명단이 넓어지지
@@ -832,10 +842,11 @@ export default function RegistrantsTab({ webinarId }: { webinarId: string }) {
     header: opts.sortKey ? sortable(label, opts.sortKey) : label,
     cell: (r) => <span className="text-muted-foreground">{plain(get(r))}</span>,
     cellTitle: (r) => get(r) || undefined,
+    headerTitle: label, // 긴 질문을 열 이름으로 쓰면 잘리므로 마우스를 올려 전문을 본다
   });
   const customValue = (r: Registration, key: string) => {
     const v = parseMemo(r.memo).customFields[key];
-    return v == null ? "" : Array.isArray(v) ? v.join(", ") : String(v);
+    return v == null ? "" : Array.isArray(v) ? v.join(", ") : customAnswerText(key, v);
   };
   const surveyAnswer = (r: Registration, surveyId: string, q: SurveyQuestion) => {
     const answers = r.surveyResponses.find((x) => x.surveyId === surveyId)?.answers;
@@ -869,10 +880,10 @@ export default function RegistrantsTab({ webinarId }: { webinarId: string }) {
     } satisfies ColumnDef<Registration>] : []),
     textCol("phone", "연락처", "기본", 130, (r) => r.phone, { defaultVisible: true, sortKey: "phone" }),
     textCol("email", "이메일", "기본", 190, (r) => r.email, { defaultVisible: true, sortKey: "email" }),
-    textCol("company", "소속", "기본", 140, (r) => r.company, { defaultVisible: true, sortKey: "company" }),
-    textCol("department", "부서", "기본", 110, (r) => r.department, { sortKey: "department" }),
-    textCol("jobTitle", "직함", "기본", 110, (r) => r.jobTitle, { defaultVisible: true, sortKey: "jobTitle" }),
-    textCol("industry", "업종", "기본", 140, (r) => r.industry, { defaultVisible: true, sortKey: "industry" }),
+    textCol("company", fieldLabels.company ?? "소속", "기본", 140, (r) => r.company, { defaultVisible: true, sortKey: "company" }),
+    textCol("department", fieldLabels.department ?? "부서", "기본", 110, (r) => r.department, { sortKey: "department" }),
+    textCol("jobTitle", fieldLabels.jobTitle ?? "직함", "기본", 110, (r) => r.jobTitle, { defaultVisible: true, sortKey: "jobTitle" }),
+    textCol("industry", fieldLabels.industry ?? "업종", "기본", 140, (r) => r.industry, { defaultVisible: true, sortKey: "industry" }),
     { id: "agreeMarketing", label: "마케팅 동의", group: "동의", width: 96, defaultVisible: true, header: sortable("마케팅", "agreeMarketing"), cell: (r) => chip(r.agreeMarketing) },
     { id: "agreePrivacy", label: "개인정보 동의", group: "동의", width: 104, defaultVisible: false, header: "개인정보", cell: (r) => chip(r.agreePrivacy) },
     { id: "agreeThirdParty", label: "제3자 제공 동의", group: "동의", width: 110, defaultVisible: false, header: "제3자 제공", cell: (r) => chip(r.agreeThirdParty) },
@@ -915,7 +926,8 @@ export default function RegistrantsTab({ webinarId }: { webinarId: string }) {
         ? <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 dark:text-green-400">시청 중</span>
         : <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground">{r.enteredAt ? "시청함" : "미시청"}</span>),
     },
-    textCol("note", "사전질문", "등록폼", 220, (r) => parseMemo(r.memo).note),
+    /* 공개 폼에는 이 칸이 없다 — 운영자 메모와 가져오기로 넣은 값만 들어간다. */
+    textCol("note", "메모", "등록폼", 220, (r) => parseMemo(r.memo).note),
     ...customFields.map((f) => textCol(`cf:${f.key}`, f.label || f.key, "등록폼", 140, (r) => customValue(r, f.key))),
     ...surveys.flatMap((survey) => survey.questions.map((q, i) =>
       textCol(`sq:${survey.id}:${q.id}`, `[${survey.title}] ${surveyQuestionColumnLabel(q, i)}`, "설문 문항", 180, (r) => surveyAnswer(r, survey.id, q)))),
@@ -938,7 +950,7 @@ export default function RegistrantsTab({ webinarId }: { webinarId: string }) {
         <div>
           <h2 className="text-sm font-semibold">등록자 관리</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            총 {total.toLocaleString()}명 · {sortLabels[sortBy]} {sortDir === "asc" ? "오름차순" : "내림차순"}
+            총 {total.toLocaleString()}명 · {(sortBy === "company" || sortBy === "department" || sortBy === "jobTitle" || sortBy === "industry" ? fieldLabels[sortBy] : undefined) ?? sortLabels[sortBy]} {sortDir === "asc" ? "오름차순" : "내림차순"}
           </p>
         </div>
       </div>
@@ -1041,7 +1053,7 @@ export default function RegistrantsTab({ webinarId }: { webinarId: string }) {
           <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
           <input
             type="text"
-            placeholder="이름, 연락처, 이메일, 회사, 업종 검색"
+            placeholder={fieldLabels.industry ? "이름, 연락처, 이메일, 회사 등 검색" : "이름, 연락처, 이메일, 회사, 업종 검색"}
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") { setSearch(searchInput); setPage(1); } }}
@@ -1115,10 +1127,10 @@ export default function RegistrantsTab({ webinarId }: { webinarId: string }) {
                 <input className={inputClass} placeholder="이름 *" value={manual.name} onChange={(e) => setManual((p) => ({ ...p, name: e.target.value }))} />
                 <input className={inputClass} placeholder="연락처 또는 이메일 중 하나 필요" value={manual.phone} onChange={(e) => setManual((p) => ({ ...p, phone: e.target.value }))} />
                 <input className={inputClass} placeholder="이메일" value={manual.email} onChange={(e) => setManual((p) => ({ ...p, email: e.target.value }))} />
-                <input className={inputClass} placeholder="회사" value={manual.company} onChange={(e) => setManual((p) => ({ ...p, company: e.target.value }))} />
-                <input className={inputClass} placeholder="부서" value={manual.department} onChange={(e) => setManual((p) => ({ ...p, department: e.target.value }))} />
-                <input className={inputClass} placeholder="직함" value={manual.jobTitle} onChange={(e) => setManual((p) => ({ ...p, jobTitle: e.target.value }))} />
-                <input className={inputClass} placeholder="업종" value={manual.industry} onChange={(e) => setManual((p) => ({ ...p, industry: e.target.value }))} />
+                <input className={inputClass} placeholder={fieldLabels.company ?? "회사"} value={manual.company} onChange={(e) => setManual((p) => ({ ...p, company: e.target.value }))} />
+                <input className={inputClass} placeholder={fieldLabels.department ?? "부서"} value={manual.department} onChange={(e) => setManual((p) => ({ ...p, department: e.target.value }))} />
+                <input className={inputClass} placeholder={fieldLabels.jobTitle ?? "직함"} value={manual.jobTitle} onChange={(e) => setManual((p) => ({ ...p, jobTitle: e.target.value }))} />
+                <input className={inputClass} placeholder={fieldLabels.industry ?? "업종"} value={manual.industry} onChange={(e) => setManual((p) => ({ ...p, industry: e.target.value }))} />
                 <label className="flex items-center gap-2 text-sm text-muted-foreground px-1">
                   <input type="checkbox" checked={manual.agreeMarketing} onChange={(e) => setManual((p) => ({ ...p, agreeMarketing: e.target.checked }))} className="accent-violet-500" />
                   마케팅 수신 동의
@@ -1326,12 +1338,12 @@ export default function RegistrantsTab({ webinarId }: { webinarId: string }) {
                 <input className={inputClass} placeholder="이름 *" value={detailDraft.name} onChange={(e) => setDetailDraft((p) => p ? { ...p, name: e.target.value } : p)} />
                 <input className={inputClass} placeholder="연락처" value={detailDraft.phone} onChange={(e) => setDetailDraft((p) => p ? { ...p, phone: e.target.value } : p)} />
                 <input className={inputClass} placeholder="이메일" value={detailDraft.email} onChange={(e) => setDetailDraft((p) => p ? { ...p, email: e.target.value } : p)} />
-                <input className={inputClass} placeholder="회사" value={detailDraft.company} onChange={(e) => setDetailDraft((p) => p ? { ...p, company: e.target.value } : p)} />
+                <input className={inputClass} placeholder={fieldLabels.company ?? "회사"} value={detailDraft.company} onChange={(e) => setDetailDraft((p) => p ? { ...p, company: e.target.value } : p)} />
                 <div className="grid grid-cols-2 gap-3">
-                  <input className={inputClass} placeholder="부서" value={detailDraft.department} onChange={(e) => setDetailDraft((p) => p ? { ...p, department: e.target.value } : p)} />
-                  <input className={inputClass} placeholder="직함" value={detailDraft.jobTitle} onChange={(e) => setDetailDraft((p) => p ? { ...p, jobTitle: e.target.value } : p)} />
+                  <input className={inputClass} placeholder={fieldLabels.department ?? "부서"} value={detailDraft.department} onChange={(e) => setDetailDraft((p) => p ? { ...p, department: e.target.value } : p)} />
+                  <input className={inputClass} placeholder={fieldLabels.jobTitle ?? "직함"} value={detailDraft.jobTitle} onChange={(e) => setDetailDraft((p) => p ? { ...p, jobTitle: e.target.value } : p)} />
                 </div>
-                <input className={inputClass} placeholder="업종" value={detailDraft.industry} onChange={(e) => setDetailDraft((p) => p ? { ...p, industry: e.target.value } : p)} />
+                <input className={inputClass} placeholder={fieldLabels.industry ?? "업종"} value={detailDraft.industry} onChange={(e) => setDetailDraft((p) => p ? { ...p, industry: e.target.value } : p)} />
                 <textarea className={`${inputClass} resize-none`} rows={4} placeholder="메모" value={detailDraft.memo} onChange={(e) => setDetailDraft((p) => p ? { ...p, memo: e.target.value } : p)} />
 
                 {/* 등록 폼 커스텀 문항 답변 — 응답자가 제출한 값이라 여기서 고치지 않는다(읽기 전용).
@@ -1340,9 +1352,9 @@ export default function RegistrantsTab({ webinarId }: { webinarId: string }) {
                   <div className="rounded-2xl border border-border bg-secondary/20 p-3">
                     <p className="mb-2 text-xs font-medium text-muted-foreground">등록 시 추가 응답</p>
                     <dl className="space-y-1.5">
-                      {Object.entries(detailCustomFields).map(([label, value]) => (
-                        <div key={label} className="flex gap-2 text-sm">
-                          <dt className="shrink-0 text-muted-foreground">{label}</dt>
+                      {Object.entries(detailCustomFields).map(([key, value]) => (
+                        <div key={key} className="flex gap-2 text-sm">
+                          <dt className="max-w-[45%] shrink-0 text-muted-foreground">{customFields.find((f) => f.key === key)?.label || key}</dt>
                           <dd className="whitespace-pre-wrap break-words text-foreground">
                             {typeof value === "string" ? value : JSON.stringify(value)}
                           </dd>

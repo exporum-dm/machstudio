@@ -11,6 +11,7 @@ import LiveContentStk, { onAccentColor } from "../LiveContentStk";
 import PreLiveWaiting from "../PreLiveWaiting";
 import EntryVerify from "../EntryVerify";
 import EndedScreen from "../EndedScreen";
+import { webinarRadiusScale } from "@/lib/webinar-radius";
 import { endedSurveyLinks, readEndedSurveys, readHasInternalEndedSurvey, type EndedSurveyLink, type EndedSurveyRef } from "@/lib/webinar-ended-surveys";
 import ViewerModal from "../ViewerModal";
 import EndedSurveyDialog from "../EndedSurveyDialog";
@@ -1255,6 +1256,7 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
           accent={accent}
           text={text}
           surface={surface}
+          borderRadius={radius}
           youtubeId={videoId}
           serverNowMs={serverNowMs}
           isLive={isTrulyLive}
@@ -1305,6 +1307,7 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
               accent={accent}
               text={text}
               surface={surface}
+              borderRadius={radius}
               targetIso={webinar.liveStartAt}
               serverNowMs={serverNowMs}
               registered={hasRegistration}
@@ -1394,6 +1397,7 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
               "--mw-accent": accent,
               "--mw-on-accent": onAccentColor(accent),
               "--mw-radius": radius,
+              "--mw-r-scale": webinarRadiusScale(radius),
               "--mw-text": text,
               "--mw-surface": surface,
               zIndex: 60,
@@ -1510,6 +1514,7 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
             accent={accent}
             text={text}
             surface={surface}
+            borderRadius={radius}
             targetIso={webinar.liveStartAt}
             serverNowMs={serverNowMs}
             isLive={isTrulyLive}
@@ -1548,6 +1553,7 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
             accent={accent}
             text={text}
             surface={surface}
+            borderRadius={radius}
             live={live}
             surveys={surveyLinks}
             serverNowMs={serverNowMs}

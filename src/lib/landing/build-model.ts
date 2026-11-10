@@ -7,6 +7,7 @@
  * React / Next 를 import 하지 않는다 — 호스트 DOM 번들에 그대로 들어간다.
  */
 
+import { webinarRadiusScale } from "@/lib/webinar-radius";
 import { formatKst } from "@/lib/datetime";
 import { DEFAULT_LANDING_AUDIENCE_TITLE, DEFAULT_LANDING_CTA_LABEL,
   DEFAULT_LANDING_HIGHLIGHTS_TITLE, DEFAULT_LANDING_SPONSORS_TITLE, DEFAULT_LANDING_VENUE,
@@ -198,6 +199,7 @@ export function buildLandingModel(webinar: LandingWebinar, opts: BuildLandingMod
     uid,
     accent,
     onPrimary,
+    radiusScale: webinarRadiusScale(webinar.theme?.borderRadius),
     brand,
     venue,
     titleLines,

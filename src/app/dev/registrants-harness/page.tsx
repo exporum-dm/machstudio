@@ -146,6 +146,8 @@ export default function RegistrantsHarnessPage() {
         return Promise.resolve(
           Response.json({
             registrations: rows,
+            // 등록 폼에서 "업종" 칸 이름을 바꿔 쓴 웨비나 — 열 이름이 폼을 따르는지 본다.
+            fieldLabels: { industry: "강연에서 다루었으면 하는 질문이나 연사에게 궁금한 점을 자유롭게 남겨주세요." },
             total: rows.length,
             stats: {
               registered: REGISTRATIONS.length,

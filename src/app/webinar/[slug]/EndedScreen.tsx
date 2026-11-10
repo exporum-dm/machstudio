@@ -30,7 +30,7 @@ const EXTRA_CSS = `
    좁은 화면이면 자동으로 1열이 된다(별도 미디어쿼리 불필요). */
 .stk-live .en-actions { display:grid; gap:16px; margin:40px 0 32px; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); }
 .stk-live .en-act { background:var(--card); border-radius:var(--radius); box-shadow:var(--card-shadow); padding:24px; display:flex; flex-direction:column; gap:6px; }
-.stk-live .en-act .ic { width:40px; height:40px; border-radius:11px; background:var(--key-dim); color:var(--key); display:grid; place-items:center; margin-bottom:8px; }
+.stk-live .en-act .ic { width:40px; height:40px; border-radius:calc(11px * var(--r-scale, 1)); background:var(--key-dim); color:var(--key); display:grid; place-items:center; margin-bottom:8px; }
 .stk-live .en-act .ic svg { width:20px; height:20px; }
 .stk-live .en-act h3 { font-size:16.5px; font-weight:780; letter-spacing:-.02em; color:var(--text); margin:0; }
 .stk-live .en-act p { font-size:13.5px; line-height:1.6; color:var(--muted); margin:0 0 8px; flex:1; word-break:keep-all; }
@@ -50,7 +50,7 @@ const EXTRA_CSS = `
 .stk-live .en-res .locked .nm { color:var(--muted); }
 .stk-live .en-res .locked .fi { background:color-mix(in srgb,var(--text) 6%,transparent); color:var(--sub); }
 .stk-live .en-res .why { display:block; margin-top:2px; font-size:11.5px; color:var(--key); font-weight:650; }
-.stk-live .en-res .fi { width:34px; height:34px; border-radius:9px; background:var(--key-dim); color:var(--key); display:grid; place-items:center; flex-shrink:0; }
+.stk-live .en-res .fi { width:34px; height:34px; border-radius:calc(9px * var(--r-scale, 1)); background:var(--key-dim); color:var(--key); display:grid; place-items:center; flex-shrink:0; }
 .stk-live .en-res .fi svg { width:17px; height:17px; }
 .stk-live .en-res .nm { font-size:14px; font-weight:650; flex:1; }
 .stk-live .en-res .mt { font-size:12px; color:var(--sub); }
@@ -97,14 +97,16 @@ interface EndedScreenProps {
   shareCopied?: boolean;
   /** 서버 시계(폴링이 갱신) — 응답 기간 판정을 여기서 하려면 서버 기준 시각이 필요하다. */
   serverNowMs?: number;
+  /** 테마의 테두리 둥글기 — 없으면 디자인 기본값 */
+  borderRadius?: string;
 }
 
 export default function EndedScreen({
   webinar, accent, text, surface, live, surveys, onOpenSurvey,
   hasRegistration = true, completedSurveyIds = [], onRequireRegister,
-  onReplay, replayRequested, replayPending, onShare, shareCopied, serverNowMs,
+  onReplay, replayRequested, replayPending, onShare, shareCopied, serverNowMs, borderRadius,
 }: EndedScreenProps) {
-  const css = useMemo(() => buildStkCss(accent || "#6D28D9", text || "#141320", surface || "#FFFFFF") + EXTRA_CSS, [accent, text, surface]);
+  const css = useMemo(() => buildStkCss(accent || "#6D28D9", text || "#141320", surface || "#FFFFFF", borderRadius) + EXTRA_CSS, [accent, text, surface, borderRadius]);
 
   const showReplay = live.ended.replay && !!onReplay;
   /**

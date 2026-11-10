@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { getYouTubeVideoId } from "@/lib/youtube";
 import { CheckCircle2, Send, Share2 } from "lucide-react";
+import { webinarRadiusScale } from "@/lib/webinar-radius";
 import { formatKst, kstDateString } from "@/lib/datetime";
 import { buildSessionNumbering, cleanSessionText, isPauseSession, isRealSession, parseSpeaker, resolveSessionRef, sessionHasSpeaker, sessionTypeLabel } from "@/lib/webinar-sessions";
 import SurveyForm, { SURVEY_FORM_CSS, clearSurveyDraft } from "./SurveyForm";
@@ -138,12 +139,13 @@ const DEFAULT_NOTICE =
  */
 export { onAccentColor } from "@/lib/color";
 
-export function buildStkCss(accent: string, text: string, surface: string) {
+export function buildStkCss(accent: string, text: string, surface: string, borderRadius?: string) {
+  const rs = webinarRadiusScale(borderRadius);
   return `
 .stk-live { --key: ${accent}; --on-key: ${onAccentColor(accent)}; --key-dim: color-mix(in srgb, ${accent} 12%, transparent); --key-border: color-mix(in srgb, ${accent} 36%, transparent);
   --text:${text}; --muted:color-mix(in srgb, ${text} 62%, transparent); --sub:color-mix(in srgb, ${text} 42%, transparent);
   --card:${surface}; --card-2:color-mix(in srgb, ${text} 5%, ${surface});
-  --line:color-mix(in srgb, ${text} 10%, transparent); --line-md:color-mix(in srgb, ${text} 17%, transparent); --radius-sm:12px; --radius:20px; --radius-lg:28px;
+  --line:color-mix(in srgb, ${text} 10%, transparent); --line-md:color-mix(in srgb, ${text} 17%, transparent); --r-scale:${rs}; --radius-sm:${12 * rs}px; --radius:${20 * rs}px; --radius-lg:${28 * rs}px;
   --card-shadow:0 1px 3px rgba(0,0,0,0.05), 0 14px 34px -16px rgba(0,0,0,0.22);
   --btn-shadow:0 1px 2px rgba(0,0,0,0.05), 0 2px 5px -2px rgba(0,0,0,0.13);
   --btn-shadow-hover:0 2px 5px -1px rgba(0,0,0,0.10), 0 10px 20px -6px rgba(0,0,0,0.22);
@@ -198,7 +200,7 @@ const WATCH_CSS = `
 @keyframes lvPulse { 0%,100%{ box-shadow:0 0 0 0 color-mix(in srgb,var(--live) 55%,transparent);} 60%{ box-shadow:0 0 0 6px transparent; } }
 .stk-live .lv-evname { font-weight:750; font-size:15px; letter-spacing:-0.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text); }
 .stk-live .lv-sp { flex:1; }
-.stk-live .lv-share { display:inline-flex; align-items:center; gap:6px; height:34px; padding:0 14px; border-radius:10px; background:var(--card); color:var(--muted); font:inherit; font-size:13px; font-weight:650; cursor:pointer; box-shadow:var(--btn-shadow); transition:color .15s ease, box-shadow .15s ease, transform .15s ease; }
+.stk-live .lv-share { display:inline-flex; align-items:center; gap:6px; height:34px; padding:0 14px; border-radius:calc(10px * var(--r-scale, 1)); background:var(--card); color:var(--muted); font:inherit; font-size:13px; font-weight:650; cursor:pointer; box-shadow:var(--btn-shadow); transition:color .15s ease, box-shadow .15s ease, transform .15s ease; }
 .stk-live .lv-share:hover { color:var(--text); box-shadow:var(--btn-shadow-hover); transform:translateY(-1px); }
 .stk-live .lv-share svg { width:15px; height:15px; }
 /* 재확인 — 무효 등록건(삭제됨)으로 갇힌 시청자의 탈출구. 눈에 띄되 공유 버튼보다 낮은 위계(항상
@@ -215,11 +217,11 @@ const WATCH_CSS = `
   .stk-live .lv-dock { grid-column:2; grid-row:1; }
 }
 /* 플레이어 */
-.stk-live .lv-player { position:relative; aspect-ratio:16/9; border-radius:18px; overflow:hidden; background:#0b0d12; box-shadow:var(--card-shadow); }
+.stk-live .lv-player { position:relative; aspect-ratio:16/9; border-radius:calc(18px * var(--r-scale, 1)); overflow:hidden; background:#0b0d12; box-shadow:var(--card-shadow); }
 .stk-live .lv-player iframe { position:absolute; inset:0; width:100%; height:100%; border:0; }
 .stk-live .lv-poster { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,0.55); font-size:14px;
   background:radial-gradient(120% 90% at 20% 0%, color-mix(in srgb,var(--key) 45%,#0b0d12), transparent 55%), radial-gradient(120% 120% at 100% 100%, color-mix(in srgb,var(--key) 26%,#0b0d12), transparent 60%), #0b0d12; }
-.stk-live .lv-plive { position:absolute; top:14px; left:14px; z-index:2; display:inline-flex; align-items:center; gap:7px; padding:6px 10px; border-radius:8px; background:var(--live); color:#fff; font-size:11.5px; font-weight:800; letter-spacing:0.04em; pointer-events:none; }
+.stk-live .lv-plive { position:absolute; top:14px; left:14px; z-index:2; display:inline-flex; align-items:center; gap:7px; padding:6px 10px; border-radius:calc(8px * var(--r-scale, 1)); background:var(--live); color:#fff; font-size:11.5px; font-weight:800; letter-spacing:0.04em; pointer-events:none; }
 .stk-live .lv-plive i { width:7px; height:7px; border-radius:50%; background:#fff; animation:lvPulse 1.6s infinite; }
 /* 메타 */
 .stk-live .lv-meta { margin-top:18px; }
@@ -237,27 +239,27 @@ const WATCH_CSS = `
 .stk-live .lv-card { border-radius:var(--radius); background:var(--card); overflow:hidden; display:flex; flex-direction:column; min-height:0; height:100%; box-shadow:var(--card-shadow); }
 .stk-live .lv-docktitle { padding:14px 16px 0; font-size:13px; font-weight:750; color:var(--muted); flex:0 0 auto; }
 .stk-live .lv-tabs { display:grid; gap:4px; padding:5px; position:relative; margin-top:10px; border-bottom:1px solid var(--line); flex:0 0 auto; }
-.stk-live .lv-tab { position:relative; z-index:1; padding:9px 0; border:0; background:none; cursor:pointer; border-radius:10px; font:inherit; font-size:13px; font-weight:700; color:var(--muted); transition:color .15s ease; }
+.stk-live .lv-tab { position:relative; z-index:1; padding:9px 0; border:0; background:none; cursor:pointer; border-radius:calc(10px * var(--r-scale, 1)); font:inherit; font-size:13px; font-weight:700; color:var(--muted); transition:color .15s ease; }
 .stk-live .lv-tab[aria-selected="true"] { color:var(--text); }
 .stk-live .lv-tab .cnt { color:var(--sub); font-weight:600; font-size:11px; margin-left:3px; }
-.stk-live .lv-ind { position:absolute; top:5px; bottom:5px; border-radius:10px; background:color-mix(in srgb, var(--text) 9%, var(--card)); box-shadow:var(--btn-shadow); z-index:0; }
+.stk-live .lv-ind { position:absolute; top:5px; bottom:5px; border-radius:calc(10px * var(--r-scale, 1)); background:color-mix(in srgb, var(--text) 9%, var(--card)); box-shadow:var(--btn-shadow); z-index:0; }
 .stk-live .lv-panel { display:flex; flex-direction:column; flex:1 1 auto; min-height:0; padding:14px; }
 /* Q&A */
 .stk-live .lv-ask { display:flex; gap:8px; margin-bottom:12px; flex:0 0 auto; }
-.stk-live .lv-ask input { flex:1; min-width:0; height:40px; padding:0 13px; border-radius:11px; border:1px solid var(--line); background:var(--card-2); color:var(--text); font:inherit; font-size:14px; outline:none; transition:border-color .15s ease; }
+.stk-live .lv-ask input { flex:1; min-width:0; height:40px; padding:0 13px; border-radius:calc(11px * var(--r-scale, 1)); border:1px solid var(--line); background:var(--card-2); color:var(--text); font:inherit; font-size:14px; outline:none; transition:border-color .15s ease; }
 .stk-live .lv-ask input:focus { border-color:var(--key); }
 .stk-live .lv-ask input:disabled, .stk-live .lv-chatbar input:disabled { opacity:0.55; cursor:not-allowed; }
-.stk-live .lv-ask button { flex-shrink:0; width:44px; border-radius:11px; border:0; background:var(--key); color:var(--on-key); cursor:pointer; display:grid; place-items:center; box-shadow:var(--btn-shadow-key); }
+.stk-live .lv-ask button { flex-shrink:0; width:44px; border-radius:calc(11px * var(--r-scale, 1)); border:0; background:var(--key); color:var(--on-key); cursor:pointer; display:grid; place-items:center; box-shadow:var(--btn-shadow-key); }
 .stk-live .lv-ask button:disabled { opacity:0.4; cursor:not-allowed; }
 .stk-live .lv-ask button svg { width:17px; height:17px; }
 .stk-live .lv-chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; flex:0 0 auto; }
-.stk-live .lv-chip { font-size:12px; padding:5px 11px; border-radius:8px; background:var(--card); color:var(--muted); cursor:pointer; box-shadow:var(--btn-shadow); transition:box-shadow .15s ease, color .15s ease; }
+.stk-live .lv-chip { font-size:12px; padding:5px 11px; border-radius:calc(8px * var(--r-scale, 1)); background:var(--card); color:var(--muted); cursor:pointer; box-shadow:var(--btn-shadow); transition:box-shadow .15s ease, color .15s ease; }
 .stk-live .lv-chip.on { background:var(--key); color:var(--on-key); box-shadow:var(--btn-shadow-key); }
 .stk-live .lv-hint { font-size:12px; margin-top:2px; }
 .stk-live .lv-list { display:flex; flex-direction:column; gap:8px; flex:1 1 auto; min-height:0; overflow-y:auto; }
-.stk-live .lv-q { display:flex; gap:11px; padding:12px; border:1px solid var(--line); border-radius:13px; background:var(--card-2); }
+.stk-live .lv-q { display:flex; gap:11px; padding:12px; border:1px solid var(--line); border-radius:calc(13px * var(--r-scale, 1)); background:var(--card-2); }
 .stk-live .lv-q > div { flex:1; min-width:0; }
-.stk-live .lv-vote { display:flex; flex-direction:column; align-items:center; gap:1px; flex-shrink:0; align-self:flex-start; min-width:42px; padding:6px 0; border-radius:10px; background:var(--card); color:var(--muted); cursor:pointer; font:inherit; box-shadow:var(--btn-shadow); transition:box-shadow .14s ease, color .14s ease, background .14s ease; }
+.stk-live .lv-vote { display:flex; flex-direction:column; align-items:center; gap:1px; flex-shrink:0; align-self:flex-start; min-width:42px; padding:6px 0; border-radius:calc(10px * var(--r-scale, 1)); background:var(--card); color:var(--muted); cursor:pointer; font:inherit; box-shadow:var(--btn-shadow); transition:box-shadow .14s ease, color .14s ease, background .14s ease; }
 .stk-live .lv-vote span { font-size:10px; line-height:1; }
 .stk-live .lv-vote b { font-size:13px; font-variant-numeric:tabular-nums; }
 .stk-live .lv-vote:hover:not(:disabled) { box-shadow:var(--btn-shadow-hover); color:var(--text); }
@@ -265,7 +267,7 @@ const WATCH_CSS = `
 .stk-live .lv-vote:disabled { cursor:default; }
 .stk-live .lv-q p { margin:0; font-size:14px; line-height:1.5; word-break:keep-all; color:var(--text); }
 .stk-live .lv-q .m { display:flex; align-items:center; gap:8px; margin-top:6px; font-size:12px; color:var(--sub); }
-.stk-live .lv-ans { color:#2f9e63; font-weight:700; font-size:11px; padding:2px 7px; border-radius:6px; background:color-mix(in srgb,#2f9e63 14%,transparent); }
+.stk-live .lv-ans { color:#2f9e63; font-weight:700; font-size:11px; padding:2px 7px; border-radius:calc(6px * var(--r-scale, 1)); background:color-mix(in srgb,#2f9e63 14%,transparent); }
 .stk-live .lv-empty { flex:1 1 auto; display:flex; align-items:center; justify-content:center; text-align:center; color:var(--sub); font-size:13px; line-height:1.6; padding:20px; word-break:keep-all; }
 /* 채팅 */
 .stk-live .lv-soon { flex:1 1 auto; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; text-align:center; color:var(--sub); font-size:13px; padding:20px; word-break:keep-all; }
@@ -275,22 +277,22 @@ const WATCH_CSS = `
 .stk-live .lv-msg .who { font-weight:700; margin-right:6px; color:var(--key); }
 .stk-live .lv-msg .txt { color:var(--text); }
 .stk-live .lv-msg.host .who { color:#e5484d; }
-.stk-live .lv-msg.host .tag { font-size:10px; font-weight:700; color:#e5484d; border:1px solid color-mix(in srgb,#e5484d 40%,transparent); border-radius:5px; padding:1px 5px; margin-right:6px; }
+.stk-live .lv-msg.host .tag { font-size:10px; font-weight:700; color:#e5484d; border:1px solid color-mix(in srgb,#e5484d 40%,transparent); border-radius:calc(5px * var(--r-scale, 1)); padding:1px 5px; margin-right:6px; }
 .stk-live .lv-chatbar { display:flex; gap:8px; margin-top:12px; flex:0 0 auto; }
-.stk-live .lv-chatbar input { flex:1; min-width:0; height:38px; padding:0 13px; border-radius:11px; border:1px solid var(--line); background:var(--card-2); color:var(--text); font:inherit; font-size:14px; outline:none; transition:border-color .15s ease; }
+.stk-live .lv-chatbar input { flex:1; min-width:0; height:38px; padding:0 13px; border-radius:calc(11px * var(--r-scale, 1)); border:1px solid var(--line); background:var(--card-2); color:var(--text); font:inherit; font-size:14px; outline:none; transition:border-color .15s ease; }
 .stk-live .lv-chatbar input:focus { border-color:var(--key); }
-.stk-live .lv-chatbar button { flex-shrink:0; width:40px; border-radius:11px; border:0; background:var(--key); color:var(--on-key); cursor:pointer; display:grid; place-items:center; box-shadow:var(--btn-shadow-key); }
+.stk-live .lv-chatbar button { flex-shrink:0; width:40px; border-radius:calc(11px * var(--r-scale, 1)); border:0; background:var(--key); color:var(--on-key); cursor:pointer; display:grid; place-items:center; box-shadow:var(--btn-shadow-key); }
 .stk-live .lv-chatbar button:disabled { opacity:0.4; cursor:not-allowed; }
 .stk-live .lv-chatbar button svg { width:17px; height:17px; }
 /* 세션(아젠다) */
 .stk-live .lv-agscroll { flex:1 1 auto; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:8px; }
-.stk-live .lv-ses { display:flex; gap:12px; padding:13px; border-radius:13px; border:1px solid var(--line); background:var(--card-2); }
+.stk-live .lv-ses { display:flex; gap:12px; padding:13px; border-radius:calc(13px * var(--r-scale, 1)); border:1px solid var(--line); background:var(--card-2); }
 .stk-live .lv-ses.now { border-color:var(--key-border); background:var(--key-dim); }
 .stk-live .lv-ses.done { opacity:0.5; }
 .stk-live .lv-ses .tc { font-size:12px; color:var(--sub); padding-top:2px; white-space:nowrap; }
 .stk-live .lv-ses.now .tc { color:var(--key); font-weight:650; }
 .stk-live .lv-ses h4 { margin:0; font-size:14px; font-weight:700; letter-spacing:-0.01em; word-break:keep-all; color:var(--text); }
-.stk-live .lv-setype { margin-left:6px; font-size:10px; font-weight:700; padding:1px 6px; border-radius:6px; background:var(--key-dim); color:var(--key); vertical-align:middle; white-space:nowrap; }
+.stk-live .lv-setype { margin-left:6px; font-size:10px; font-weight:700; padding:1px 6px; border-radius:calc(6px * var(--r-scale, 1)); background:var(--key-dim); color:var(--key); vertical-align:middle; white-space:nowrap; }
 /* 휴식은 콘텐츠가 아니라 빈 시간이다 — 오프닝·Q&A·클로징과 같은 키컬러 강조를 주면 안 된다
    (어드민은 이미 휴식=회색으로 구분하고 있어 화면 간에 어긋나 있었다). */
 .stk-live .lv-setype.muted { background:color-mix(in srgb,var(--text) 8%,transparent); color:var(--sub); }
@@ -304,7 +306,7 @@ const WATCH_CSS = `
 .stk-live .lv-ses .st { margin-left:auto; align-self:center; font-size:11px; font-weight:700; color:var(--sub); white-space:nowrap; }
 .stk-live .lv-ses.now .st { color:var(--key); display:inline-flex; align-items:center; gap:5px; }
 .stk-live .lv-ses.now .st .d { width:6px; height:6px; border-radius:50%; background:var(--key); animation:lvPulse 1.9s infinite; }
-.stk-live .lv-prog { height:4px; border-radius:3px; background:var(--line); margin-top:9px; overflow:hidden; }
+.stk-live .lv-prog { height:4px; border-radius:calc(3px * var(--r-scale, 1)); background:var(--line); margin-top:9px; overflow:hidden; }
 .stk-live .lv-prog span { display:block; height:100%; background:var(--key); }
 /* 하단 카드 (CTA / 알림) */
 .stk-live .lv-foot { margin-top:16px; display:grid; gap:16px; }
@@ -316,7 +318,7 @@ const WATCH_CSS = `
 .stk-live .lv-fbenefits li { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted); }
 .stk-live .lv-fbenefits li::before { content:''; flex-shrink:0; width:5px; height:5px; border-radius:50%; background:var(--key); }
 .stk-live .lv-fbtns { display:flex; flex-direction:column; gap:8px; }
-.stk-live .lv-fbtn { display:flex; align-items:center; justify-content:center; height:40px; border-radius:11px; font-size:14px; font-weight:750; text-decoration:none !important; cursor:pointer; transition:transform .16s ease, opacity .16s ease, box-shadow .16s ease; }
+.stk-live .lv-fbtn { display:flex; align-items:center; justify-content:center; height:40px; border-radius:calc(11px * var(--r-scale, 1)); font-size:14px; font-weight:750; text-decoration:none !important; cursor:pointer; transition:transform .16s ease, opacity .16s ease, box-shadow .16s ease; }
 .stk-live .lv-fbtn:hover { transform:translateY(-1px); opacity:0.94; }
 .stk-live .lv-fbtn.primary { background:var(--key); color:var(--on-key) !important; box-shadow:var(--btn-shadow-key); }
 .stk-live .lv-fbtn.ghost { background:var(--card); color:var(--text) !important; box-shadow:var(--btn-shadow); }
@@ -340,7 +342,7 @@ const WATCH_CSS = `
 .stk-live .lv-ctamodal-ext { font-size:12px; color:var(--key); font-weight:650; white-space:nowrap; text-decoration:none; }
 .stk-live .lv-ctamodal-ext:hover { text-decoration:underline; }
 .stk-live .lv-ctamodal-iframe { flex:1; width:100%; border:0; background:#fff; }
-.stk-live .lv-ctamodal-x { width:30px; height:30px; border:0; border-radius:8px; background:color-mix(in srgb,var(--text) 7%,transparent); color:var(--muted); font-size:13px; cursor:pointer; flex-shrink:0; transition:background .15s ease; }
+.stk-live .lv-ctamodal-x { width:30px; height:30px; border:0; border-radius:calc(8px * var(--r-scale, 1)); background:color-mix(in srgb,var(--text) 7%,transparent); color:var(--muted); font-size:13px; cursor:pointer; flex-shrink:0; transition:background .15s ease; }
 .stk-live .lv-ctamodal-x:hover { background:color-mix(in srgb,var(--text) 13%,transparent); }
 .stk-live .lv-ctamodal-x.abs { position:absolute; top:14px; right:14px; z-index:1; }
 .stk-live .lv-ctamodal-title { font-size:19px; font-weight:820; letter-spacing:-.02em; margin:0 28px 6px 0; word-break:keep-all; }
@@ -395,11 +397,14 @@ export default function LiveContentStk({
   onReauth,
   onShare,
   shareCopied,
+  borderRadius,
 }: {
   webinar: WebinarForLive;
   accent: string;
   text?: string;
   surface?: string;
+  /** 테마의 테두리 둥글기 — 없으면 디자인 기본값 */
+  borderRadius?: string;
   youtubeId?: string | null;
   serverNowMs?: number;
   chatEnabled?: boolean;
@@ -425,8 +430,8 @@ export default function LiveContentStk({
   shareCopied?: boolean;
 }) {
   const css = useMemo(
-    () => buildStkCss(accent || "#FE5816", text || "#f0f0f2", surface || "#121216") + WATCH_CSS + SURVEY_FORM_CSS,
-    [accent, text, surface],
+    () => buildStkCss(accent || "#FE5816", text || "#f0f0f2", surface || "#121216", borderRadius) + WATCH_CSS + SURVEY_FORM_CSS,
+    [accent, text, surface, borderRadius],
   );
 
   const config = (webinar.config ?? {}) as Record<string, unknown>;

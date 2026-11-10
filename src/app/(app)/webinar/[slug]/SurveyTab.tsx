@@ -65,7 +65,7 @@ function toLocalInputValue(iso: string | null): string {
   return kstDateTimeLocalInput(iso);
 }
 
-interface ViewerTheme { accent: string; text: string; surface: string }
+interface ViewerTheme { accent: string; text: string; surface: string; radius?: string }
 
 // 호출 시점마다 새 id 를 만든다 — 모듈 스코프에서 1회 평가하면 한 세션에서 만든 설문들이 문항 id 를 공유한다.
 const buildDefaultQuestions = (): SurveyQuestion[] => [
@@ -364,8 +364,8 @@ function SurveyPreview({
   bodyRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const css = useMemo(
-    () => buildStkCss(theme.accent, theme.text, theme.surface) + SURVEY_FORM_CSS + PREVIEW_CSS,
-    [theme.accent, theme.text, theme.surface],
+    () => buildStkCss(theme.accent, theme.text, theme.surface, theme.radius) + SURVEY_FORM_CSS + PREVIEW_CSS,
+    [theme.accent, theme.text, theme.surface, theme.radius],
   );
   // 뷰어 경로와 같은 정규화 — 빈 제목·선택지 0개 객관식은 실제 응답 화면처럼 숨긴다.
   const visible = useMemo(() => normalizeSurveyQuestions(questions), [questions]);
@@ -865,6 +865,7 @@ export default function SurveyTab({
     accent: theme?.accentColor || "#6D28D9",
     text: theme?.textColor || "#141320",
     surface: theme?.surfaceColor || "#FFFFFF",
+    radius: theme?.borderRadius,
   }), [theme]);
 
   const load = useCallback(async () => {

@@ -256,6 +256,7 @@ ${ON_ACCENT_JS}  function theme() {
       accent: accent,
       onAccent: publicFormOnAccent(accent),
       radius: t.borderRadius || "12px",
+      radiusScale: (function () { var m = /^(\\d+(?:\\.\\d+)?)(?:px)?$/.exec(String(t.borderRadius || "").trim()); return m ? Number(m[1]) / 16 : 1; })(),
       text: t.textColor || "#111",
       surface: t.surfaceColor || "#ffffff"
     };
@@ -273,7 +274,7 @@ ${ON_ACCENT_JS}  function theme() {
   function buildCss() {
     var t = theme();
     return [
-      ".mw-reset { --mw-accent:" + t.accent + "; --mw-on-accent:" + t.onAccent + "; --mw-radius:" + t.radius + "; --mw-text:" + t.text + "; --mw-surface:" + t.surface + "; }",
+      ".mw-reset { --mw-accent:" + t.accent + "; --mw-on-accent:" + t.onAccent + "; --mw-radius:" + t.radius + "; --mw-r-scale:" + t.radiusScale + "; --mw-text:" + t.text + "; --mw-surface:" + t.surface + "; }",
       ".mw-reset, .mw-reset * { box-sizing: border-box; margin: 0; }",
       ".mw-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 28px; border: 0; border-radius: " + t.radius + "; font-size: 15px; font-weight: 700; line-height: 1.2; cursor: pointer; text-decoration: none !important; white-space: nowrap; transition: transform .18s ease, opacity .18s ease, box-shadow .18s ease; }",
       ".mw-btn:hover { transform: translateY(-1px); }",
@@ -285,7 +286,7 @@ ${ON_ACCENT_JS}  function theme() {
       ".mw-hero { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }",
       ${JSON.stringify(PUBLIC_REGISTRATION_FORM_CSS)},
       ".mw-live-frame { width: 100%; border: 0; display: block; min-height: 520px; }",
-      ".mw-banner { position: fixed !important; left: 50% !important; bottom: 24px !important; transform: translateX(-50%) !important; width: 680px; max-width: calc(100vw - 32px); z-index: 999900 !important; border-radius: 16px; background: linear-gradient(180deg, rgba(24,24,28,0.92), rgba(14,14,18,0.88)); border: 1px solid rgba(255,255,255,0.14); color: #fff !important; box-shadow: 0 16px 48px rgba(0,0,0,0.4); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); overflow: hidden; }",
+      ".mw-banner { position: fixed !important; left: 50% !important; bottom: 24px !important; transform: translateX(-50%) !important; width: 680px; max-width: calc(100vw - 32px); z-index: 999900 !important; border-radius: " + (16 * t.radiusScale) + "px; background: linear-gradient(180deg, rgba(24,24,28,0.92), rgba(14,14,18,0.88)); border: 1px solid rgba(255,255,255,0.14); color: #fff !important; box-shadow: 0 16px 48px rgba(0,0,0,0.4); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); overflow: hidden; }",
       // 랜딩(호스트 DOM 마운트)이 히어로를 보여주는 동안에는 배너를 비운다 — 랜딩 자체 CTA 와 겹치기 때문.
       // 정적 DOM 존재가 아니라 **런타임 신호**로 판정한다: 랜딩 스크립트가 실패하면 신호가 안 서고
       // 배너가 정상 노출되므로 CTA 가 하나도 없는 상태가 생기지 않는다.
@@ -312,13 +313,13 @@ ${ON_ACCENT_JS}  function theme() {
          잘리고 확인 버튼이 Y=1125 에 놓여 누를 수 없었다. 그래서 **본문만** 스크롤하고
          체크·제목·확인은 고정한다(시청자 모달 ViewerModal 과 같은 규칙).
          dvh: 모바일 주소창이 접히면 vh 는 실제보다 커서 아래가 잘린다. */
-      ".mw-done-card { position: relative; display: flex; flex-direction: column; width: 100%; max-width: 380px; max-height: calc(100dvh - 32px); padding: 32px 26px 26px; border-radius: 16px; background: var(--mw-surface); color: var(--mw-text); box-shadow: 0 24px 64px rgba(0,0,0,0.28); text-align: center; }",
+      ".mw-done-card { position: relative; display: flex; flex-direction: column; width: 100%; max-width: 380px; max-height: calc(100dvh - 32px); padding: 32px 26px 26px; border-radius: " + (16 * t.radiusScale) + "px; background: var(--mw-surface); color: var(--mw-text); box-shadow: 0 24px 64px rgba(0,0,0,0.28); text-align: center; }",
       ".mw-done-mark { flex: none; width: 56px; height: 56px; margin: 0 auto 16px; border-radius: 999px; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb,var(--mw-accent) 14%,var(--mw-surface)); color: var(--mw-accent); font-size: 26px; line-height: 1; }",
       ".mw-done-title { flex: none; margin: 0 0 8px; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }",
       ".mw-done-desc { min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; margin: 0; font-size: 13.5px; line-height: 1.65; color: color-mix(in srgb,var(--mw-text) 68%,transparent); white-space: pre-line; word-break: keep-all; }",
-      ".mw-done-btn { flex: none; margin-top: 22px; width: 100%; height: 46px; border: 0; border-radius: 11px; font: inherit; font-size: 14.5px; font-weight: 700; color: var(--mw-on-accent); cursor: pointer; }",
+      ".mw-done-btn { flex: none; margin-top: 22px; width: 100%; height: 46px; border: 0; border-radius: " + (11 * t.radiusScale) + "px; font: inherit; font-size: 14.5px; font-weight: 700; color: var(--mw-on-accent); cursor: pointer; }",
       ".mw-done-cta { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }",
-      ".mw-done-close { flex: none; width: 100%; min-height: 44px; margin-top: 8px; border: 0; border-radius: 11px; background: transparent; color: color-mix(in srgb,var(--mw-text) 68%,transparent); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }",
+      ".mw-done-close { flex: none; width: 100%; min-height: 44px; margin-top: 8px; border: 0; border-radius: " + (11 * t.radiusScale) + "px; background: transparent; color: color-mix(in srgb,var(--mw-text) 68%,transparent); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }",
       ".mw-done-close:focus-visible { outline: 2px solid " + t.accent + "; outline-offset: 2px; }",
       // 캘린더 추가는 모바일에서만 — PC 는 네이티브 캘린더 연동이 없어 실효가 낮고 배너만 붐빈다.
       "@media (min-width: 601px) { .mw-banner .mw-btn-cal { display: none !important; } }",

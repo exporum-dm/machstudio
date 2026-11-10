@@ -50,7 +50,7 @@ const mockWebinar = (origin: string, bg: BgPreset, lightBg: string, darkBg: stri
   slug: "harness",
   description: "AI 마케팅 자동화의 최신 트렌드와, 전시·웨비나 리드를 매출로 잇는 실전 전략.",
   liveStartAt: "2026-08-20T10:00:00.000Z",
-  theme: { accentColor: "#6d28d9" },
+  theme: { accentColor: "#6d28d9", ...(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("radius") ? { borderRadius: new URLSearchParams(window.location.search).get("radius") as string } : {}) },
   status: "scheduled",
   canRegister: true,
   entryOpen: false,

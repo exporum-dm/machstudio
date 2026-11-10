@@ -11,6 +11,8 @@ import {
   normalizePhone,
   normalizeRegistrationForm,
   splitMultiValue,
+  registrantFieldLabels,
+  registrantFieldMaxLength,
 } from "@/lib/webinar-config";
 import { parseUtmEnvelope } from "@/lib/webinar-attribution";
 import { generateShareCode, normalizeShareCode } from "@/lib/webinar-share";
@@ -75,10 +77,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   const TEXT_MAX = 200;
   const MEMO_MAX = 2000;
   const tooLong = (v: unknown, max: number) => typeof v === "string" && v.length > max;
+  const fieldLabels = registrantFieldLabels(webinar.config);
   if (
     tooLong(name, TEXT_MAX) || tooLong(phone, 50) || tooLong(email, 320) ||
-    tooLong(company, TEXT_MAX) || tooLong(department, TEXT_MAX) ||
-    tooLong(jobTitle, TEXT_MAX) || tooLong(industry, TEXT_MAX) || tooLong(memo, MEMO_MAX)
+    tooLong(company, registrantFieldMaxLength(fieldLabels, "company")) ||
+    tooLong(department, registrantFieldMaxLength(fieldLabels, "department")) ||
+    tooLong(jobTitle, registrantFieldMaxLength(fieldLabels, "jobTitle")) ||
+    tooLong(industry, registrantFieldMaxLength(fieldLabels, "industry")) || tooLong(memo, MEMO_MAX)
   ) {
     return NextResponse.json({ error: "입력이 너무 길어요" }, { status: 400, headers: CORS_HEADERS });
   }

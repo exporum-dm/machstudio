@@ -157,6 +157,7 @@ export default function LivePreviewPage() {
         accent: real.theme.accentColor ?? THEMES.dark.accent,
       }
     : THEMES[themeKey];
+  const borderRadius = real?.theme?.borderRadius ?? (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("radius") ?? undefined : undefined);
 
   // EntryVerify 로컬 상태
   const [authMethod, setAuthMethod] = useState<"phone" | "email">("phone");
@@ -233,11 +234,11 @@ export default function LivePreviewPage() {
       </div>
 
       {state === "waiting" && (
-        <PreLiveWaiting webinar={webinarData} accent={t.accent} text={t.text} surface={t.surface} targetIso={real?.liveStartAt ?? target} registered live={live} waitingCount={137} hasCalendar onCalendar={() => {}} onShare={() => {}} onNotify={() => {}} notify={{ subscribed: false, pending: false, error: "" }} />
+        <PreLiveWaiting webinar={webinarData} accent={t.accent} text={t.text} surface={t.surface} borderRadius={borderRadius} targetIso={real?.liveStartAt ?? target} registered live={live} waitingCount={137} hasCalendar onCalendar={() => {}} onShare={() => {}} onNotify={() => {}} notify={{ subscribed: false, pending: false, error: "" }} />
       )}
       {state === "entry" && (
         <EntryVerify
-          webinar={webinarData} accent={t.accent} text={t.text} surface={t.surface}
+          webinar={webinarData} accent={t.accent} text={t.text} surface={t.surface} borderRadius={borderRadius}
           targetIso={real?.liveStartAt ?? target} serverNowMs={previewNowMs} isLive
           authMethod={authMethod} authValue={authValue} verifyError="" isVerifying={false}
           onAuthMethod={setAuthMethod} onAuthValueChange={setAuthValue} onVerify={() => {}} onGoSignup={() => {}}
@@ -246,7 +247,7 @@ export default function LivePreviewPage() {
       )}
       {state === "live" && (
         <LiveContentStk
-          webinar={webinarData} accent={t.accent} text={t.text} surface={t.surface} youtubeId={null}
+          webinar={webinarData} accent={t.accent} text={t.text} surface={t.surface} borderRadius={borderRadius} youtubeId={null}
           serverNowMs={previewNowMs} chatEnabled={chatOn}
           qa={{ sessions: webinarData.sessions, question, setQuestion, selectedSession, setSelectedSession, onSend: () => {}, isSending: false, sent: false, answered: ANSWERED, onVote: qaMode === "closed" ? undefined : () => {}, votedIds: [], mode: qaMode }}
           chat={chatOn ? { messages: CHAT, input: chatText, setInput: setChatText, onSend: () => setChatText(""), isSending: false } : undefined}
@@ -255,7 +256,7 @@ export default function LivePreviewPage() {
       )}
       {state === "ended" && (
         <EndedScreen
-          webinar={webinarData} accent={t.accent} text={t.text} surface={t.surface}
+          webinar={webinarData} accent={t.accent} text={t.text} surface={t.surface} borderRadius={borderRadius}
           live={live}
           /**
            * 종료 화면 설문은 여러 개 걸 수 있다(카드 N장). 목업 모드에서는 2장을 태워

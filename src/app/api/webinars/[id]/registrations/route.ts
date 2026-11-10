@@ -6,7 +6,7 @@ import { assembleWebinarEngagement } from "@/lib/webinar-scoring";
 import { resolveWebinarStatus } from "@/lib/webinar-status";
 import { buildMemo, parseMemo } from "@/lib/webinar-memo";
 import { buildSessionNumbering, resolveSessionRef } from "@/lib/webinar-sessions";
-import { normalizeRegistrationForm } from "@/lib/webinar-config";
+import { normalizeRegistrationForm, registrantFieldLabels } from "@/lib/webinar-config";
 
 type DuplicateMode = "skip" | "include" | "update";
 
@@ -302,7 +302,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
        끈 항목도 넣는다: 예전에 받은 값이 화면에서 사라지지 않게. */
     customFields: normalizeRegistrationForm(webinar.config, { includeDisabled: true }).fields
       .filter((f) => !f.system)
-      .map((f) => ({ key: f.key, label: f.label })),
+      .map((f) => ({ key: f.key, label: f.label, type: f.type })),
+    /* 등록 폼에서 이름을 바꾼 기본 항목 — 명단의 열 이름이 폼과 같아야 답이 어느 질문인지 읽힌다. */
+    fieldLabels: registrantFieldLabels(webinar.config),
   });
 }
 

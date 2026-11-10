@@ -350,7 +350,7 @@ export const LANDING_CSS = `
   position: absolute; right: 0; bottom: 48px;
   min-width: 210px; min-height: 58px;
   display: inline-flex; align-items: center; justify-content: space-between; gap: 20px;
-  padding: 0 24px; border-radius: 999px;
+  padding: 0 24px; border-radius: calc(999px * var(--r-scale, 1));
   background: var(--primary);
   /* !important: .lnd a 방어 규칙에 덮이면 키컬러가 밝을 때(노랑 등) 흰 글자가 남아 대비가 깨진다.
      accentColor 가 흰 글자를 쓰는 색이면 시각 변화가 없고, 어두운 글자를 써야 하는 색에서만 달라진다. */
@@ -412,7 +412,7 @@ export const LANDING_CSS = `
 .lnd .session-card {
   position: relative;
   width: calc(50% - 8px); max-width: 372px; aspect-ratio: 210 / 297; /* A4 세로 */
-  overflow: hidden; border-radius: 9px;
+  overflow: hidden; border-radius: calc(9px * var(--r-scale, 1));
   background: linear-gradient(160deg, #1b2130, #12161f 60%, #0c0f16);
   box-shadow: var(--shadow);
   transform: translateZ(0);
@@ -442,7 +442,7 @@ export const LANDING_CSS = `
   display: flex; flex-direction: column; align-items: flex-start;
 }
 .lnd .session-time {
-  display: inline-flex; align-items: center; min-height: 29px; padding: 0 9px; border-radius: 3px;
+  display: inline-flex; align-items: center; min-height: 29px; padding: 0 9px; border-radius: calc(3px * var(--r-scale, 1));
   background: var(--primary); color: var(--on-primary);
   font-size: 12px; font-weight: 850; font-variant-numeric: tabular-nums;
 }
@@ -517,7 +517,7 @@ export const LANDING_CSS = `
      암시 행(grid-auto-rows)에 맡기지 않고 적어 둔다 — 무엇이 줄어들 수 있는 행인지가
      이 모달의 스크롤 동작을 정하는 값이라 눈에 보여야 한다. */
   grid-template-rows: minmax(0, 1fr) auto;
-  overflow: hidden; border-radius: 18px;
+  overflow: hidden; border-radius: calc(18px * var(--r-scale, 1));
   background: rgba(19, 23, 32, .72);
   -webkit-backdrop-filter: blur(26px) saturate(1.3); backdrop-filter: blur(26px) saturate(1.3);
   border: 1px solid rgba(255, 255, 255, .12);
@@ -546,7 +546,7 @@ export const LANDING_CSS = `
   border-top: 1px solid rgba(255, 255, 255, .1);
 }
 .lnd .lnd-modal-sns-link {
-  width: 38px; height: 38px; border-radius: 10px;
+  width: 38px; height: 38px; border-radius: calc(10px * var(--r-scale, 1));
   display: inline-flex; align-items: center; justify-content: center;
   background: rgba(255, 255, 255, .08); color: rgba(255, 255, 255, .78);
   transition: background .18s ease, color .18s ease, transform .18s ease;
@@ -571,13 +571,13 @@ export const LANDING_CSS = `
 .lnd .lnd-modal-photo-cap span { font-size: 12px; color: #cfd6e2; }
 .lnd .lnd-modal-main { min-height: 0; padding: 30px; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 .lnd .lnd-modal-time {
-  display: inline-flex; align-items: center; min-height: 26px; padding: 0 9px; border-radius: 4px;
+  display: inline-flex; align-items: center; min-height: 26px; padding: 0 9px; border-radius: calc(4px * var(--r-scale, 1));
   background: var(--primary); color: var(--on-primary); font-size: 12px; font-weight: 850; font-variant-numeric: tabular-nums;
 }
 /* 제목이 닫기 버튼 아래로 파고들지 않게 — 버튼(38px + 여백)만큼 오른쪽을 비운다. */
 .lnd .lnd-modal-main h3 { padding-right: 46px; margin: 14px 0 0; font-size: clamp(21px, 2.4vw, 27px); font-weight: 900; letter-spacing: -.035em; line-height: 1.25; word-break: keep-all; }
 .lnd .lnd-modal-desc { margin: 14px 0 0; color: #c4ccd9; font-size: 15px; line-height: 1.7; white-space: pre-line; word-break: keep-all; }
-.lnd .lnd-modal-speaker { margin-top: 22px; padding: 18px; border-radius: 14px; background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .08); }
+.lnd .lnd-modal-speaker { margin-top: 22px; padding: 18px; border-radius: calc(14px * var(--r-scale, 1)); background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .08); }
 /* 아바타·이름(왼쪽) + 로고(오른쪽 끝). 좁은 화면에서 셋이 한 줄에 안 들어가면 줄바꿈하고,
    그때도 margin-left:auto 가 남아 로고는 자기 줄의 오른쪽에 붙는다. */
 .lnd .lnd-modal-speaker-head { display: flex; align-items: center; flex-wrap: wrap; gap: 13px; }
@@ -616,7 +616,7 @@ ${sessionLogoCss(".lnd .lnd-modal-logo", { plate: true, fixedWidth: false })}
    폴백한다 — 열 정의를 실제로 그리는 요소에 두는 쪽이 구조가 정직하다.
    overflow:hidden 은 펼침 영역이 카드 모서리를 넘지 않게. */
 .lnd .schedule-row {
-  border-radius: 6px; background: #f8f9fc; color: #111724; overflow: hidden;
+  border-radius: calc(6px * var(--r-scale, 1)); background: #f8f9fc; color: #111724; overflow: hidden;
   box-shadow: 0 10px 28px rgba(3, 9, 26, .12);
 }
 .lnd .schedule-row.is-break { background: rgba(58, 63, 98, .94); color: #f3f5fa; }
@@ -749,13 +749,13 @@ ${sessionLogoCss(".lnd .schedule-logo", { fixedWidth: false })}
 .lnd .audience-body p { margin: 4px 0 0; font-size: 15.5px; line-height: 1.65; color: var(--muted); white-space: pre-line; word-break: keep-all; }
 .lnd .program-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
 .lnd .program-card, .lnd .join-step {
-  border-radius: 8px; background: var(--card);
+  border-radius: calc(8px * var(--r-scale, 1)); background: var(--card);
   box-shadow: var(--card-shadow);
 }
 .lnd .program-card { min-height: 142px; padding: 24px; }
 .lnd .program-heading { display: flex; align-items: center; gap: 12px; }
 .lnd .program-icon {
-  min-width: 38px; height: 38px; display: grid; place-items: center; border-radius: 5px;
+  min-width: 38px; height: 38px; display: grid; place-items: center; border-radius: calc(5px * var(--r-scale, 1));
   background: var(--primary); color: var(--on-primary);
   font-size: 10px; font-weight: 900; letter-spacing: -.02em;
 }
@@ -832,7 +832,7 @@ ${sessionLogoCss(".lnd .schedule-logo", { fixedWidth: false })}
 .lnd .faq-tabs { margin: -8px 0 26px; display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
 .lnd .faq-tab {
   min-height: 44px; padding: 0 18px;
-  border: 1px solid var(--line); border-radius: 7px; background: transparent;
+  border: 1px solid var(--line); border-radius: calc(7px * var(--r-scale, 1)); background: transparent;
   cursor: pointer; font-weight: 750;
   transition: background .2s ease, border-color .2s ease, color .2s ease;
 }
@@ -840,7 +840,7 @@ ${sessionLogoCss(".lnd .schedule-logo", { fixedWidth: false })}
 .lnd .faq-list { display: grid; gap: 12px; }
 /* 반복되는 얕은 판은 전용 표면과 짧은 그림자를 쓴다. 공용 카드의 큰 그림자를 쓰면
    라이트 배경에서 카드 사이가 넓은 회색 덩어리처럼 이어져 보인다. */
-.lnd .faq-item { border-radius: 8px; background: var(--faq-card); overflow: hidden; box-shadow: var(--faq-shadow); }
+.lnd .faq-item { border-radius: calc(8px * var(--r-scale, 1)); background: var(--faq-card); overflow: hidden; box-shadow: var(--faq-shadow); }
 .lnd .faq-item summary {
   min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 20px;
   padding: 0 18px; cursor: pointer; list-style: none;
@@ -880,7 +880,7 @@ ${sessionLogoCss(".lnd .schedule-logo", { fixedWidth: false })}
   box-sizing: content-box;
   display: grid; place-items: center;
   width: 148px; height: 44px; padding: 14px 18px;
-  border-radius: 8px; background: #fff;
+  border-radius: calc(8px * var(--r-scale, 1)); background: #fff;
   box-shadow: var(--card-shadow);
   text-decoration: none;
   transition: transform .2s ease, box-shadow .2s ease;
