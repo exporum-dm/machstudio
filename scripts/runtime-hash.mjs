@@ -66,6 +66,7 @@ export function landingSourceFiles(root) {
     join(root, "src/lib/dom/scroll-lock.ts"),
     // 색 계산 공용 계약 — 중복 세 벌을 여기로 모았다(W1 Task 20).
     join(root, "src/lib/color.ts"),
+    join(root, "src/lib/webinar-radius.ts"),
   ]).sort();
 }
 

@@ -112,6 +112,7 @@ export function mountLanding(opts: MountLandingOptions): LandingHandle {
     style: {
       "--primary": m.accent,
       "--on-primary": m.onPrimary,
+      "--r-scale": String(m.radiusScale),
       // 배경 키컬러 두 개 — 나머지 색(선·카드)은 CSS 가 이 둘에서 파생한다.
       "--bg-light": m.lp.colors.lightBg,
       "--bg-dark": m.lp.colors.darkBg,
@@ -158,6 +159,7 @@ export function mountLanding(opts: MountLandingOptions): LandingHandle {
     // 레이어는 body 직계라 루트의 인라인 키컬러 변수를 못 받는다 → 여기서 다시 심는다.
     layer.style.setProperty("--primary", m.accent);
     layer.style.setProperty("--on-primary", m.onPrimary);
+    layer.style.setProperty("--r-scale", String(m.radiusScale));
 
     const close = () => {
       closeActive = null;

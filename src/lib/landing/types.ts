@@ -73,6 +73,8 @@ export interface LandingModel {
   uid: string;
   accent: string;
   onPrimary: string;
+  /** 테마 테두리 둥글기 배율(기본 16px = 1) */
+  radiusScale: number;
   brand: string;
   /** 일시 옆 라벨 — 비면 기본 문구가 들어간 값(폴백은 모델에서 한 번). */
   venue: string;

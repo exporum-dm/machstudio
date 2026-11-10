@@ -74,7 +74,7 @@ const EXTRA_CSS = `
 /* 제목이 먼저 읽혀야 한다 — 예전엔 주황 칩(SESSION 1)이 맨 위에서 시선을 먼저 먹었다.
    칩을 제목 **아래**로 내리고 크기를 줄여 분류 라벨의 자리로 되돌린다. */
 .stk-live .plw-row h4 { font-size:14.5px; font-weight:700; letter-spacing:-.01em; line-height:1.4; color:var(--text); margin:0; word-break:keep-all; }
-.stk-live .plw-row .kd { display:inline-block; margin-top:5px; font-size:9.5px; font-weight:750; letter-spacing:.06em; text-transform:uppercase; color:var(--key); background:var(--key-dim); padding:2px 6px; border-radius:5px; }
+.stk-live .plw-row .kd { display:inline-block; margin-top:5px; font-size:9.5px; font-weight:750; letter-spacing:.06em; text-transform:uppercase; color:var(--key); background:var(--key-dim); padding:2px 6px; border-radius:calc(5px * var(--r-scale, 1)); }
 .stk-live .plw-row.brk .kd { color:var(--sub); background:color-mix(in srgb,var(--text) 6%,transparent); }
 /* 휴식은 콘텐츠가 아니다 — 한 줄로 눌러 스크롤에서 건너뛰게 한다. */
 .stk-live .plw-row.brk h4 { font-size:12.5px; font-weight:650; color:var(--sub); }
@@ -177,7 +177,7 @@ const EXTRA_CSS = `
   justify-content:center;
   gap:6px;
   padding:0 18px;
-  border-radius:12px;
+  border-radius:calc(12px * var(--r-scale, 1));
   background:var(--key);
   /* 흰 글자 고정(요청). --on-key 는 밝은 키컬러에서 진한 글자로 뒤집는데, 그 판정이
      YIQ 0.6 임계라 주황(#ff8500 → 0.605)이 간신히 넘어 검은 글자가 나오고 있었다. */
@@ -223,6 +223,8 @@ interface PreLiveWaitingProps {
   accent: string;
   text: string;
   surface: string;
+  /** 테마의 테두리 둥글기 — 없으면 디자인 기본값 */
+  borderRadius?: string;
   targetIso: string;
   serverNowMs?: number;
   registered?: boolean;
@@ -249,10 +251,10 @@ function diffParts(ms: number) {
 }
 
 export default function PreLiveWaiting({
-  webinar, accent, text, surface, targetIso, serverNowMs, registered = true,
+  webinar, accent, text, surface, borderRadius, targetIso, serverNowMs, registered = true,
   live, waitingCount, registrantCount, hasCalendar, onCalendar, onShare, shareCopied, onNotify, notify, centerAction, replaceCountdown = false,
 }: PreLiveWaitingProps) {
-  const css = useMemo(() => buildStkCss(accent || "#6D28D9", text || "#141320", surface || "#FFFFFF") + EXTRA_CSS, [accent, text, surface]);
+  const css = useMemo(() => buildStkCss(accent || "#6D28D9", text || "#141320", surface || "#FFFFFF", borderRadius) + EXTRA_CSS, [accent, text, surface, borderRadius]);
   const targetMs = useMemo(() => new Date(targetIso).getTime(), [targetIso]);
 
   const [mounted, setMounted] = useState(false);

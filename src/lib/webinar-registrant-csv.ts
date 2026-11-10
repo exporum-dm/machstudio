@@ -19,6 +19,7 @@ import {
   type SurveyQuestion,
 } from "@/lib/webinar-survey";
 import { formatQAForCell } from "@/lib/webinar-qa";
+import type { RegistrantFieldLabels } from "@/lib/webinar-config";
 
 /** 명단에 실리는 등록자 — 라우트의 select 와 같은 모양(필요한 것만). */
 export interface CsvRegistrant {
@@ -76,6 +77,8 @@ export interface RegistrantCsvInput {
   registrants: CsvRegistrant[];
   /** 등록폼 커스텀 필드 정의(시스템 필드 제외) — 헤더 순서를 정한다. */
   customFields: { key: string; label: string }[];
+  /** 등록 폼에서 이름을 바꾼 기본 항목 — 열 이름이 폼과 같아야 한다. */
+  fieldLabels?: RegistrantFieldLabels;
   /** 설문 정의. 문항은 보관(retired)까지 포함해야 이미 받은 답이 파일에서 사라지지 않는다. */
   surveys: CsvSurveyColumn[];
   /** registrationId → surveyId → answers */
@@ -92,7 +95,7 @@ interface Column {
   value: (r: CsvRegistrant) => string;
 }
 
-function fixedColumns(engagementByRegistrant: Map<string, CsvEngagement>): Column[] {
+function fixedColumns(engagementByRegistrant: Map<string, CsvEngagement>, labels: RegistrantFieldLabels = {}): Column[] {
   // KST 고정 — new Date().toLocaleString("ko-KR") 은 timeZone 이 없어 이 코드가 도는
   // 서버(Vercel, TZ=UTC) 기준 시각이 나온다. 화면(RegistrantsTab)은 formatKst 를 쓰므로
   // 같은 등록자의 등록일이 화면과 CSV 에서 9시간 어긋나 보였다.
@@ -101,10 +104,10 @@ function fixedColumns(engagementByRegistrant: Map<string, CsvEngagement>): Colum
     { header: "이름", value: (r) => r.name },
     { header: "연락처", value: (r) => r.phone ?? "" },
     { header: "이메일", value: (r) => r.email ?? "" },
-    { header: "회사", value: (r) => r.company ?? "" },
-    { header: "부서", value: (r) => r.department ?? "" },
-    { header: "직함", value: (r) => r.jobTitle ?? "" },
-    { header: "업종", value: (r) => r.industry ?? "" },
+    { header: labels.company ?? "회사", value: (r) => r.company ?? "" },
+    { header: labels.department ?? "부서", value: (r) => r.department ?? "" },
+    { header: labels.jobTitle ?? "직함", value: (r) => r.jobTitle ?? "" },
+    { header: labels.industry ?? "업종", value: (r) => r.industry ?? "" },
     { header: "마케팅동의", value: (r) => (r.agreeMarketing ? "Y" : "N") },
     // 쓰는 웨비나만 있는 항목이라 끈 웨비나에서는 전원 N 으로 나간다 — agreeMarketing 과
     // 같은 고정 열로 둔다(사용 여부로 열 자체를 뺐다 붙였다 하면 과거에 받은 동의가
@@ -140,9 +143,9 @@ function surveyColumns(surveys: CsvSurveyColumn[], answersByRegistrant: Registra
 }
 
 export function buildRegistrantCsvColumns(input: RegistrantCsvInput): Column[] {
-  const { customFields, surveys, answersByRegistrant, qaByRegistrant, engagementByRegistrant } = input;
+  const { customFields, fieldLabels, surveys, answersByRegistrant, qaByRegistrant, engagementByRegistrant } = input;
   return [
-    ...fixedColumns(engagementByRegistrant),
+    ...fixedColumns(engagementByRegistrant, fieldLabels),
     ...customFields.map((field) => ({
       header: field.label,
       value: (r: CsvRegistrant) => {
@@ -150,7 +153,8 @@ export function buildRegistrantCsvColumns(input: RegistrantCsvInput): Column[] {
         return value == null ? "" : String(value);
       },
     })),
-    { header: "사전질문", value: (r) => parseMemo(r.memo).note },
+    // 공개 폼에는 이 칸이 없다 — 운영자 메모와 가져오기로 넣은 값만 들어간다.
+    { header: "메모", value: (r) => parseMemo(r.memo).note },
     ...surveyColumns(surveys, answersByRegistrant),
     // 문의는 1인 N건이라 열로 펼 수 없다(개수가 데이터에 따라 달라지면 지난달 파일과 열이
     // 어긋난다) — 개수는 별 열로, 본문은 한 칸에 번호를 붙여 합친다. formatQAForCell 참고.

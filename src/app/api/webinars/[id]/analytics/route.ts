@@ -1,4 +1,5 @@
 import { projectAdCampaignScope } from "@/lib/ad-campaign-scope";
+import { registrantFieldLabels } from "@/lib/webinar-config";
 /**
  * 웨비나 분석 — 퍼널 / UTM 소스·매체별 분해 / 등록 추이 / 인터랙션 아카이브 / 리드 스코어링.
  * 수동 새로고침만 (폴링 없음 — egress 배려). 라이브 KPI 는 dashboard 엔드포인트가 담당.
@@ -48,7 +49,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const { id } = await params;
   const webinar = await prisma.webinar.findUnique({
     where: { id },
-    select: { workspaceId: true, projectId: true, liveStartAt: true, liveEndAt: true, signupDeadline: true, statusOverride: true, components: true, broadcastEndedAt: true, createdAt: true },
+    select: { workspaceId: true, projectId: true, liveStartAt: true, liveEndAt: true, signupDeadline: true, statusOverride: true, components: true, config: true, broadcastEndedAt: true, createdAt: true },
   });
   if (!webinar) return NextResponse.json({ error: "없는 웨비나예요" }, { status: 404 });
 
@@ -415,6 +416,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   });
 
   const leadAnalysis = {
+    /** 등록 폼에서 이름을 바꾼 기본 항목 — 카드 제목이 폼과 같아야 한다 */
+    fieldLabels: registrantFieldLabels(webinar.config),
     /** 입장자 점수 분포(10점 구간) — 세그먼트 4칸으로는 "60점 벽" 이 안 보인다 */
     histogram: scoreHistogram(facetScored),
     /** 전체 점수가 어디서 왔나 — "체류는 좋았는데 상호작용이 0" 을 한 줄로 */

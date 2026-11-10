@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/activity";
-import { normalizeRegistrationForm } from "@/lib/webinar-config";
+import { normalizeRegistrationForm, registrantFieldLabels } from "@/lib/webinar-config";
 import { assembleWebinarEngagement } from "@/lib/webinar-scoring";
 import { normalizeSurveyQuestions, type SurveyAnswers } from "@/lib/webinar-survey";
 import { buildRegistrantCsvTable, serializeCsv, type CsvQAItem } from "@/lib/webinar-registrant-csv";
@@ -125,6 +125,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     buildRegistrantCsvTable({
       registrants: registrations,
       customFields: customFieldDefs,
+      fieldLabels: registrantFieldLabels(webinar.config),
       surveys: surveyCols,
       answersByRegistrant: answersByReg,
       qaByRegistrant: qaByReg,

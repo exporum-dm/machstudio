@@ -737,6 +737,40 @@ export const DEFAULT_REGISTRATION_FIELDS: WebinarRegistrationField[] = [
   { id: "industry", key: "industry", label: "업종", type: "text", placeholder: "", required: false, enabled: true, options: [], system: true },
 ];
 
+/** 이름을 바꿔 다른 질문으로 쓸 수 있는 기본 항목 — 값은 항목 key 의 컬럼에 저장된다. */
+export type RegistrantLabelKey = "company" | "department" | "jobTitle" | "industry";
+export type RegistrantFieldLabels = Partial<Record<RegistrantLabelKey, string>>;
+
+/**
+ * 운영자가 등록 폼에서 **바꾼** 기본 항목 이름만 돌려준다.
+ *
+ * 기본 항목은 이름을 고쳐도 저장 컬럼이 그대로다. "업종" 칸을 "사전 질문"으로 바꿔 쓰면 답이
+ * industry 컬럼에 쌓이는데, 명단은 열 이름을 "업종"으로 고정해 답이 엉뚱한 열에 뜬 것처럼 보였다.
+ * 안 바꾼 항목은 넣지 않는다 — 화면마다 쓰던 이름("소속", "회사")을 그대로 두려고.
+ */
+export function registrantFieldLabels(config: unknown): RegistrantFieldLabels {
+  const out: RegistrantFieldLabels = {};
+  for (const field of normalizeRegistrationForm(config, { includeDisabled: true }).fields) {
+    if (!field.system) continue;
+    if (field.key !== "company" && field.key !== "department" && field.key !== "jobTitle" && field.key !== "industry") continue;
+    const label = field.label.trim();
+    const original = DEFAULT_REGISTRATION_FIELDS.find((item) => item.key === field.key)?.label;
+    if (label && label !== original) out[field.key] = label;
+  }
+  return out;
+}
+
+/**
+ * 공개 등록에서 받는 기본 항목의 글자 수 상한.
+ *
+ * 회사·직함 같은 짧은 값은 200자면 충분하지만, 이름을 바꿔 자유 질문으로 쓰는 칸은 답이 길다.
+ * 200자를 넘으면 등록 전체가 거절되고 어느 칸 때문인지도 알 수 없어서, 바꾼 칸은 커스텀 답변과
+ * 같은 상한(2000자)을 준다.
+ */
+export function registrantFieldMaxLength(labels: RegistrantFieldLabels, key: RegistrantLabelKey): number {
+  return labels[key] ? 2000 : 200;
+}
+
 /**
  * 선택형 필드의 부가 값(maxSelect·allowOther)만 따로 정규화한다.
  *

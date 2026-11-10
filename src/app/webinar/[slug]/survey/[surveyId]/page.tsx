@@ -42,7 +42,7 @@ export default function SurveyPage({ params }: { params: Promise<{ slug: string;
   const { slug, surveyId } = use(params);
   const [survey, setSurvey] = useState<PublicSurvey | null>(null);
   const [webinarName, setWebinarName] = useState("");
-  const [theme, setTheme] = useState<{ accent: string; text: string; surface: string }>({ accent: "#6D28D9", text: "#141320", surface: "#FFFFFF" });
+  const [theme, setTheme] = useState<{ accent: string; text: string; surface: string; radius?: string }>({ accent: "#6D28D9", text: "#141320", surface: "#FFFFFF" });
   const [state, setState] = useState<PageState>("loading");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
@@ -85,6 +85,7 @@ export default function SurveyPage({ params }: { params: Promise<{ slug: string;
             accent: t.accentColor || "#6D28D9",
             text: t.textColor || "#141320",
             surface: t.surfaceColor || "#FFFFFF",
+            radius: t.borderRadius,
           });
         }
         // 시작 전은 마감과 다르게 안내한다 — 마감은 끝난 것이고, 시작 전은 다시 오면 되는 것이다
@@ -96,7 +97,7 @@ export default function SurveyPage({ params }: { params: Promise<{ slug: string;
     return () => { cancelled = true; };
   }, [slug, surveyId, reloadKey]);
 
-  const css = useMemo(() => buildStkCss(theme.accent, theme.text, theme.surface) + SURVEY_FORM_CSS + PAGE_CSS, [theme]);
+  const css = useMemo(() => buildStkCss(theme.accent, theme.text, theme.surface, theme.radius) + SURVEY_FORM_CSS + PAGE_CSS, [theme]);
 
   const handleSubmit = async (answers: SurveyAnswers) => {
     setSubmitting(true);

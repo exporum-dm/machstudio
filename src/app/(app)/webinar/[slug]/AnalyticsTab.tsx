@@ -157,6 +157,7 @@ interface LeadAnalysis {
   composition: { attend: number; watch: number; interact: number; intent: number; total: number };
   byIndustry: FacetRow[];
   byRole: FacetRow[];
+  fieldLabels?: { industry?: string; jobTitle?: string };
   lift: { action: string; withCount: number; withAvg: number; withoutAvg: number; reliable: boolean }[];
   minReliableSample: number;
 }
@@ -936,9 +937,11 @@ function LeadAnalysisSection({ la, showScore }: { la: LeadAnalysis; showScore: b
 
         <SectionCard>
           <div className="mb-4">
-            <h3 className="text-sm font-semibold">업종별 리드</h3>
+            <h3 className="text-sm font-semibold">{la.fieldLabels?.industry ? `${la.fieldLabels.industry} 답변별 리드` : "업종별 리드"}</h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              {showScore ? "어느 업종이 실제로 관심이 있었는지 — 다음 웨비나 주제·타깃의 근거예요." : "등록 폼의 업종 구성이에요. 방송이 끝나면 업종별 평균 점수도 함께 보여드려요."}
+              {la.fieldLabels?.industry
+                ? "등록 폼에서 받은 답변 구성이에요."
+                : showScore ? "어느 업종이 실제로 관심이 있었는지 — 다음 웨비나 주제·타깃의 근거예요." : "등록 폼의 업종 구성이에요. 방송이 끝나면 업종별 평균 점수도 함께 보여드려요."}
             </p>
           </div>
           <FacetTable rows={la.byIndustry} showScore={showScore} minSample={la.minReliableSample} />
@@ -946,7 +949,7 @@ function LeadAnalysisSection({ la, showScore }: { la: LeadAnalysis; showScore: b
 
         <SectionCard>
           <div className="mb-4">
-            <h3 className="text-sm font-semibold">직함별 리드</h3>
+            <h3 className="text-sm font-semibold">{la.fieldLabels?.jobTitle ? `${la.fieldLabels.jobTitle} 답변별 리드` : "직함별 리드"}</h3>
             <p className="mt-1 text-xs text-muted-foreground">
               {showScore
                 ? "결정권자가 실제로 끝까지 봤는지 — 영업 우선순위와 콘텐츠 난이도의 근거예요."
