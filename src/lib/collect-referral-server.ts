@@ -4,7 +4,7 @@
 import { prisma } from "@/lib/prisma";
 import { normalizeCollectForm, type CollectFormConfig } from "@/lib/collect-form-config";
 import { buildTicketView } from "@/lib/collect-lookup";
-import { normalizePersonName, phoneLast4, rankReferrers, referralLabel, type RankedReferrer } from "@/lib/collect-referral";
+import { phoneLast4, samePersonName, rankReferrers, referralLabel, type RankedReferrer } from "@/lib/collect-referral";
 
 export interface ReferralSource {
   id: string;
@@ -76,7 +76,7 @@ export async function loadReferralRanking(source: ReferralSource): Promise<{ ran
 }
 
 /**
- * 내 순위 찾기 — 이름 전체 + 연락처 뒤 4자리가 **둘 다** 맞아야 찾아진다.
+ * 내 순위 찾기 — 이름 전체(띄어쓰기·성과 이름 순서 무관) + 연락처 뒤 4자리가 **둘 다** 맞아야 찾아진다.
  * 이름표("이*환 · 1198")만으로는 남의 순위를 골라 볼 수 없게 하려는 것이다.
  */
 export async function findMyReferralRank(
@@ -84,10 +84,10 @@ export async function findMyReferralRank(
   ranked: AdminReferrer[],
   query: { name: string; last4: string },
 ): Promise<{ registered: boolean; me: RankedReferrer | null }> {
-  const wantName = normalizePersonName(query.name);
+  const wantName = query.name.trim();
   const last4 = query.last4.replace(/\D/g, "");
   if (!wantName || last4.length !== 4) return { registered: false, me: null };
-  const hit = ranked.find((r) => normalizePersonName(r.name) === wantName && phoneLast4(r.phone) === last4);
+  const hit = ranked.find((r) => samePersonName(r.name, wantName) && phoneLast4(r.phone) === last4);
   if (hit) {
     const { recordId, rank, count, label, rewarded } = hit;
     return { registered: true, me: { recordId, rank, count, label, rewarded } };
@@ -99,7 +99,7 @@ export async function findMyReferralRank(
     take: 200,
   });
   const registered = candidates.some(
-    (c) => normalizePersonName(buildTicketView(source.config, { registrationNo: c.registrationNo ?? "-", data: c.data })?.name ?? "") === wantName,
+    (c) => samePersonName(buildTicketView(source.config, { registrationNo: c.registrationNo ?? "-", data: c.data })?.name ?? "", wantName),
   );
   return { registered, me: null };
 }

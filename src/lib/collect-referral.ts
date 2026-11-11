@@ -65,8 +65,23 @@ export function referralLabel(name: string, phone: string | null | undefined): s
   return last4 ? `${referralDisplayName(name)} · ${last4}` : referralDisplayName(name);
 }
 
-/** 이름 비교용 — 공백·대소문자 무시. 검색은 이름 전체 + 뒷자리 4개가 맞아야 찾아진다. */
-export const normalizePersonName = (name: string) => name.normalize("NFC").replace(/\s+/g, "").toLowerCase();
+/** 이름 비교용 — 공백·대소문자·쉼표 무시. */
+export const normalizePersonName = (name: string) => name.normalize("NFC").replace(/[\s,.·]+/g, "").toLowerCase();
+
+/**
+ * 같은 사람의 이름인가 — 띄어쓰기·대소문자·쉼표, **성과 이름의 순서**와 상관없이.
+ * "Changhwan Lee" = "Lee Changhwan" = "lee, changhwan" = "changhwanlee", "이 창환" = "이창환".
+ * 단어로 나눈 뒤 순서를 무시하고 맞춰 보고, 한쪽이 붙여 쓴 경우는 붙인 글자끼리 본다.
+ */
+export function samePersonName(a: string, b: string): boolean {
+  const tokens = (v: string) => v.normalize("NFC").toLowerCase().split(/[\s,.·]+/).filter(Boolean);
+  const ta = tokens(a);
+  const tb = tokens(b);
+  if (!ta.length || !tb.length) return false;
+  const forms = (t: string[]) => [t.join(""), [...t].reverse().join(""), [...t].sort().join("")];
+  const other = new Set(forms(tb));
+  return forms(ta).some((v) => other.has(v));
+}
 
 export interface RankedReferrer {
   recordId: string;
@@ -122,7 +137,7 @@ export function rewardRuleLabel(config: Pick<CollectReferralConfig, "rewardMode"
 /**
  * 친구에게 보낼 링크 — 지금 보고 있는 등록 페이지 주소에 추천 코드를 붙인다.
  * 보낸 사람의 utm_* 는 지운다. 남겨 두면 친구의 등록이 보낸 사람이 들어온 광고 캠페인 성과로 잡힌다.
- * 대신 utm_source=referral 로 표시해 유입 분석에서도 "친구 초대"로 묶인다.
+ * 대신 utm_source=referral · utm_medium=invite 로 표시해 유입 분석에서도 "친구 초대" 하나로 묶인다.
  */
 export function buildInviteUrl(pageUrl: string, code: string): string {
   try {
@@ -132,7 +147,7 @@ export function buildInviteUrl(pageUrl: string, code: string): string {
     }
     url.searchParams.set(REFERRAL_QUERY_KEY, code);
     url.searchParams.set("utm_source", "referral");
-    url.searchParams.set("utm_medium", "friend");
+    url.searchParams.set("utm_medium", "invite");
     url.hash = "";
     return url.toString();
   } catch {

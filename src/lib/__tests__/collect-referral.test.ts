@@ -6,6 +6,7 @@ import {
   rankReferrers,
   referralDisplayName,
   referralLabel,
+  samePersonName,
 } from "@/lib/collect-referral";
 import { mergeFormConfigUpdate, normalizeCollectForm } from "@/lib/collect-form-config";
 
@@ -15,6 +16,18 @@ describe("친구 초대 이름표", () => {
     expect(referralLabel("Changhwan Lee", "+12025551198")).toBe("C. Lee · 1198");
     expect(referralDisplayName("남궁민수")).toBe("남**수");
     expect(referralLabel("김민", null)).toBe("김*");
+  });
+});
+
+describe("내 순위 찾기 — 이름 비교", () => {
+  it("띄어쓰기·대소문자·성과 이름 순서와 상관없이 같은 사람", () => {
+    expect(samePersonName("Changhwan Lee", "lee changhwan")).toBe(true);
+    expect(samePersonName("Changhwan Lee", "Lee, Changhwan")).toBe(true);
+    expect(samePersonName("Changhwan Lee", "changhwanlee")).toBe(true);
+    expect(samePersonName("Changhwan Lee", "LeeChanghwan")).toBe(true);
+    expect(samePersonName("이창환", "이 창환")).toBe(true);
+    expect(samePersonName("이창환", "이창수")).toBe(false);
+    expect(samePersonName("Changhwan Lee", "Changhwan")).toBe(false);
   });
 });
 
@@ -46,6 +59,7 @@ describe("초대 링크", () => {
     const url = new URL(buildInviteUrl("https://k-expo.org/register?utm_source=meta&utm_campaign=x&lang=ja#form", "K7mQ2xPa3d"));
     expect(url.searchParams.get("ref")).toBe("K7mQ2xPa3d");
     expect(url.searchParams.get("utm_source")).toBe("referral");
+    expect(url.searchParams.get("utm_medium")).toBe("invite");
     expect(url.searchParams.get("utm_campaign")).toBeNull();
     expect(url.searchParams.get("lang")).toBe("ja");
     expect(url.hash).toBe("");
