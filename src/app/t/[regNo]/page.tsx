@@ -28,6 +28,7 @@ import { normalizeCollectForm } from "@/lib/collect-form-config";
 import { buildTicketView } from "@/lib/collect-lookup";
 import { visitorBadgePalette } from "@/lib/collect-badge";
 import { TicketDownloadButton } from "./TicketDownloadButton";
+import { referralBoardPath } from "@/lib/collect-referral";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +47,7 @@ export const metadata: Metadata = { robots: { index: false, follow: false } };
 function loadTicket(regNo: string, key?: string) {
   return prisma.collectRecord.findUnique({
     where: { registrationNo: regNo, ...(isDomesticRegistrationNo(regNo) ? {id:key ?? ""} : {}) },
-    select: { registrationNo: true, data: true, source: { select: { name: true, formConfig: true, deletedAt: true } } },
+    select: { registrationNo: true, data: true, sourceId: true, source: { select: { name: true, formConfig: true, deletedAt: true } } },
   });
 }
 
@@ -256,6 +257,15 @@ export default async function TicketPage({ params, searchParams }: { params: Pro
             {korean ? "* 저장이 안 되면 화면을 캡처해 주세요." : "* If the button doesn’t work, please take a screenshot."}
           </p>
         </div>
+
+        {/* 친구 초대를 켠 폼만 — 순위는 여기 띄우지 않고, 궁금한 사람만 눌러서 본다 */}
+        {config.referral.enabled && (
+          <p className="mt-4 text-center">
+            <a href={referralBoardPath(record.sourceId)} className="text-xs font-medium text-neutral-600 underline underline-offset-2">
+              {korean ? "추천 순위 보기" : "See the referral ranking"}
+            </a>
+          </p>
+        )}
 
         <p className="mt-4 text-center text-[11px] leading-relaxed text-neutral-500">
           {korean ? "이 페이지를 저장하면 입장권을 다시 열 수 있어요. 화면을 캡처해도 됩니다." : "Save this page to open your ticket any time. A screenshot works too."}

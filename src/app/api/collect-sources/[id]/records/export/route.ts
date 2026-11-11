@@ -57,6 +57,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const eventDates = normalizeCollectForm(source.formConfig).eventInfo.eventDates;
   const attendanceById = new Map(records.map(r => [r.id, recordAttendance(r.data, eventDates, ciById.get(r.id))]));
   const showAttendance = builder || source.checkinEnabled || [...attendanceById.values()].some(Boolean);
+  // 친구 초대 — 켠 적이 있는 폼만(코드가 하나라도 있으면). 추천인은 같은 폼 안의 등록자다.
+  const showReferral = records.some((r) => r.shareCode || r.referredById);
+  const codeById = new Map(records.map((r) => [r.id, r.shareCode ?? ""]));
   const headers = [
     "시간 (KST)",
     ...(builder ? ["등록번호"] : []),
@@ -66,6 +69,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     "First UTM 소스", "First UTM 매체", "First UTM 캠페인", "First UTM 키워드", "First UTM 콘텐츠",
     "First Referrer", "First Seen (KST)",
     "Referrer",
+    ...(showReferral ? ["추천 코드", "추천인 코드"] : []),
   ];
 
   const rows = records.map((r) => {
@@ -88,6 +92,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       r.firstReferrer    ?? "",
       r.firstSeenAt ? formatKstDateTime(r.firstSeenAt) : "",
       r.referrer ?? "",
+      ...(showReferral ? [r.shareCode ?? "", r.referredById ? codeById.get(r.referredById) ?? "" : ""] : []),
     ];
   });
 

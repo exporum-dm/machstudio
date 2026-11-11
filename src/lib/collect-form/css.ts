@@ -304,6 +304,13 @@ export const COLLECT_FORM_CSS = `
 }
 .msf-save:hover{filter:brightness(1.08)}
 .msf-save-hint{margin-top:8px;font-size:11px;color:var(--msf-muted)}
+.msf .msf-invite { margin-top:18px; padding:16px; border-radius:14px; background:color-mix(in srgb, var(--msf-accent) 7%, transparent); text-align:center; }
+.msf .msf-invite-title { font-size:15px; font-weight:700; }
+.msf .msf-invite-body { margin-top:4px; font-size:13px; line-height:1.55; opacity:.8; }
+.msf .msf-invite-actions { margin-top:12px; display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
+.msf .msf-invite-btn { min-height:44px; padding:0 18px; border-radius:999px; border:1px solid color-mix(in srgb, currentColor 22%, transparent); background:transparent; color:inherit; font:inherit; font-size:14px; font-weight:600; cursor:pointer; }
+.msf .msf-invite-primary { border-color:transparent; background:var(--msf-accent); color:var(--msf-accent-fg); }
+.msf .msf-invite-status { margin-top:6px; min-height:1em; font-size:12px; opacity:.75; }
 
 /* 다시 찾기 — 일행 것을 이어서 찾는 경우가 많다(가족·팀 단위 등록). */
 .msf-again{

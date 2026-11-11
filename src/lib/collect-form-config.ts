@@ -14,6 +14,7 @@
  */
 // 항목 형식·URL 판정은 **웨비나 쪽 단일 출처를 그대로 쓴다.** 사본을 두면 유형을 하나 늘릴 때
 // 한쪽만 고쳐도 컴파일이 통과하고, 그 순간 빌더와 제출 경로가 서로 다른 목록을 보게 된다.
+import { EMPTY_REFERRAL, normalizeReferral, type CollectReferralConfig } from "@/lib/collect-referral";
 import { FIELD_TYPES as WEBINAR_FIELD_TYPES, safeHttpUrl, type WebinarFieldType } from "@/lib/webinar-config";
 // 법률 문구 생성기(§legal)도 이 파일처럼 React·Next 에 의존하지 않는 순수 모듈이라 그대로 들여온다.
 import { isLegalCountry, type Country, type ThirdParty, type OrgProfile } from "@/lib/legal-templates/types";
@@ -346,6 +347,11 @@ export interface CollectFormConfig {
    * 실제로 생긴다(웨비나 statusOverride 와 같은 이유). null 이면 시각으로 판정.
    */
   statusOverride: RegistrationStatus | null;
+  /**
+   * 친구 초대(추천) — 완료 화면의 초대 링크·공개 순위판·혜택 기준. "추천" 탭이 혼자 소유한다
+   * (빌더 자동 저장이 낡은 값으로 덮지 않게 mergeFormConfigUpdate 가 지킨다). 기본 꺼짐.
+   */
+  referral: CollectReferralConfig;
 }
 
 // ── 기본값 ────────────────────────────────────────────────────────────
@@ -401,6 +407,7 @@ export const EMPTY_FORM_CONFIG: CollectFormConfig = {
   submitLabel: {},
   defaultLocale: DEFAULT_LOCALE,
   statusOverride: null,
+  referral: EMPTY_REFERRAL,
 };
 
 // ── 정규화 ────────────────────────────────────────────────────────────
@@ -739,6 +746,7 @@ export function normalizeCollectForm(raw: unknown): CollectFormConfig {
     statusOverride: REGISTRATION_STATUSES.includes(override as RegistrationStatus)
       ? (override as RegistrationStatus)
       : null,
+    referral: normalizeReferral(c.referral, (v) => toLocalized(v, locale)),
   };
 }
 
@@ -857,8 +865,8 @@ export function resolveRegistrationPhase(
  * (빌더가 열릴 때 들고 온 낡은 값으로 덮으면 기본 정보에서 바꾼 게 되돌아간다).
  * 둘 다 없으면 undefined(폼 정의를 건드리지 않는다).
  */
-export function mergeFormConfigUpdate(currentRaw: unknown, formConfig: unknown, schedule: unknown, locale?: unknown): CollectFormConfig | undefined {
-  if (formConfig === undefined && schedule === undefined && locale === undefined) return undefined;
+export function mergeFormConfigUpdate(currentRaw: unknown, formConfig: unknown, schedule: unknown, locale?: unknown, referral?: unknown): CollectFormConfig | undefined {
+  if (formConfig === undefined && schedule === undefined && locale === undefined && referral === undefined) return undefined;
   const current = normalizeCollectForm(currentRaw);
   const base = formConfig !== undefined ? normalizeCollectForm(formConfig) : current;
   return {
@@ -867,6 +875,8 @@ export function mergeFormConfigUpdate(currentRaw: unknown, formConfig: unknown, 
     registrationPrefix: obj(formConfig).registrationPrefix === undefined ? current.registrationPrefix : base.registrationPrefix,
     schedule: schedule !== undefined ? normalizeCollectForm({ ...base, schedule }).schedule : current.schedule,
     defaultLocale: isFormLocale(locale) ? locale : current.defaultLocale,
+    // 추천 설정도 "추천" 탭이 혼자 소유한다 — 빌더가 통째로 보낸 formConfig 의 값은 쓰지 않는다.
+    referral: referral !== undefined ? normalizeCollectForm({ ...base, referral }).referral : current.referral,
   };
 }
 

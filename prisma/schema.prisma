@@ -564,6 +564,10 @@ model CollectRecord {
   ip               String?
   /// 국외형 13자리 난수 / 국내형 접두번호 2자리 + 순번 6자리. 전역 중복 금지.
   registrationNo   String?   @unique
+  /// 친구 초대 링크의 추천 코드(`?ref=`) — 폼에서 추천을 켰을 때만 발급(lib/collect-referral.ts)
+  shareCode        String?   @unique
+  /// 이 등록자를 데려온 사람(추천 링크를 보낸 등록자)
+  referredById     String?
   /// 소문자·trim 한 이메일 — 중복 판정과 등록 확인 조회의 키.
   /// 유니크는 (sourceId, emailNormalized) **부분 인덱스**라 raw SQL 로만 만든다
   /// (Prisma 가 부분 인덱스를 표현하지 못한다 — WebinarRegistration 과 같은 사정).
@@ -586,6 +590,8 @@ model CollectRecord {
   /// 등록 확인이 전화번호로도 조회한다 — 없으면 5만 건 풀스캔.
   checkIns         CollectCheckIn[]
   surveyResponses  SurveyResponse[]
+  referredBy       CollectRecord?  @relation("CollectReferral", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals        CollectRecord[] @relation("CollectReferral")
   @@index([sourceId, phoneE164])
   // (sourceId, emailNormalized) 유니크는 **부분 인덱스**(WHERE emailNormalized IS NOT NULL)라
   // 여기 선언할 수 없다 — supabase/migrations/20260815_collect_builder.sql 에 raw SQL 로 있다.
@@ -595,6 +601,7 @@ model CollectRecord {
   @@index([projectId, utmSource])
   @@index([projectId, utmMedium])
   @@index([projectId, sourceId, createdAt])
+  @@index([sourceId, referredById])
 }
 
 model ActivityLog {

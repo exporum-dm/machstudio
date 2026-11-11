@@ -22,6 +22,7 @@ import { generateRegistrationNo } from "@/lib/collect-registration-no";
 import { buildCollectConfirmationEmail } from "@/lib/collect-confirmation-email";
 import { sendEmail } from "@/lib/email";
 import { qrPngBuffer } from "@/lib/collect-qr";
+import { generateReferralCode, normalizeReferralCode } from "@/lib/collect-referral";
 
 function normalizeOrigin(s: string): string {
   try {
@@ -196,6 +197,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
    * 미리 조회해서 거르는 방식은 동시 제출을 못 막기 때문에(둘 다 "없음" 을 읽는다) 쓰지 않는다.
    * **DB 제약이 최종 방어선**이라는 §6.2 의 결론이 그대로다.
    */
+  /**
+   * 친구 초대 — 폼에서 켰을 때만. 들어온 링크의 추천 코드(`_ref`)가 **같은 폼**의 등록자 것이면
+   * 그 사람을 추천인으로 남긴다. 다른 폼의 코드·모르는 코드는 조용히 무시한다(등록은 막지 않는다).
+   */
+  const referral = config.referral.enabled;
+  const refCode = referral ? normalizeReferralCode(body._ref) : "";
+  const referrer = refCode
+    ? await prisma.collectRecord.findFirst({ where: { shareCode: refCode, sourceId: source.id }, select: { id: true } })
+    : null;
+  let shareCode = referral ? generateReferralCode() : null;
+
   let registrationNo = p.registrationNo;
   let recordId: string | null = null;
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -203,9 +215,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const record = config.builderVariant === "domestic"
         ? await prisma.$transaction(async tx => {
             const nextNo = await nextDomesticRegistrationNo(tx, config.registrationPrefix);
-            return tx.collectRecord.create({ data: { ...base, registrationNo: nextNo } });
+            return tx.collectRecord.create({ data: { ...base, registrationNo: nextNo, shareCode, referredById: referrer?.id ?? null } });
           })
-        : await prisma.collectRecord.create({ data: { ...base, registrationNo } });
+        : await prisma.collectRecord.create({ data: { ...base, registrationNo, shareCode, referredById: referrer?.id ?? null } });
       registrationNo = record.registrationNo ?? registrationNo;
       recordId = record.id;
       break;
@@ -230,6 +242,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         }
       }
       registrationNo = generateRegistrationNo();
+      if (shareCode) shareCode = generateReferralCode();
     }
   }
 
@@ -337,5 +350,5 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
    * **등록번호를 그대로 쓰지 않는다** — 그 값은 입장에 쓰이는데 광고 플랫폼과 브라우저
    * 기록에 남게 되기 때문이다(§8 "{regNo}는 URL에 넣지 않기를 권한다").
    */
-  return NextResponse.json({ ok: true, registrationNo, rid: recordId, ...(config.builderVariant === "domestic" ? { ticketKey: recordId } : {}) }, { status: 201, headers });
+  return NextResponse.json({ ok: true, registrationNo, rid: recordId, ...(shareCode ? { shareCode } : {}), ...(config.builderVariant === "domestic" ? { ticketKey: recordId } : {}) }, { status: 201, headers });
 }

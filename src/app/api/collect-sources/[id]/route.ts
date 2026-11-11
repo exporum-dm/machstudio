@@ -220,7 +220,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({error:"빌더 유형은 새 등록 폼을 만들 때 선택하세요"},{status:400});
     }
   }
-  const nextFormConfig = mergeFormConfigUpdate(result.source.formConfig, body.formConfig, body.registrationSchedule, body.formLocale);
+  const nextFormConfig = mergeFormConfigUpdate(result.source.formConfig, body.formConfig, body.registrationSchedule, body.formLocale, body.referral);
 
   const source = await prisma.collectSource.update({
     where: { id },
