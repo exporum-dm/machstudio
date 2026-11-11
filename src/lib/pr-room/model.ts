@@ -1,4 +1,5 @@
 import JSON5 from "json5";
+import { rangeLabel, type ResearchRange } from "./range";
 
 export interface PrMention {
   id: string;
@@ -16,7 +17,7 @@ export interface PrMention {
   author?: string;
   metrics?: { views?:number; likes?:number; comments?:number; shares?:number; saves?:number };
   comments?: { author?:string; text:string; likes?:number }[];
-  origin?: "search" | "reference" | "naver-api" | "claude" | "manual";
+  origin?: "search" | "reference" | "naver-api" | "claude" | "aside" | "manual";
 }
 
 export interface ExcludedMentionRule { title:string; excerpt:string; source:string; channel:PrMention["channel"] }
@@ -63,26 +64,58 @@ export type ClaudeResearchMention = Pick<
   "title" | "url" | "source" | "channel" | "excerpt" | "publishedAt" | "author" | "metrics" | "comments"
 > & { sentiment?: PrMention["sentiment"] };
 
-export function buildClaudeResearchPrompt({
+/** 조사를 맡길 AI. Aside 는 사용자가 로그인해 둔 브라우저에서 플랫폼 안까지 직접 돌아다닌다. */
+export type ResearchAgent = "aside" | "claude";
+
+export const RESEARCH_AGENT_LABEL: Record<ResearchAgent, string> = { aside: "Aside", claude: "Claude" };
+
+/** X(트위터) 검색의 until: 은 그날을 빼므로 종료일 다음 날을 준다. */
+const nextDay = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+
+function asideGuide(range: ResearchRange | null) {
+  const xRange = range ? ` since:${range.from} until:${nextDay(range.to)}` : "";
+  return `
+[Aside 브라우저 사용 방법]
+- 이 브라우저에 로그인해 둔 계정을 그대로 쓰세요. 각 플랫폼 안의 검색을 직접 쓰면 검색 엔진에 잡히지 않는 게시물까지 찾을 수 있습니다.
+- 플랫폼별 검색: Instagram(해시태그·키워드), Threads(검색), X(고급 검색, 검색어 뒤에${xRange || " 기간 연산자"}), Facebook·LinkedIn(게시물 검색 + 날짜 필터), TikTok·YouTube(검색 후 업로드 날짜 필터), 네이버(뉴스·블로그·카페, 기간 직접 입력), Google(도구 → 기간 설정).
+- 검색 결과 목록이 아니라 개별 게시물을 열어 원문 URL, 게시일, 작성자, 반응 수(조회·좋아요·댓글·공유), 대표 댓글을 확인하세요.
+- 읽기만 하세요. 좋아요·팔로우·댓글·메시지·공유·저장처럼 계정에 흔적이 남는 행동은 절대 하지 마세요.
+- 비공개 계정·비공개 그룹·회원 전용 카페 글은 제외하세요. 작성자가 공개하지 않은 글입니다.
+- 오래 걸려도 괜찮습니다. 결과가 많으면 50건씩 나눠 JSON 배열로 출력하세요.
+`;
+}
+
+export function buildResearchPrompt({
   eventNames,
-  lastCollectedAt,
+  lastCollectedAt = null,
+  range = null,
+  agent = "claude",
   knownUrls = [],
   excludedRules = [],
   ownChannels = [],
 }: {
   eventNames: string[];
-  lastCollectedAt: string | null;
+  lastCollectedAt?: string | null;
+  /** 이 기간에 나온 글만 — 없으면 예전처럼 전체 기간 */
+  range?: ResearchRange | null;
+  agent?: ResearchAgent;
   knownUrls?: string[];
   excludedRules?: ExcludedMentionRule[];
   ownChannels?: string[];
 }) {
   const names = eventNames.map((x) => x.trim()).filter(Boolean);
   const since = lastCollectedAt ? new Date(lastCollectedAt).toISOString().slice(0, 10) : "행사 관련 자료가 검색되는 전체 기간";
-  return `웹 검색을 사용해 아래 행사의 온라인 언급을 조사해 주세요. 이 조사는 제3자(우리가 아닌 다른 사람·매체)의 반응만 찾는 것입니다.
+  const opener = agent === "aside"
+    ? "이 브라우저(Aside)에 로그인된 계정으로 사이트를 직접 돌아다니며 아래 행사의 온라인 언급을 조사해 주세요."
+    : "웹 검색을 사용해 아래 행사의 온라인 언급을 조사해 주세요.";
+  const scope = range
+    ? `조사 기간: ${rangeLabel(range)} (한국 시간). 이 기간에 게시·보도된 글만 포함하고 기간 밖의 글은 빼세요. 게시일을 확인할 수 없는 글만 publishedAt 을 null 로 두고 포함하세요.`
+    : `조사 범위: 행사 관련 자료가 검색되는 전체 기간. 마지막 수집 기준(${since}) 이전에 놓친 자료도 포함하세요.`;
+  return `${opener} 이 조사는 제3자(우리가 아닌 다른 사람·매체)의 반응만 찾는 것입니다.
 
 행사명과 검색어: ${names.join(" / ")}
-조사 범위: 행사 관련 자료가 검색되는 전체 기간. 마지막 수집 기준(${since}) 이전에 놓친 자료도 포함하세요.
-
+${scope}
+${agent === "aside" ? asideGuide(range) : ""}
 행사명의 한글·영문·약칭·띄어쓰기 변형과 공식 해시태그를 각각 검색하고, 개최 도시·연도·주최자와 조합해 동명이벤트를 구분하세요. 뉴스, 블로그·커뮤니티, SNS·동영상 채널별로 나누어 여러 검색어로 조사하세요. 참가사·참관객·기자 등 제3자의 게시물을 찾으세요. 제목에 행사명이 없더라도 본문에서 해당 행사와의 직접 관련성을 확인하면 포함하세요.
 가능하면 검증된 고유 URL 50건 이상을 목표로 하되 개수를 채우려고 자료를 만들지 마세요. 10~20건의 대표 사례에서 멈추지 말고 검색어와 채널을 바꿔 추가 조사하세요. 응답 길이가 부족하면 선택 필드와 요약을 줄이고, 배열이 잘리지 않게 완성한 뒤 다음 응답에서 기존 URL을 제외하고 계속 조사할 수 있게 하세요.
 
@@ -106,6 +139,9 @@ ${excludedRules.slice(0, 50).map((x) => `- [${x.channel}] ${x.title} / ${x.excer
 [{"title":"원문 제목","url":"https://...","source":"매체 또는 플랫폼","channel":"press|sns|comment|community|web","excerpt":"확인한 내용 요약","author":"작성자 또는 기자","publishedAt":"YYYY-MM-DD 또는 null","sentiment":"positive|neutral|negative","metrics":{"views":0,"likes":0,"comments":0,"shares":0,"saves":0},"comments":[{"author":"작성자","text":"댓글 원문","likes":0}]}]`;
 }
 
+/** @deprecated buildResearchPrompt 를 쓰세요 — Claude 용 기본값으로 같은 조사문을 만든다. */
+export const buildClaudeResearchPrompt = (args: Parameters<typeof buildResearchPrompt>[0]) => buildResearchPrompt({ agent: "claude", ...args });
+
 export function parseClaudeResearch(value: string): ClaudeResearchMention[] {
   const text = value.trim();
   const fenced = [...text.matchAll(/```(?:json5?|javascript|js)?\s*\n?([\s\S]*?)```/gi)];
@@ -125,7 +161,7 @@ export function parseClaudeResearch(value: string): ClaudeResearchMention[] {
       throw new Error("array required");
     });
   } catch {
-    throw new Error("조사 결과 형식을 읽지 못했어요. Claude의 JSON 코드 블록 전체를 복사해 주세요. 내용이 잘렸다면 Claude에 완전한 JSON 배열로 다시 출력해 달라고 요청해 주세요.");
+    throw new Error("조사 결과 형식을 읽지 못했어요. AI가 출력한 JSON 전체를 복사해 주세요. 내용이 잘렸다면 AI에 완전한 JSON 배열로 다시 출력해 달라고 요청해 주세요.");
   }
   if (!Array.isArray(parsed)) throw new Error("JSON 배열 형식이 아닙니다.");
   const rows: ClaudeResearchMention[] = [];

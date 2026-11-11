@@ -1,3 +1,4 @@
+import { rangeContains, type ResearchRange } from "./range";
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -300,13 +301,25 @@ async function naverApiNews(query: string): Promise<Found[]> {
   return parseNaverApiNews(await response.json() as NaverNewsResponse);
 }
 
+/**
+ * Google 뉴스 RSS 주소. 기간이 있으면 after:/before: 연산자로 그 기간만 묻는다(before 는 그날을 빼므로
+ * 종료일 다음 날). 기간이 없으면 예전처럼 최근 N일(when:Nd).
+ */
+export function prRoomGoogleNewsUrl(query: string, days: number, range: ResearchRange | null): string {
+  if (!range) return googleNewsUrl({ query, days });
+  const before = new Date(Date.parse(`${range.to}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+  const q = `${query} after:${range.from} before:${before}`;
+  return `https://news.google.com/rss/search?${new URLSearchParams({ q, hl: "ko", gl: "KR", ceid: "KR:ko" })}`;
+}
+
 async function googleRows(
   query: string,
   channel: PrMention["channel"],
   source: string,
   days: number,
+  range: ResearchRange | null = null,
 ): Promise<Found[]> {
-  const result = await safeFetchText(googleNewsUrl({ query, days }), {
+  const result = await safeFetchText(prRoomGoogleNewsUrl(query, days, range), {
     accept: "application/rss+xml,text/xml",
     maxBytes: 2_000_000,
     timeoutMs: 15_000,
@@ -324,7 +337,7 @@ async function googleRows(
     : [];
 }
 
-export async function collectPrRoom(roomId: string, now = new Date()) {
+export async function collectPrRoom(roomId: string, now = new Date(), range: ResearchRange | null = null) {
   const room = await prisma.prRoom.findUnique({
     where: { id: roomId },
     include: { project: { select: { name: true } } },
@@ -345,7 +358,7 @@ export async function collectPrRoom(roomId: string, now = new Date()) {
   const tasks = queries.slice(0, 5).flatMap((query) => [
     {
       label: "Google 뉴스",
-      run: () => googleRows(`"${query}"`, "press", "Google 뉴스", days),
+      run: () => googleRows(`"${query}"`, "press", "Google 뉴스", days, range),
     },
     {
       label: "네이버 뉴스",
@@ -363,14 +376,14 @@ export async function collectPrRoom(roomId: string, now = new Date()) {
     ...SOCIAL_SOURCES.map((s) => ({
       label: s.label,
       run: () =>
-        googleRows(`site:${s.domain} "${query}"`, s.channel, s.label, days),
+        googleRows(`site:${s.domain} "${query}"`, s.channel, s.label, days, range),
     })),
   ]);
   const settled = await Promise.all(
     tasks.map(async (task) => {
       try {
         const found = (await task.run()).filter((row) =>
-          isRelevantMention(row.title, queries),
+          isRelevantMention(row.title, queries) && (!range || rangeContains(range, row.publishedAt) !== false),
         );
         counts[task.label] = (counts[task.label] ?? 0) + found.length;
         return found;
