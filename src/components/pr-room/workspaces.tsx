@@ -24,7 +24,9 @@ import { useQueryTab } from "@/components/ui/use-query-tab";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   analyzeMention,
-  buildClaudeResearchPrompt,
+  buildResearchPrompt,
+  RESEARCH_AGENT_LABEL,
+  type ResearchAgent,
   buildPressReleasePrompt,
   isOwnChannel,
   parseClaudeResearch,
@@ -34,6 +36,8 @@ import {
   type PrMention,
   type ExcludedMentionRule,
 } from "@/lib/pr-room/model";
+import { rangeContains, rangeLabel, type ResearchRange } from "@/lib/pr-room/range";
+import { ResearchRangePicker, useResearchRange } from "./research-range";
 
 interface Room {
   id: string;
@@ -124,6 +128,7 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
   const [running, setRunning] = useState(false);
   const [fillingDates, setFillingDates] = useState(false);
   const [runSummary, setRunSummary] = useState("");
+  const [range, setRange] = useResearchRange(projectId);
   if (error) return <ErrorState message={error} retry={load} />;
   if (!data) return <Loading />;
   const mentions = (
@@ -199,14 +204,14 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
         errors: string[];
       }>("/api/pr-room/collect", {
         method: "POST",
-        body: JSON.stringify({ projectId }),
+        body: JSON.stringify({ projectId, range }),
       });
       await load();
       const checked = Object.entries(r.counts)
         .map(([k, v]) => `${k} ${v}건`)
         .join(" · ");
       setRunSummary(
-        `${checked} 확인 · 새 언급 ${r.added}건 저장${r.errors.length ? ` · 실패 ${r.errors.length}곳` : ""}`,
+        `${rangeLabel(range)} · ${checked} 확인 · 새 언급 ${r.added}건 저장${r.errors.length ? ` · 실패 ${r.errors.length}곳` : ""}`,
       );
       toast.success(`새 언급 ${r.added}건을 저장했어요`);
     } catch (e) {
@@ -258,7 +263,7 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
           )}
           <Btn tone="ghost" disabled={!data.canWrite} onClick={() => setTab("ai")}>
             <WandSparkles className="h-4 w-4" />
-            Claude로 조사
+            AI로 조사
           </Btn>
           <Btn tone="key" disabled={!data.canWrite || running} onClick={collect}>
             {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -266,6 +271,7 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
           </Btn>
         </div>
       </div>
+      <ResearchRangePicker range={range} onChange={setRange} />
       {runSummary && (
         <p className="rounded-lg bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
           {runSummary}
@@ -304,7 +310,7 @@ export function MentionWorkspace({ projectId }: { projectId: string }) {
           />
         </div>
       ) : tab === "ai" ? (
-        <AiResearchWorkspace projectId={projectId} data={data} setData={setData} mentions={mentions} reload={load} />
+        <AiResearchWorkspace projectId={projectId} data={data} setData={setData} mentions={mentions} reload={load} range={range} />
       ) : tab === "response" ? (
         <ResponseList
           mentions={mentions}
@@ -326,14 +332,29 @@ function AiResearchWorkspace({
   setData,
   mentions,
   reload,
+  range,
 }: {
   projectId: string;
   data: Loaded;
   setData: (data: Loaded) => void;
   mentions: PrMention[];
   reload: () => Promise<void>;
+  range: ResearchRange;
 }) {
   const [value, setValue] = useState("");
+  const [agent, setAgentState] = useState<ResearchAgent>("aside");
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("pr-room:agent");
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 저장소는 마운트 뒤에만 읽을 수 있다
+      if (saved === "aside" || saved === "claude") setAgentState(saved);
+    } catch { /* 저장소 차단 — 기본값 유지 */ }
+  }, []);
+  const setAgent = (next: ResearchAgent) => {
+    setAgentState(next);
+    try { window.localStorage.setItem("pr-room:agent", next); } catch { /* 무시 */ }
+  };
+  const agentName = RESEARCH_AGENT_LABEL[agent];
   const [saving, setSaving] = useState(false);
   const [importError, setImportError] = useState("");
   const keywords = Array.isArray(data.room.keywords)
@@ -343,17 +364,20 @@ function AiResearchWorkspace({
   const excludedUrls = new Set(Array.isArray(data.room.excludedMentionUrls) ? data.room.excludedMentionUrls.filter((x): x is string => typeof x === "string") : []);
   const excludedRules = Array.isArray(data.room.excludedMentionRules) ? data.room.excludedMentionRules as ExcludedMentionRule[] : [];
   const ownChannels = Array.isArray(data.room.ownChannelUrls) ? data.room.ownChannelUrls.filter((x): x is string => typeof x === "string") : [];
-  const prompt = buildClaudeResearchPrompt({
+  const prompt = buildResearchPrompt({
     eventNames,
+    agent,
+    range,
     lastCollectedAt: data.room.lastCollectedAt,
     knownUrls: mentions.map((x) => x.url),
     excludedRules,
     ownChannels,
   });
   const start = () => {
-    window.open("https://claude.ai/new", "_blank", "noopener,noreferrer");
+    // Aside 는 설치형 브라우저라 여기서 열 수 없다 — 복사만 하고, 붙여 넣을 곳을 알려준다.
+    if (agent === "claude") window.open("https://claude.ai/new", "_blank", "noopener,noreferrer");
     navigator.clipboard.writeText(prompt)
-      .then(() => toast.success("조사문을 복사했어요. 열린 Claude에 붙여 넣으세요."))
+      .then(() => toast.success(agent === "claude" ? "조사문을 복사했어요. 열린 Claude에 붙여 넣으세요." : "조사문을 복사했어요. Aside 브라우저의 새 작업에 붙여 넣으세요."))
       .catch(() => toast.error("조사문을 복사하지 못했어요."));
   };
   const importResults = async () => {
@@ -363,10 +387,14 @@ function AiResearchWorkspace({
       const known = new Set(mentions.map((x) => x.url));
       const parsed = parseClaudeResearch(value);
       // 프롬프트에서 우리 채널은 빼 달라고 했지만, Claude 가 그래도 포함할 수 있어 한 번 더 거른다.
-      const rows = parsed.filter((x) => !known.has(x.url) && !excludedUrls.has(x.url) && !isOwnChannel(x.url, ownChannels));
+      const fresh = parsed.filter((x) => !known.has(x.url) && !excludedUrls.has(x.url) && !isOwnChannel(x.url, ownChannels));
+      // 조사문에 기간을 적어 보내도 AI 가 기간 밖의 글을 섞을 수 있다 — 한 번 더 거른다. 날짜를 모르는 글은 남긴다.
+      const rows = fresh.filter((x) => rangeContains(range, x.publishedAt) !== false);
+      const outOfRange = fresh.length - rows.length;
+      const undated = rows.filter((x) => !x.publishedAt).length;
       const skippedOwnChannel = parsed.length - parsed.filter((x) => !isOwnChannel(x.url, ownChannels)).length;
       if (!rows.length) {
-        toast.info(parsed.length ? "모두 이미 저장되었거나 제외한 URL이에요. Claude에 기존 URL을 제외하고 추가 조사해 달라고 요청해 주세요." : "조사 결과가 비어 있어요. Claude에서 추가 조사한 결과를 붙여 넣어 주세요.");
+        toast.info(outOfRange ? `조사 기간(${rangeLabel(range)}) 밖의 글 ${outOfRange}건을 빼고 나니 새로 가져올 글이 없어요.` : parsed.length ? "모두 이미 저장되었거나 제외한 URL이에요. AI에 기존 URL을 제외하고 추가 조사해 달라고 요청해 주세요." : "조사 결과가 비어 있어요. Claude에서 추가 조사한 결과를 붙여 넣어 주세요.");
         return;
       }
       const now = new Date().toISOString();
@@ -376,11 +404,11 @@ function AiResearchWorkspace({
         ...(!row.sentiment ? analyzeMention(`${row.title} ${row.excerpt}`) : { sentiment: row.sentiment, status: row.sentiment === "negative" ? "issue" : "new", riskLevel: row.sentiment === "negative" ? "attention" : "watch" }),
         responseNote: "",
         collectedAt: now,
-        origin: "claude",
+        origin: agent,
       }));
       setData(await save(projectId, { mentions: [...added, ...mentions], lastCollectedAt: now }, data.room.updatedAt));
       setValue("");
-      toast.success(`Claude 조사 결과 ${added.length}건을 가져왔어요.${parsed.length > added.length ? ` 기존·제외 URL ${parsed.length - added.length}건은 건너뛰었어요.` : ""}${skippedOwnChannel ? ` (우리 채널 ${skippedOwnChannel}건 포함)` : ""}`);
+      toast.success(`${agentName} 조사 결과 ${added.length}건을 가져왔어요.${outOfRange ? ` 기간 밖 ${outOfRange}건은 뺐어요.` : ""}${undated ? ` 게시일 모름 ${undated}건은 '원문 일자 채우기'로 확인해 보세요.` : ""}${parsed.length > fresh.length ? ` 기존·제외 URL ${parsed.length - fresh.length}건은 건너뛰었어요.` : ""}${skippedOwnChannel ? ` (우리 채널 ${skippedOwnChannel}건 포함)` : ""}`);
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "결과를 가져오지 못했어요.");
       await reload();
@@ -392,23 +420,47 @@ function AiResearchWorkspace({
     <div className="grid max-w-5xl gap-4 lg:grid-cols-2">
       <section className={`${R.panel} ${FINISH.s1} bg-card p-5`}>
         <span className="text-xs font-medium text-violet-700">1단계</span>
-        <h3 className="mt-1 font-semibold">Claude에서 웹 조사 시작</h3>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          {eventNames.join(" · ")}을 기준으로 실제 원문 URL이 있는 뉴스와 SNS 언급을 조사합니다. 기존 결과와 제외 사례도 조사문에 함께 전달합니다.
+        <h3 className="mt-1 font-semibold">AI에게 웹 조사 맡기기</h3>
+        <div role="radiogroup" aria-label="조사를 맡길 AI" className="mt-3 grid grid-cols-2 gap-2">
+          {([
+            ["aside", "Aside", "로그인해 둔 SNS·카페 안까지 직접 찾아요 (권장)"],
+            ["claude", "Claude", "공개 웹 검색으로 찾아요"],
+          ] as const).map(([id, name, hint]) => (
+            <button
+              key={id}
+              type="button"
+              role="radio"
+              aria-checked={agent === id}
+              onClick={() => setAgent(id)}
+              className={`rounded-xl p-3 text-left transition-colors ${agent === id ? "bg-violet-500/10 ring-1 ring-violet-500/40" : "bg-secondary/50 hover:bg-secondary"}`}
+            >
+              <span className="block text-sm font-medium">{name}</span>
+              <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{hint}</span>
+            </button>
+          ))}
+        </div>
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">
+          {eventNames.join(" · ")}을 기준으로 <strong className="font-medium text-foreground">{rangeLabel(range)}</strong>에 나온 뉴스와 SNS 언급을 조사합니다. 기존 결과와 제외 사례도 조사문에 함께 전달합니다.
+          {agent === "aside" && " Aside에는 읽기만 하고 좋아요·팔로우·댓글은 하지 말라고 적어 보내요."}
         </p>
         <Btn className="mt-4" tone="key" onClick={start}>
           <WandSparkles className="h-4 w-4" />
-          조사문 복사하고 Claude 열기
+          {agent === "claude" ? "조사문 복사하고 Claude 열기" : "조사문 복사"}
         </Btn>
+        {agent === "aside" && (
+          <p className="mt-2 text-xs leading-5 text-muted-foreground">
+            Aside 브라우저에서 새 작업을 열고 붙여 넣으세요. 조사할 SNS·네이버 카페에 미리 로그인해 두면 더 많이 찾아요.
+          </p>
+        )}
         <details className="mt-4 rounded-xl bg-secondary/50 p-3 text-sm">
-          <summary className="cursor-pointer font-medium">Claude에 보낼 조사문 확인</summary>
+          <summary className="cursor-pointer font-medium">{agentName}에 보낼 조사문 확인</summary>
           <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap text-xs leading-5 text-muted-foreground">{prompt}</pre>
         </details>
       </section>
       <section className={`${R.panel} ${FINISH.s1} bg-card p-5`}>
         <span className="text-xs font-medium text-violet-700">2단계</span>
         <h3 className="mt-1 font-semibold">조사 결과 가져오기</h3>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">Claude가 출력한 JSON 전체를 아래에 붙여 넣으세요. 기존 URL과 제외한 URL은 자동으로 건너뜁니다.</p>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">{agentName}가 출력한 JSON 전체를 아래에 붙여 넣으세요. 기존 URL·제외한 URL·조사 기간 밖의 글은 자동으로 건너뜁니다.</p>
         <label htmlFor="claude-research-results" className="mt-3 block text-xs font-medium">조사 결과 JSON</label>
         <textarea
           id="claude-research-results"
@@ -430,7 +482,7 @@ function AiResearchWorkspace({
 }
 
 /**
- * 로그인 장벽 때문에 자동 조사·Claude 조사 둘 다 못 찾는 글(비공개 Threads 댓글 등)을
+ * 로그인 장벽 때문에 자동 조사·AI 조사 둘 다 못 찾는 글(비공개 Threads 댓글 등)을
  * 사람이 직접 보고 와서 URL 하나로 등록하는 경로. 제목·메모는 자동으로 채워보되
  * (로그인 필요한 페이지면 대부분 실패) 항상 직접 입력·수정할 수 있다.
  */
@@ -516,7 +568,7 @@ function ManualMentionForm({
     <section className={`${R.panel} ${FINISH.s1} bg-card p-4`}>
       <h3 className="text-sm font-semibold">언급 직접 추가</h3>
       <p className="mt-1 text-xs text-muted-foreground">
-        자동 조사·Claude 조사가 못 찾는 글(로그인 뒤 Threads 댓글 등)을 직접 보고 왔을 때 URL로 등록하세요.
+        자동 조사·AI 조사가 못 찾는 글(로그인 뒤 Threads 댓글 등)을 직접 보고 왔을 때 URL로 등록하세요.
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
         <input
@@ -611,7 +663,7 @@ function MentionList({
               <div className="min-w-0 flex-1">
                 <span className="text-xs text-muted-foreground">
                   {{ press: "뉴스·보도", sns: "SNS", comment: "댓글", community: "커뮤니티", web: "웹" }[x.channel]} · {mentionSource(x)}
-                  {x.origin && <span className="ml-2 rounded-full bg-secondary px-2 py-0.5">{x.origin === "claude" ? "Claude 가져오기" : x.origin === "reference" ? "참고 링크" : "자동 수집"}</span>}
+                  {x.origin && <span className="ml-2 rounded-full bg-secondary px-2 py-0.5">{x.origin === "claude" ? "Claude 가져오기" : x.origin === "aside" ? "Aside 가져오기" : x.origin === "reference" ? "참고 링크" : x.origin === "manual" ? "직접 추가" : "자동 수집"}</span>}
                   {x.author ? ` · ${x.channel === "press" ? "기자 " : "@"}${x.author.replace(/^@/, "")}` : ""}
                   {` · ${mentionDateLabel(x)}`}
                 </span>
