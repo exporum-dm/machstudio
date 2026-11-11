@@ -348,7 +348,7 @@ export interface CollectFormConfig {
    */
   statusOverride: RegistrationStatus | null;
   /**
-   * 친구 초대(추천) — 완료 화면의 초대 링크·공개 순위판·혜택 기준. "추천" 탭이 혼자 소유한다
+   * 지인 초대(추천) — 완료 화면의 초대 링크·공개 순위판·혜택 기준. "추천" 탭이 혼자 소유한다
    * (빌더 자동 저장이 낡은 값으로 덮지 않게 mergeFormConfigUpdate 가 지킨다). 기본 꺼짐.
    */
   referral: CollectReferralConfig;

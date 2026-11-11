@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 등록 폼 "추천" 탭 — 친구 초대 기능 설정 + 추천 순위표(관리자용, 이름·연락처 포함).
+ * 등록 폼 "추천" 탭 — 지인 초대 기능 설정 + 추천 순위표(관리자용, 이름·연락처 포함).
  *
  * 설정은 이 탭이 혼자 소유한다(PATCH { referral }) — 폼 빌더의 자동 저장이 통째로 보내는
  * formConfig 는 추천 설정을 덮지 않는다(mergeFormConfigUpdate).
@@ -75,7 +75,7 @@ export function ReferralTab({ sourceId, canEdit = true }: { sourceId: string; ca
         body: JSON.stringify({ referral: next }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "저장하지 못했어요");
-      toast.success(next.enabled ? "친구 초대 설정을 저장했어요" : "친구 초대를 껐어요");
+      toast.success(next.enabled ? "지인 초대 설정을 저장했어요" : "지인 초대를 껐어요");
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "저장하지 못했어요");
@@ -114,14 +114,14 @@ export function ReferralTab({ sourceId, canEdit = true }: { sourceId: string; ca
       <section className={`${R.panel} ${FINISH.s1} bg-card p-5`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold">친구 초대</h2>
+            <h2 className="text-sm font-semibold">지인 초대</h2>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
               켜면 등록 완료 화면에 초대 링크(공유하기·링크 복사)와 &quot;추천 순위 보기&quot;가 생겨요. 그 링크로 등록한 사람이 추천 인원으로 집계돼요.
             </p>
           </div>
           <label className="flex shrink-0 items-center gap-2 text-sm">
             {draft.enabled ? "켜짐" : "꺼짐"}
-            <Switch checked={draft.enabled} disabled={!canEdit || saving} label="친구 초대 켜기" onChange={(v) => { const next = { ...draft, enabled: v }; setDraft(next); void save(next); }} />
+            <Switch checked={draft.enabled} disabled={!canEdit || saving} label="지인 초대 켜기" onChange={(v) => { const next = { ...draft, enabled: v }; setDraft(next); void save(next); }} />
           </label>
         </div>
 

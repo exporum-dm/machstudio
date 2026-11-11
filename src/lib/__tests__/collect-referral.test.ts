@@ -10,7 +10,7 @@ import {
 } from "@/lib/collect-referral";
 import { mergeFormConfigUpdate, normalizeCollectForm } from "@/lib/collect-form-config";
 
-describe("친구 초대 이름표", () => {
+describe("지인 초대 이름표", () => {
   it("한글은 가운데를 가리고, 영문은 이름 첫 글자 + 성", () => {
     expect(referralLabel("이창환", "+821012341198")).toBe("이*환 · 1198");
     expect(referralLabel("Changhwan Lee", "+12025551198")).toBe("C. Lee · 1198");

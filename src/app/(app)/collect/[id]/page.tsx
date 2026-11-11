@@ -1270,7 +1270,7 @@ export default function CollectDetailPage({ params }: { params: Promise<{ id: st
           {/* 현장 체크인 탭 (빌더형) — 권한은 서버가 본다(ADMIN 이상만 바꿀 수 있다) */}
           {tab === "checkin" && <CheckinTab sourceId={source.id} canEdit />}
           {tab === "analysis" && <AnalysisTab sourceId={source.id} />}
-          {/* 친구 초대(추천) 탭 (빌더형) — 설정 + 추천 순위표 */}
+          {/* 지인 초대(추천) 탭 (빌더형) — 설정 + 추천 순위표 */}
           {tab === "referral" && <ReferralTab sourceId={source.id} />}
 
           {/* 만족도 조사 탭 (빌더형) — 등록자 이메일/전화로 본인 확인 → 만족도 문항만 */}

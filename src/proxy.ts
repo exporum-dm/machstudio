@@ -19,7 +19,7 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/register/") || // 공개 등록 페이지
     pathname.startsWith("/f/") || // 등록 폼·등록 확인 로더 (외부 사이트 부착 — 설계 §17)
     pathname.startsWith("/t/") || // 티켓 페이지 (등록번호가 곧 티켓 — 설계 §9.2)
-    pathname.startsWith("/rank/") || // 친구 초대 순위판 (참관객이 등록 완료 화면에서 연다 — 이름표만 공개)
+    pathname.startsWith("/rank/") || // 지인 초대 순위판 (참관객이 등록 완료 화면에서 연다 — 이름표만 공개)
     pathname.startsWith("/api/rank/") || // 순위판의 내 순위 찾기 (이름+뒷자리 4개, 횟수 제한은 라우트가 한다)
     pathname === "/webinar/sample" ||
     pathname === "/live-preview" || // 라이브 페이지 상태별 디자인 프리뷰(목업 데이터, 공개)

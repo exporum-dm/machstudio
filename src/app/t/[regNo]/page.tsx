@@ -258,7 +258,7 @@ export default async function TicketPage({ params, searchParams }: { params: Pro
           </p>
         </div>
 
-        {/* 친구 초대를 켠 폼만 — 순위는 여기 띄우지 않고, 궁금한 사람만 눌러서 본다 */}
+        {/* 지인 초대를 켠 폼만 — 순위는 여기 띄우지 않고, 궁금한 사람만 눌러서 본다 */}
         {config.referral.enabled && (
           <p className="mt-4 text-center">
             <a href={referralBoardPath(record.sourceId)} className="text-xs font-medium text-neutral-600 underline underline-offset-2">
