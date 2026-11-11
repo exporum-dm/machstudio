@@ -83,6 +83,8 @@ export function formSourceFiles(root) {
     // (esbuild metafile 로 실측했다. 목록이 실제 입력보다 짧으면 검사는 초록인데
     //  커밋된 번들은 낡을 수 있다 — 그게 이 검사가 막으려던 바로 그 상황이다.)
     join(root, "src/lib/collect-form-config.ts"),
+    join(root, "src/lib/collect-referral.ts"),
+    join(root, "src/lib/mask.ts"),
     join(root, "src/lib/collect-email.ts"),
     join(root, "src/lib/collect-country.ts"),
     join(root, "src/lib/collect-badge.ts"),
@@ -146,6 +148,9 @@ export function expoSourceFiles(root) {
     join(root, "src/lib/expo/config.ts"),
     // collect-form-config 가 동의 전문 토큰을 거쳐 이 둘을 끌어온다(metafile 실측).
     join(root, "src/lib/collect-form-config.ts"),
+    join(root, "src/lib/collect-referral.ts"),
+    join(root, "src/lib/mask.ts"),
+    join(root, "src/lib/webinar-share.ts"),
     join(root, "src/lib/legal-templates/tokens.ts"),
     join(root, "src/lib/legal-templates/types.ts"),
     join(root, "src/lib/expo/font.ts"),
@@ -187,6 +192,9 @@ export function standaloneExpoSourceFiles(root) {
   return ([
     join(root, "src/embed/expo-standalone-entry.ts"),
     join(root, "src/lib/collect-form-config.ts"),
+    join(root, "src/lib/collect-referral.ts"),
+    join(root, "src/lib/mask.ts"),
+    join(root, "src/lib/webinar-share.ts"),
     join(root, "src/lib/color.ts"),
     join(root, "src/lib/dom/h.ts"),
     join(root, "src/lib/expo/css.ts"),

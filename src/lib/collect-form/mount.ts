@@ -10,6 +10,7 @@
  * React 를 쓰지 않는다 — 이 파일은 esbuild 로 번들되어 남의 사이트 문서에서 돈다.
  * DOM 은 `h()` 로만 만든다(innerHTML 금지 — src/lib/__tests__/embed-runtime.test.ts 가 강제).
  */
+import { buildInviteUrl, normalizeReferralCode, REFERRAL_QUERY_KEY, referralBoardPath } from "@/lib/collect-referral";
 import { h, clearNode } from "@/lib/dom/h";
 import { safeRichTextFragment } from "@/lib/dom/safe-rich-text";
 import { onAccentColor } from "@/lib/competition-render";
@@ -377,6 +378,16 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
     values[config.branch.fieldKey] = typeOptions[0].value;
   }
   let doneTicketKey: string | null = null;
+  /** 친구 초대 — 이 등록자의 추천 코드(서버가 폼에서 추천을 켰을 때만 준다) */
+  let doneShareCode: string | null = null;
+  /**
+   * 이 페이지를 연 링크의 추천 코드(`?ref=`). 임베드된 호스트 페이지 주소에서 읽는다.
+   * 미리보기에서는 읽지 않는다(운영자 화면 주소에 붙은 값으로 실제 추천이 잡히면 안 된다).
+   */
+  const incomingRef = (() => {
+    if (opts.preview === true || typeof window === "undefined") return "";
+    try { return normalizeReferralCode(new URL(window.location.href).searchParams.get(REFERRAL_QUERY_KEY)); } catch { return ""; }
+  })();
 
   const issueFor = (key: string) => issues.find((i) => i.key === key);
   const clearIssue = (key: string) => {
@@ -1120,10 +1131,11 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
           locale: lang,
           _hp: honeypot.value || "",
           _utm: utmEnvelope(),
+          ...(incomingRef ? { _ref: incomingRef } : {}),
         }),
       });
       const data = (await res.json().catch(() => null)) as
-        | { ticketKey?: string; registrationNo?: string | null; rid?: string; issues?: SubmissionIssue[]; duplicateField?: string; duplicateKey?: string; status?: string }
+        | { shareCode?: string; ticketKey?: string; registrationNo?: string | null; rid?: string; issues?: SubmissionIssue[]; duplicateField?: string; duplicateKey?: string; status?: string }
         | null;
 
       /**
@@ -1140,6 +1152,7 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
       if (res.status === 201 && data?.registrationNo) {
         doneRegNo = data.registrationNo;
         doneTicketKey = data.ticketKey ?? null;
+        doneShareCode = data.shareCode ?? null;
         track(preview, "generate_lead", {
           visitor_type: visitorType,
           transaction_id: data.rid ?? data.registrationNo,
@@ -1280,6 +1293,50 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
     }, COPY.ticketLink);
   }
 
+  /**
+   * 친구 초대 카드 — 공유하기(휴대폰의 공유 창: 카카오톡·왓츠앱·인스타그램 DM·LINE … 깔린 앱이 뜬다)
+   * + 링크 복사(공유 창이 없는 PC). 순위는 여기서 보여 주지 않는다 — 경쟁할 생각 없는 사람에게
+   * 계속 노출하지 않으려고, 궁금한 사람만 "추천 순위 보기"를 눌러 따로 본다.
+   * 미리보기에서는 예시 코드로 모양만 보여 준다(버튼은 동작하지 않는다).
+   */
+  function inviteCard(): HTMLElement | null {
+    if (!config.referral.enabled) return null;
+    const code = doneShareCode ?? (preview ? "PREVIEW000" : null);
+    if (!code) return null;
+    const inviteUrl = buildInviteUrl(typeof window === "undefined" ? opts.origin : window.location.href, code);
+    const status = h("div", { class: "msf-invite-status", role: "status", "aria-live": "polite" });
+    const copy = async () => {
+      if (preview) return;
+      try {
+        await navigator.clipboard.writeText(inviteUrl);
+        status.textContent = COPY.inviteCopied;
+      } catch {
+        window.prompt(COPY.inviteCopy, inviteUrl);
+      }
+    };
+    const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+    return h("div", { class: "msf-invite" },
+      h("div", { class: "msf-invite-title" }, COPY.inviteTitle),
+      h("div", { class: "msf-invite-body" }, COPY.inviteBody),
+      h("div", { class: "msf-invite-actions" },
+        canShare ? h("button", {
+          type: "button",
+          class: "msf-invite-btn msf-invite-primary",
+          onclick: () => { if (!preview) void navigator.share({ title: config.legal.eventName || document.title, url: inviteUrl }).catch(() => undefined); },
+        }, COPY.inviteShare) : null,
+        h("button", { type: "button", class: canShare ? "msf-invite-btn" : "msf-invite-btn msf-invite-primary", onclick: () => { void copy(); } }, COPY.inviteCopy),
+      ),
+      status,
+      preview ? null : h("a", {
+        class: "msf-more",
+        href: `${opts.origin}${referralBoardPath(opts.sourceId)}`,
+        target: "_blank",
+        rel: "noopener noreferrer",
+        style: { marginTop: "8px", display: "inline-block" },
+      }, COPY.inviteBoard),
+    );
+  }
+
   function saveTicketLink(regNo: string, identity: ReturnType<typeof completionIdentity>): HTMLElement | null {
     if (preview) return null;
     return h("button", {
@@ -1398,6 +1455,7 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
           config.completion.showQr ? saveTicketLink(doneRegNo, identity) : null,
           !preview && config.completion.showQr ? h("div", { class: "msf-save-hint" }, COPY.saveHint) : null,
           ticketLink(doneRegNo),
+          inviteCard(),
         ),
       );
       return;
