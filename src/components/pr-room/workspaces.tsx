@@ -29,6 +29,7 @@ import {
   type ResearchAgent,
   buildPressReleasePrompt,
   isOwnChannel,
+  mergeComments,
   parseClaudeResearch,
   releaseLabel,
   type PressAnswers,
@@ -114,11 +115,18 @@ function useRoom(projectId: string) {
   }, [projectId]);
   return { data, setData, error, load };
 }
+/**
+ * 저장 요청 크기 상한. 홍보실은 저장할 때마다 언급 전체를 보내는데 서버(Vercel 함수)는 4.5MB 넘는
+ * 요청을 받지 않는다 — 넘으면 저장이 통째로 실패하고 무엇 때문인지도 안 보인다. 여유를 두고 먼저 막는다.
+ */
+const MAX_SAVE_BYTES = 4_000_000;
+
 async function save(projectId: string, body: Record<string, unknown>, expectedUpdatedAt: string) {
-  return api<Loaded>("/api/pr-room", {
-    method: "PATCH",
-    body: JSON.stringify({ projectId, ...body, expectedUpdatedAt }),
-  });
+  const payload = JSON.stringify({ projectId, ...body, expectedUpdatedAt });
+  if (new Blob([payload]).size > MAX_SAVE_BYTES) {
+    throw new Error("저장할 내용이 너무 커요(댓글이 아주 많은 게시물이 있어요). 댓글이 많은 게시물은 댓글을 줄여 다시 가져오거나, 오래된 언급을 정리해 주세요.");
+  }
+  return api<Loaded>("/api/pr-room", { method: "PATCH", body: payload });
 }
 
 export function MentionWorkspace({ projectId }: { projectId: string }) {
@@ -388,11 +396,30 @@ function AiResearchWorkspace({
       const parsed = parseClaudeResearch(value);
       // 프롬프트에서 우리 채널은 빼 달라고 했지만, Claude 가 그래도 포함할 수 있어 한 번 더 거른다.
       const fresh = parsed.filter((x) => !known.has(x.url) && !excludedUrls.has(x.url) && !isOwnChannel(x.url, ownChannels));
+      // 이미 저장된 글이면 버리지 않고 새로 찾은 댓글·반응 수만 더한다(다시 조사해 댓글을 모으는 경우).
+      const updates = new Map(parsed.filter((x) => known.has(x.url) && !excludedUrls.has(x.url)).map((x) => [x.url, x]));
+      let refreshed = 0;
+      const merged = mentions.map((m) => {
+        const row = updates.get(m.url);
+        if (!row) return m;
+        const comments = mergeComments(m.comments, row.comments);
+        const metrics = row.metrics ? { ...m.metrics, ...row.metrics } : m.metrics;
+        const changed = (comments?.length ?? 0) !== (m.comments?.length ?? 0) || JSON.stringify(metrics) !== JSON.stringify(m.metrics) || (!m.publishedAt && !!row.publishedAt);
+        if (!changed) return m;
+        refreshed += 1;
+        return { ...m, comments, metrics, publishedAt: m.publishedAt ?? row.publishedAt };
+      });
       // 조사문에 기간을 적어 보내도 AI 가 기간 밖의 글을 섞을 수 있다 — 한 번 더 거른다. 날짜를 모르는 글은 남긴다.
       const rows = fresh.filter((x) => rangeContains(range, x.publishedAt) !== false);
       const outOfRange = fresh.length - rows.length;
       const undated = rows.filter((x) => !x.publishedAt).length;
       const skippedOwnChannel = parsed.length - parsed.filter((x) => !isOwnChannel(x.url, ownChannels)).length;
+      if (!rows.length && refreshed) {
+        setData(await save(projectId, { mentions: merged, lastCollectedAt: new Date().toISOString() }, data.room.updatedAt));
+        setValue("");
+        toast.success(`새 글은 없고, 이미 저장된 글 ${refreshed}건의 댓글·반응을 새로 반영했어요.`);
+        return;
+      }
       if (!rows.length) {
         toast.info(outOfRange ? `조사 기간(${rangeLabel(range)}) 밖의 글 ${outOfRange}건을 빼고 나니 새로 가져올 글이 없어요.` : parsed.length ? "모두 이미 저장되었거나 제외한 URL이에요. AI에 기존 URL을 제외하고 추가 조사해 달라고 요청해 주세요." : "조사 결과가 비어 있어요. Claude에서 추가 조사한 결과를 붙여 넣어 주세요.");
         return;
@@ -406,9 +433,9 @@ function AiResearchWorkspace({
         collectedAt: now,
         origin: agent,
       }));
-      setData(await save(projectId, { mentions: [...added, ...mentions], lastCollectedAt: now }, data.room.updatedAt));
+      setData(await save(projectId, { mentions: [...added, ...merged], lastCollectedAt: now }, data.room.updatedAt));
       setValue("");
-      toast.success(`${agentName} 조사 결과 ${added.length}건을 가져왔어요.${outOfRange ? ` 기간 밖 ${outOfRange}건은 뺐어요.` : ""}${undated ? ` 게시일 모름 ${undated}건은 '원문 일자 채우기'로 확인해 보세요.` : ""}${parsed.length > fresh.length ? ` 기존·제외 URL ${parsed.length - fresh.length}건은 건너뛰었어요.` : ""}${skippedOwnChannel ? ` (우리 채널 ${skippedOwnChannel}건 포함)` : ""}`);
+      toast.success(`${agentName} 조사 결과 ${added.length}건을 가져왔어요.${outOfRange ? ` 기간 밖 ${outOfRange}건은 뺐어요.` : ""}${undated ? ` 게시일 모름 ${undated}건은 '원문 일자 채우기'로 확인해 보세요.` : ""}${refreshed ? ` 이미 저장된 글 ${refreshed}건은 댓글·반응을 새로 반영했어요.` : ""}${parsed.length - fresh.length - refreshed > 0 ? ` 기존·제외 URL ${parsed.length - fresh.length - refreshed}건은 건너뛰었어요.` : ""}${skippedOwnChannel ? ` (우리 채널 ${skippedOwnChannel}건 포함)` : ""}`);
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "결과를 가져오지 못했어요.");
       await reload();
@@ -690,9 +717,14 @@ function MentionList({
                 )}
                 {!!x.comments?.length && (
                   <details className="mt-3 rounded-lg bg-secondary/50 px-3 py-2 text-sm">
-                    <summary className="cursor-pointer font-medium">공개 댓글 {x.comments.length}개 보기</summary>
-                    <div className="mt-2 divide-y divide-border/60">
-                      {x.comments.map((comment,index)=><div key={`${comment.author}-${index}`} className="py-2"><p className="text-xs font-medium text-muted-foreground">{comment.author?`@${comment.author}`:"작성자 미확인"}{comment.likes!==undefined?` · 좋아요 ${comment.likes.toLocaleString()}`:""}</p><p className="mt-1 whitespace-pre-wrap leading-6">{comment.text}</p></div>)}
+                    <summary className="cursor-pointer font-medium">
+                      댓글 {x.comments.length.toLocaleString()}개 보기
+                      {x.metrics?.comments !== undefined && x.metrics.comments > x.comments.length && (
+                        <span className="ml-1 font-normal text-muted-foreground">(전체 {x.metrics.comments.toLocaleString()}개 중)</span>
+                      )}
+                    </summary>
+                    <div className="mt-2 max-h-[28rem] divide-y divide-border/60 overflow-y-auto pr-1">
+                      {x.comments.map((comment,index)=><div key={`${comment.author}-${index}`} className={`py-2 ${comment.isReply ? "ml-4 border-l-2 border-border pl-3" : ""}`}><p className="text-xs font-medium text-muted-foreground">{comment.isReply ? "↳ " : ""}{comment.author?`@${comment.author.replace(/^@/, "")}`:"작성자 미확인"}{comment.likes!==undefined?` · 좋아요 ${comment.likes.toLocaleString()}`:""}{comment.publishedAt?` · ${new Date(comment.publishedAt).toLocaleDateString("ko-KR")}`:""}</p><p className="mt-1 whitespace-pre-wrap break-words leading-6">{comment.text}</p></div>)}
                     </div>
                   </details>
                 )}
