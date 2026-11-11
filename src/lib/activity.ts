@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { mergeChangeLines } from "@/lib/webinar-change-summary";
 
 export type ActivityAction =
   | "source.created"
@@ -155,5 +156,67 @@ export async function logActivity(args: {
   } catch (e) {
     // 로그 실패는 본 작업을 방해하지 않음
     console.error("[activity] failed to log", args.action, e);
+  }
+}
+
+/** 같은 사람이 이 시간 안에 같은 웨비나를 또 고치면 새 줄을 만들지 않고 앞 줄에 합친다. */
+export const WEBINAR_UPDATE_MERGE_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * 웨비나 설정 변경을 기록한다. details 는 summarizeWebinarChanges 가 만든 "무엇이 바뀌었나" 문장들.
+ *
+ * 편집 화면은 자동 저장이라 몇 초마다 저장된다. 저장마다 한 줄씩 쌓으면 로그가 같은 줄로
+ * 덮이고 정작 무엇을 했는지는 찾을 수 없어서, 바뀐 게 없으면 남기지 않고, 10분 안에 같은
+ * 사람이 이어서 고친 것은 앞 줄에 합친다(시각은 마지막 저장 시각으로 올린다).
+ */
+export async function logWebinarUpdate(args: {
+  workspaceId: string;
+  userId: string;
+  webinarId: string;
+  webinarName: string;
+  details: string[];
+}) {
+  if (args.details.length === 0) return;
+  try {
+    const since = new Date(Date.now() - WEBINAR_UPDATE_MERGE_WINDOW_MS);
+    const recent = await prisma.activityLog.findFirst({
+      where: {
+        workspaceId: args.workspaceId,
+        userId: args.userId,
+        action: "webinar.updated",
+        createdAt: { gte: since },
+        meta: { path: ["webinarId"], equals: args.webinarId },
+      },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, meta: true },
+    });
+    const previous = recent?.meta && typeof recent.meta === "object" && !Array.isArray(recent.meta)
+      ? (recent.meta as Record<string, unknown>).details
+      : null;
+    if (recent && Array.isArray(previous)) {
+      const merged = mergeChangeLines(previous.filter((d): d is string => typeof d === "string"), args.details);
+      await prisma.activityLog.update({
+        where: { id: recent.id },
+        data: {
+          createdAt: new Date(),
+          meta: {
+            webinarId: args.webinarId,
+            webinarName: args.webinarName,
+            details: merged.length ? merged : ["변경했다가 원래대로 되돌림"],
+          },
+        },
+      });
+      return;
+    }
+    await prisma.activityLog.create({
+      data: {
+        workspaceId: args.workspaceId,
+        userId: args.userId,
+        action: "webinar.updated",
+        meta: { webinarId: args.webinarId, webinarName: args.webinarName, details: args.details },
+      },
+    });
+  } catch (e) {
+    console.error("[activity] failed to log webinar.updated", e);
   }
 }

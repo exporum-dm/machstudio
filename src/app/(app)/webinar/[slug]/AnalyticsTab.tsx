@@ -204,7 +204,7 @@ interface CurveData {
   hasData: boolean;
 }
 
-interface ActivityItem { id: string; action: string; label: string; at: string; actor: string | null }
+interface ActivityItem { id: string; action: string; label: string; details?: string[]; at: string; actor: string | null }
 
 type Range = "all" | "60m" | "30m";
 
@@ -1223,7 +1223,8 @@ export default function AnalyticsTab({ webinarId }: { webinarId: string }) {
       const key = `${label}|${a.label}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      out.push({ label, text: a.label });
+      // 세부 문장이 있으면 그쪽이 더 구체적이다(예: "방송 상태: 사전등록 → 라이브").
+      out.push({ label, text: a.details?.[0] ?? a.label });
       if (out.length >= 12) break;
     }
     return out;
