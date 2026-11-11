@@ -24,6 +24,12 @@ const ROOM = {
       id: "m1", title: "인디뷰티쇼, 해외 바이어 1천여 명 사전 등록", url: "https://news.example.com/a1", source: "뷰티경제",
       channel: "press", sentiment: "positive", status: "new", riskLevel: "watch", excerpt: "", responseNote: "",
       publishedAt: "2026-11-05T01:00:00.000Z", collectedAt: "2026-11-10T01:00:00.000Z", origin: "aside",
+      metrics: { likes: 120, comments: 48 },
+      comments: [
+        { author: "beauty_kim", text: "부스 너무 예뻤어요! 내년에도 갈게요", likes: 12, publishedAt: "2026-11-06T02:00:00.000Z" },
+        { author: "indie_brand", text: "감사합니다 :)", isReply: true, publishedAt: "2026-11-06T03:00:00.000Z" },
+        { author: "lee_buyer", text: "해외 바이어 상담 존이 따로 있었나요?", likes: 3 },
+      ],
     },
   ],
   pressReleases: [],

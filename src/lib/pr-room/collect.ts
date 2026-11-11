@@ -4,7 +4,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { safeFetchText } from "@/lib/brief/link-preview";
 import { googleNewsUrl, parseFeed } from "@/lib/brief/sources";
-import { analyzeMention, isOwnChannel, type ExcludedMentionRule, type PrMention } from "./model";
+import { analyzeMention, isOwnChannel, mergeComments, type ExcludedMentionRule, type PrMention } from "./model";
 
 const SOCIAL_SOURCES = [
   { domain: "instagram.com", channel: "sns" as const, label: "Instagram" },
@@ -413,7 +413,7 @@ export async function collectPrRoom(roomId: string, now = new Date(), range: Res
           source: row.source,
           author: row.author ?? item.author,
           metrics: row.metrics ?? item.metrics,
-          comments: row.comments?.length ? row.comments : item.comments,
+          comments: mergeComments(item.comments, row.comments),
           publishedAt: row.publishedAt?.toISOString() ?? item.publishedAt,
         }
       : { ...item, title: cleanText(item.title) };

@@ -16,8 +16,51 @@ export interface PrMention {
   collectedAt: string;
   author?: string;
   metrics?: { views?:number; likes?:number; comments?:number; shares?:number; saves?:number };
-  comments?: { author?:string; text:string; likes?:number }[];
+  comments?: PrComment[];
   origin?: "search" | "reference" | "naver-api" | "claude" | "aside" | "manual";
+}
+
+export interface PrComment {
+  author?: string;
+  text: string;
+  likes?: number;
+  /** 댓글을 단 날짜(알 때만) */
+  publishedAt?: string;
+  /** 다른 댓글에 단 답글인지 */
+  isReply?: boolean;
+}
+
+/** 글 하나에 보관하는 댓글 수 상한 — 인기 게시물 하나가 홍보실 저장 용량을 다 쓰지 않게. */
+export const MAX_COMMENTS_PER_MENTION = 200;
+/** 댓글 한 개의 글자 수 상한 — 저장 요청이 4.5MB 를 넘지 않게. */
+export const MAX_COMMENT_CHARS = 1000;
+
+const commentKey = (c: PrComment) => `${(c.author ?? "").trim().toLowerCase().replace(/^@/, "")}|${c.text.replace(/\s+/g, " ").trim()}`;
+
+/**
+ * 같은 글을 다시 조사했을 때 댓글을 합친다 — 이미 있던 댓글은 그대로 두고(좋아요 수만 큰 쪽으로),
+ * 새로 찾은 댓글을 뒤에 붙인다. 예전엔 이미 저장된 글이면 통째로 건너뛰어 새 댓글이 들어오지 않았다.
+ */
+export function mergeComments(previous: PrComment[] | undefined, next: PrComment[] | undefined): PrComment[] | undefined {
+  if (!next?.length) return previous;
+  if (!previous?.length) return next.slice(0, MAX_COMMENTS_PER_MENTION);
+  const out = previous.map((c) => ({ ...c }));
+  const index = new Map(out.map((c, i) => [commentKey(c), i]));
+  for (const c of next) {
+    const at = index.get(commentKey(c));
+    if (at === undefined) {
+      index.set(commentKey(c), out.length);
+      out.push(c);
+      continue;
+    }
+    const old = out[at];
+    out[at] = {
+      ...old,
+      ...(c.likes !== undefined && (old.likes === undefined || c.likes > old.likes) ? { likes: c.likes } : {}),
+      ...(!old.publishedAt && c.publishedAt ? { publishedAt: c.publishedAt } : {}),
+    };
+  }
+  return out.slice(0, MAX_COMMENTS_PER_MENTION);
 }
 
 export interface ExcludedMentionRule { title:string; excerpt:string; source:string; channel:PrMention["channel"] }
@@ -81,7 +124,10 @@ function asideGuide(range: ResearchRange | null) {
 - 검색 결과 목록이 아니라 개별 게시물을 열어 원문 URL, 게시일, 작성자, 반응 수(조회·좋아요·댓글·공유), 대표 댓글을 확인하세요.
 - 읽기만 하세요. 좋아요·팔로우·댓글·메시지·공유·저장처럼 계정에 흔적이 남는 행동은 절대 하지 마세요.
 - 비공개 계정·비공개 그룹·회원 전용 카페 글은 제외하세요. 작성자가 공개하지 않은 글입니다.
-- 오래 걸려도 괜찮습니다. 결과가 많으면 50건씩 나눠 JSON 배열로 출력하세요.
+- 댓글을 빠짐없이 모으세요. 댓글이 있는 게시물은 "댓글 더 보기"·"답글 보기"를 끝까지 눌러 펼친 뒤, 보이는 댓글을 모두 comments 에 넣으세요(게시물당 최대 ${MAX_COMMENTS_PER_MENTION}개). 네이버 뉴스·YouTube·블로그 댓글도 포함입니다.
+- 댓글은 번역·요약하지 말고 원문 그대로 적고, 작성자·좋아요 수·작성일(보이면)·답글 여부(isReply)를 함께 적으세요. 펼치기 클릭은 괜찮지만 댓글을 달거나 좋아요를 누르면 안 됩니다.
+- 이미 저장된 URL이라도 댓글이 새로 달렸으면 그 게시물을 다시 출력하세요. mach 가 같은 URL의 새 댓글만 골라 더합니다.
+- 오래 걸려도 괜찮습니다. 결과가 많으면 50건씩 나눠 JSON 배열로 출력하고, 댓글이 아주 많은 게시물은 그 게시물만 따로 한 묶음으로 출력하세요.
 `;
 }
 
@@ -136,7 +182,7 @@ ${knownUrls.slice(0, 300).join("\n") || "없음"}
 ${excludedRules.slice(0, 50).map((x) => `- [${x.channel}] ${x.title} / ${x.excerpt}`).join("\n") || "없음"}
 
 설명이나 마크다운 없이 유효한 JSON 배열만 출력하세요. 속성명과 문자열은 반드시 큰따옴표로 감싸고, 마지막 항목 뒤에 쉼표를 넣지 마세요. 각 항목은 아래 형식입니다. channel과 sentiment는 |로 연결된 예시 중 하나의 값만 사용하세요. 날짜를 모르면 문자열이 아닌 null을 쓰고, 확인하지 못한 수치와 선택 필드는 생략하세요.
-[{"title":"원문 제목","url":"https://...","source":"매체 또는 플랫폼","channel":"press|sns|comment|community|web","excerpt":"확인한 내용 요약","author":"작성자 또는 기자","publishedAt":"YYYY-MM-DD 또는 null","sentiment":"positive|neutral|negative","metrics":{"views":0,"likes":0,"comments":0,"shares":0,"saves":0},"comments":[{"author":"작성자","text":"댓글 원문","likes":0}]}]`;
+[{"title":"원문 제목","url":"https://...","source":"매체 또는 플랫폼","channel":"press|sns|comment|community|web","excerpt":"확인한 내용 요약","author":"작성자 또는 기자","publishedAt":"YYYY-MM-DD 또는 null","sentiment":"positive|neutral|negative","metrics":{"views":0,"likes":0,"comments":0,"shares":0,"saves":0},"comments":[{"author":"작성자","text":"댓글 원문","likes":0,"publishedAt":"YYYY-MM-DD 또는 생략","isReply":false}]}]`;
 }
 
 /** @deprecated buildResearchPrompt 를 쓰세요 — Claude 용 기본값으로 같은 조사문을 만든다. */
@@ -186,8 +232,15 @@ export function parseClaudeResearch(value: string): ClaudeResearchMention[] {
       const comments = Array.isArray(item.comments) ? item.comments.flatMap((comment) => {
         if (!comment || typeof comment !== "object" || typeof (comment as Record<string, unknown>).text !== "string") return [];
         const row = comment as Record<string, unknown>;
-        return [{ text: String(row.text).trim(), ...(typeof row.author === "string" ? { author: row.author } : {}), ...(typeof row.likes === "number" && row.likes >= 0 ? { likes: row.likes } : {}) }];
-      }).filter((x) => x.text).slice(0, 50) : undefined;
+        const date = typeof row.publishedAt === "string" && !Number.isNaN(new Date(row.publishedAt).getTime()) ? new Date(row.publishedAt).toISOString() : null;
+        return [{
+          text: String(row.text).trim().slice(0, MAX_COMMENT_CHARS),
+          ...(typeof row.author === "string" ? { author: row.author } : {}),
+          ...(typeof row.likes === "number" && row.likes >= 0 ? { likes: row.likes } : {}),
+          ...(date ? { publishedAt: date } : {}),
+          ...(row.isReply === true ? { isReply: true } : {}),
+        }];
+      }).filter((x) => x.text).slice(0, MAX_COMMENTS_PER_MENTION) : undefined;
       rows.push({ title, url: parsedUrl.href, source, channel, excerpt: typeof item.excerpt === "string" ? item.excerpt.trim() : "", publishedAt: published, ...(typeof item.author === "string" ? { author: item.author.trim() } : {}), ...(sentiment ? { sentiment } : {}), ...(metrics && Object.keys(metrics).length ? { metrics } : {}), ...(comments?.length ? { comments } : {}) });
     } catch { continue; }
   }
