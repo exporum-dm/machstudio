@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma";
-import { logActivity } from "@/lib/activity";
+import { logActivity, logWebinarUpdate } from "@/lib/activity";
+import { summarizeWebinarChanges } from "@/lib/webinar-change-summary";
 import { isWebinarStatusOverride } from "@/lib/webinar-status";
 import { assertScheduleOrder, parseWebinarDate, WebinarScheduleError } from "@/lib/webinar-schedule";
 
@@ -151,14 +152,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     throw e;
   }
 
-  const changed = Object.keys(body).filter((k) =>
-    ["name", "description", "liveStartAt", "liveEndAt", "signupDeadline", "theme", "config", "statusOverride", "components"].includes(k),
-  );
-  await logActivity({
+  // 저장 전·후를 비교해 실제로 바뀐 것만 남긴다 — 자동 저장이 같은 값을 다시 보내도 로그가 쌓이지 않는다.
+  await logWebinarUpdate({
     workspaceId: webinar.workspaceId,
     userId: user.id,
-    action: "webinar.updated",
-    meta: { webinarId: id, changes: changed },
+    webinarId: id,
+    webinarName: updated.name,
+    details: summarizeWebinarChanges(webinar, updated),
   });
 
   return NextResponse.json({ webinar: updated });

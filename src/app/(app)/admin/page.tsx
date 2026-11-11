@@ -7,6 +7,7 @@ import {
   Clock3,
   Database,
   FolderKanban,
+  GitMerge,
   Gauge,
   KeyRound,
   Layers,
@@ -26,6 +27,10 @@ import { prisma } from "@/lib/prisma";
 import { formatKstDateTime } from "@/lib/datetime";
 import { isSuperAdminEmail, isRootSuperAdmin, SUPER_ADMIN_EMAIL } from "@/lib/super-admin";
 import { checkSuperAdminAccess } from "@/lib/super-admin-server";
+import { ACTIVITY_CATEGORIES, activityLabel, activityTarget, type ActivityNames } from "@/lib/activity-labels";
+import { DEV_LOG_REPO, fetchDevLog } from "@/lib/dev-log";
+import { ActivityCategoryChips, ActivityLogList } from "./ActivityLogList";
+import { DevLogList } from "./DevLogList";
 import {
   deleteUserAction,
   deleteWorkspacePermanentlyAction,
@@ -40,7 +45,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-type AdminView = "overview" | "system" | "users" | "workspaces" | "projects" | "activity";
+type AdminView = "overview" | "system" | "users" | "workspaces" | "projects" | "activity" | "devlog";
 
 type AdminSearchParams = Promise<{
   q?: string | string[];
@@ -48,6 +53,8 @@ type AdminSearchParams = Promise<{
   message?: string | string[];
   /** 목록에 보여 줄 개수 — "더보기" 를 누를 때마다 늘어난다 */
   limit?: string | string[];
+  /** 활동 로그 거르기(ACTIVITY_CATEGORIES 의 id) */
+  cat?: string | string[];
 }>;
 
 /** 사용자·워크스페이스·프로젝트·수집 소스 목록을 한 번에 몇 개씩 보여 줄지. */
@@ -65,119 +72,9 @@ const adminViews: Array<{
   { id: "users", icon: Users, label: "사용자", desc: "가입과 삭제" },
   { id: "workspaces", icon: Layers, label: "워크스페이스", desc: "고객 단위" },
   { id: "projects", icon: Database, label: "프로젝트/데이터", desc: "수집 흐름" },
-  { id: "activity", icon: Activity, label: "활동 로그", desc: "감사 이력" },
+  { id: "activity", icon: Activity, label: "활동 로그", desc: "누가 무엇을 바꿨나" },
+  { id: "devlog", icon: GitMerge, label: "개발 로그", desc: "운영에 배포된 변경" },
 ];
-
-const ACTIVITY_LABELS: Record<string, string> = {
-  "source.created": "사전등록 폼 생성",
-  "source.updated": "사전등록 폼 설정 변경",
-  "source.deleted": "사전등록 폼 삭제",
-  "source.key_regenerated": "API 키 재발급",
-  "source.preview_token_regenerated": "미리보기 링크 재발급",
-  "record.created": "레코드 생성",
-  "record.updated": "레코드 수정",
-  "record.deleted": "레코드 삭제",
-  "records.bulk_deleted": "레코드 대량 삭제",
-  "records.imported": "레코드 가져오기",
-  "records.cleaned": "데이터 정리",
-  "records.normalized": "데이터 정규화",
-  "records.exported": "레코드 내보내기",
-  "collect.records.exported": "사전등록 내보내기",
-  "collect.checkin_updated": "현장 체크인 설정",
-  "collect.checkin_imported": "스캐너 파일 가져오기",
-  "workspace.member.invited": "팀원 초대",
-  "workspace.member.role_changed": "팀원 권한 변경",
-  "workspace.member.removed": "팀원 제거",
-  "apiToken.created": "API 토큰 발급",
-  "apiToken.revoked": "API 토큰 회수",
-  "dashboardShareToken.rotated": "대시보드 공유 토큰 회전",
-  "dashboard.share_password_set": "대시보드 공유 비밀번호 설정",
-  "dashboard.share_password_removed": "대시보드 공유 비밀번호 해제",
-  "analytics.share_enabled": "광고 성과 공유 활성화",
-  "analytics.share_disabled": "광고 성과 공유 비활성화",
-  "analytics.share_token_rotated": "광고 성과 공유 토큰 회전",
-  "analytics.share_password_set": "광고 성과 공유 비밀번호 설정",
-  "analytics.share_password_removed": "광고 성과 공유 비밀번호 해제",
-  "dashboard.realtime_share_enabled": "대시보드 공유 활성화",
-  "dashboard.realtime_share_disabled": "대시보드 공유 비활성화",
-  "dashboard.realtime_share_token_rotated": "대시보드 공유 토큰 회전",
-  "dashboard.realtime_share_password_set": "대시보드 공유 비밀번호 설정",
-  "dashboard.realtime_share_password_removed": "대시보드 공유 비밀번호 해제",
-  "summary.share_enabled": "요약 대시보드 공유 활성화",
-  "summary.share_disabled": "요약 대시보드 공유 비활성화",
-  "summary.share_token_rotated": "요약 대시보드 공유 토큰 회전",
-  "webinar.registrations.exported": "웨비나 등록자 내보내기",
-  "scheduledReport.delivered": "리포트 발송 성공",
-  "scheduledReport.delivery_failed": "리포트 발송 실패",
-  "utm.created": "UTM 링크 생성",
-  "utm.updated": "UTM 링크 수정",
-  "utm.deleted": "UTM 링크 삭제",
-  "ad.batch_uploaded": "광고 데이터 업로드",
-  "ad.batch_deleted": "광고 데이터 삭제",
-  "ad.source_synced": "광고 시트 동기화",
-  "webinar.created": "웨비나 생성",
-  "webinar.updated": "웨비나 수정",
-  "webinar.deleted": "웨비나 삭제",
-  "webinar.session_created": "웨비나 세션 생성",
-  "webinar.session_updated": "웨비나 세션 수정",
-  "webinar.session_deleted": "웨비나 세션 삭제",
-  "webinar.sessions_reordered": "웨비나 세션 순서 변경",
-  "webinar.survey_response_deleted": "설문 응답 삭제",
-  "webinar.announcement_created": "웨비나 공지 생성",
-  "webinar.announcement_updated": "웨비나 공지 수정",
-  "webinar.announcement_deleted": "웨비나 공지 삭제",
-  "webinar.registration_deleted": "웨비나 등록자 삭제",
-  "dashboard.created": "대시보드 생성",
-  "dashboard.updated": "대시보드 수정",
-  "dashboard.deleted": "대시보드 삭제",
-  "dashboard.widget_created": "위젯 추가",
-  "dashboard.widget_updated": "위젯 수정",
-  "dashboard.widget_deleted": "위젯 삭제",
-  "dashboard.widgets_reordered": "위젯 순서 변경",
-  "dashboard.report_scheduled": "리포트 예약",
-  "dashboard.report_deleted": "리포트 예약 해제",
-  "project.created": "프로젝트 생성",
-  "project.updated": "프로젝트 수정",
-  "project.deleted": "프로젝트 삭제",
-  "project.member_added": "프로젝트 멤버 추가",
-  "project.member_removed": "프로젝트 멤버 제거",
-  "project.member_role_changed": "프로젝트 멤버 권한 변경",
-  "source.fields_updated": "수집 필드 설정 변경",
-  "source.retention_updated": "보관 정책 변경",
-  "source.script_regenerated": "수집 스크립트 재생성",
-  "utmPreset.created": "UTM 프리셋 생성",
-  "utmPreset.updated": "UTM 프리셋 수정",
-  "utmPreset.deleted": "UTM 프리셋 삭제",
-  "utmTemplate.created": "UTM 템플릿 생성",
-  "utmTemplate.updated": "UTM 템플릿 수정",
-  "utmTemplate.deleted": "UTM 템플릿 삭제",
-  "shortLink.created": "단축 URL 생성",
-  "shortLink.updated": "단축 URL 수정",
-  "shortLink.deleted": "단축 URL 삭제",
-  "workspace.created": "워크스페이스 생성",
-  "workspace.renamed": "워크스페이스 이름 변경",
-  "workspace.consent_template_updated": "약관 템플릿 변경",
-  "workspace.deleted": "워크스페이스 삭제",
-  "invitation.redeemed": "초대 등록",
-  "invitation.accepted": "초대 수락",
-  "invitation.declined": "초대 거절",
-  "admin.workspace_renamed": "관리자 — 워크스페이스 이름 변경",
-  "admin.workspace_archived": "관리자 — 워크스페이스 보관",
-  "admin.workspace_restored": "관리자 — 워크스페이스 복구",
-  "admin.project_updated": "관리자 — 프로젝트 변경",
-  "admin.project_archived": "관리자 — 프로젝트 보관",
-  "admin.project_restored": "관리자 — 프로젝트 복구",
-  "admin.source_activated": "관리자 — 소스 활성화",
-  "admin.source_paused": "관리자 — 소스 일시중지",
-  "admin.user_deleted": "관리자 — 사용자 삭제",
-  "admin.workspace_permanently_deleted": "관리자 — 워크스페이스 영구 삭제",
-  "admin.super_admin_granted": "관리자 — 슈퍼어드민 권한 부여",
-  "admin.super_admin_revoked": "관리자 — 슈퍼어드민 권한 회수",
-};
-
-function adminActivityLabel(action: string): string {
-  return ACTIVITY_LABELS[action] ?? action;
-}
 
 function firstParam(value?: string | string[]) {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
@@ -445,6 +342,10 @@ export default async function SuperAdminPage({ searchParams }: { searchParams?: 
   const currentView = normalizeView(firstParam(params.view));
   const limit = Math.min(LIST_MAX, Math.max(LIST_PAGE, Number.parseInt(firstParam(params.limit), 10) || LIST_PAGE));
   const message = firstParam(params.message).trim();
+  const activityCat = ACTIVITY_CATEGORIES.find((c) => c.id === firstParam(params.cat))?.id ?? "";
+  /** 활동 로그는 한 번에 50건씩 — 다른 목록(20개)보다 줄이 짧고 하루치가 한 화면에 들어오게. */
+  const activityLimit = Math.min(LIST_MAX, Math.max(50, Number.parseInt(firstParam(params.limit), 10) || 50));
+  const activityPrefixes = ACTIVITY_CATEGORIES.find((c) => c.id === activityCat)?.prefixes ?? [];
   const selectedView = adminViews.find((view) => view.id === currentView) ?? adminViews[0];
 
   const supabase = await createClient();
@@ -622,19 +523,50 @@ export default async function SuperAdminPage({ searchParams }: { searchParams?: 
         _count: { select: { records: true, fieldMappings: true } },
       },
     }),
-    prisma.activityLog.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 12,
-      select: {
-        id: true,
-        action: true,
-        createdAt: true,
-        workspace: { select: { name: true } },
-        user: { select: { email: true, name: true } },
-      },
-    }),
+    currentView === "activity"
+      ? prisma.activityLog.findMany({
+          where: activityPrefixes.length ? { OR: activityPrefixes.map((p) => ({ action: { startsWith: p } })) } : {},
+          orderBy: { createdAt: "desc" },
+          take: activityLimit + 1, // 하나 더 읽어 "더 보기" 가 필요한지 안다
+          select: {
+            id: true,
+            action: true,
+            createdAt: true,
+            meta: true,
+            workspace: { select: { name: true } },
+            user: { select: { email: true, name: true } },
+            source: { select: { name: true } },
+          },
+        })
+      : Promise.resolve([]),
     getAuthUserMap(),
   ]);
+
+  // 활동 로그의 대상 이름 — meta 에는 id 만 남은 기록이 많아서 한 번에 모아 조회한다.
+  const hasMoreActivity = recentActivities.length > activityLimit;
+  const activityRows = recentActivities.slice(0, activityLimit);
+  const metaIds = (key: string) => [...new Set(activityRows.map((r) => {
+    const m = r.meta && typeof r.meta === "object" && !Array.isArray(r.meta) ? (r.meta as Record<string, unknown>)[key] : null;
+    return typeof m === "string" ? m : null;
+  }).filter((v): v is string => Boolean(v)))];
+  const [nameWebinars, nameCompetitions, nameDashboards, nameProjects, devLog] = await Promise.all([
+    metaIds("webinarId").length ? prisma.webinar.findMany({ where: { id: { in: metaIds("webinarId") } }, select: { id: true, name: true } }) : [],
+    metaIds("competitionId").length ? prisma.competition.findMany({ where: { id: { in: metaIds("competitionId") } }, select: { id: true, name: true } }) : [],
+    metaIds("dashboardId").length ? prisma.dashboard.findMany({ where: { id: { in: metaIds("dashboardId") } }, select: { id: true, name: true } }) : [],
+    metaIds("projectId").length ? prisma.project.findMany({ where: { id: { in: metaIds("projectId") } }, select: { id: true, name: true } }) : [],
+    currentView === "devlog" ? fetchDevLog() : Promise.resolve({ entries: [], error: null }),
+  ]);
+  const toMap = (rows: Array<{ id: string; name: string }>) => new Map(rows.map((r) => [r.id, r.name]));
+  const activityNames: ActivityNames = {
+    webinars: toMap(nameWebinars),
+    competitions: toMap(nameCompetitions),
+    dashboards: toMap(nameDashboards),
+    projects: toMap(nameProjects),
+  };
+  const deployedSha = process.env.VERCEL_GIT_COMMIT_SHA;
+  const deployed = deployedSha
+    ? { sha: deployedSha.slice(0, 7), message: (process.env.VERCEL_GIT_COMMIT_MESSAGE ?? "").split("\n")[0] }
+    : null;
 
   // 더보기 버튼에 "몇 개 중 몇 개" 를 보이려고 — 검색 조건까지 같은 수.
   const [userTotal, workspaceTotal, projectTotal, sourceTotal] = await Promise.all([
@@ -904,9 +836,9 @@ export default async function SuperAdminPage({ searchParams }: { searchParams?: 
                                       <div key={log.id} className="grid gap-1 px-3 py-2 sm:grid-cols-[1fr_auto] sm:items-center">
                                         <div className="min-w-0">
                                           <div className="flex flex-wrap items-center gap-1.5">
-                                            <span className="font-mono text-[11px] text-foreground">{adminActivityLabel(log.action)}</span>
-                                            {log.source?.name && (
-                                              <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">{log.source.name}</span>
+                                            <span className="font-mono text-[11px] text-foreground">{activityLabel(log.action)}</span>
+                                            {activityTarget(log.meta, {}, log.source?.name) && (
+                                              <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">{activityTarget(log.meta, {}, log.source?.name)}</span>
                                             )}
                                           </div>
                                           <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
@@ -1158,24 +1090,23 @@ export default async function SuperAdminPage({ searchParams }: { searchParams?: 
             )}
 
             {currentView === "activity" && (
+              <section className="mt-5 space-y-4">
+                <ActivityCategoryChips current={activityCat} />
+                <ActivityLogList rows={activityRows} names={activityNames} />
+                {hasMoreActivity && (
+                  <a
+                    href={`/admin?view=activity${activityCat ? `&cat=${activityCat}` : ""}&limit=${activityLimit + 50}`}
+                    className="block rounded-lg border border-border py-2 text-center text-sm text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    50건 더 보기
+                  </a>
+                )}
+              </section>
+            )}
+
+            {currentView === "devlog" && (
               <section className="mt-5">
-                <div className="divide-y divide-border border-t border-border">
-                  {recentActivities.length === 0 ? (
-                    <EmptyText>최근 활동 로그가 없습니다.</EmptyText>
-                  ) : (
-                    recentActivities.map((log) => (
-                      <div key={log.id} className="grid grid-cols-[1fr_auto] gap-4 py-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">{log.action}</p>
-                          <p className="mt-1 truncate text-xs text-muted-foreground">
-                            {log.workspace.name} · {log.user?.name || log.user?.email || "system"}
-                          </p>
-                        </div>
-                        <span className="shrink-0 text-xs text-muted-foreground">{formatKstDateTime(log.createdAt)}</span>
-                      </div>
-                    ))
-                  )}
-                </div>
+                <DevLogList entries={devLog.entries} error={devLog.error} repo={DEV_LOG_REPO} deployed={deployed} />
               </section>
             )}
           </main>

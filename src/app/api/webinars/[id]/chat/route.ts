@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { logActivity } from "@/lib/activity";
+import { logActivity, logWebinarUpdate } from "@/lib/activity";
 
 async function authorize(webinarId: string, userId: string) {
   // tick 폴링 라우트 — theme/config 등 큰 JSON 을 매번 끌어오지 않게 사용하는 컬럼만 select.
   const webinar = await prisma.webinar.findUnique({
     where: { id: webinarId },
-    select: { id: true, workspaceId: true, components: true, chatHideLinks: true, chatSlowSec: true, chatBannedWords: true, chatBannedRegIds: true },
+    select: { id: true, workspaceId: true, name: true, components: true, chatHideLinks: true, chatSlowSec: true, chatBannedWords: true, chatBannedRegIds: true },
   });
   if (!webinar) return null;
   const membership = await prisma.workspaceMember.findUnique({
@@ -97,11 +97,27 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
   const updated = await prisma.webinar.update({ where: { id }, data: data as never, select: { chatSlowSec: true, chatBannedWords: true } });
 
-  await logActivity({
+  const before = webinar as unknown as { name?: string; chatSlowSec?: number; chatBannedWords?: string[]; chatHideLinks?: boolean; components?: unknown };
+  const beforeChat = ((before.components ?? {}) as Record<string, unknown>).chatEnabled;
+  const details: string[] = [];
+  if (data.chatSlowSec !== undefined && data.chatSlowSec !== before.chatSlowSec) {
+    details.push(`채팅 저속 모드: ${before.chatSlowSec ? `${before.chatSlowSec}초` : "끔"} → ${data.chatSlowSec ? `${data.chatSlowSec}초` : "끔"}`);
+  }
+  if (data.chatBannedWords && JSON.stringify(data.chatBannedWords) !== JSON.stringify(before.chatBannedWords ?? [])) {
+    details.push(`채팅 금칙어 ${data.chatBannedWords.length}개로 변경`);
+  }
+  if (data.chatHideLinks !== undefined && data.chatHideLinks !== Boolean(before.chatHideLinks)) {
+    details.push(`채팅 링크 ${data.chatHideLinks ? "가리기" : "보이기"}`);
+  }
+  if (body.chatEnabled !== undefined && Boolean(body.chatEnabled) !== (beforeChat !== false)) {
+    details.push(`채팅 ${body.chatEnabled ? "켜기" : "끄기"}`);
+  }
+  await logWebinarUpdate({
     workspaceId: webinar.workspaceId,
     userId: user.id,
-    action: "webinar.updated",
-    meta: { webinarId: id, changes: ["chatModeration"] },
+    webinarId: id,
+    webinarName: before.name ?? "",
+    details,
   });
 
   return NextResponse.json({ ok: true, settings: { slowSec: updated.chatSlowSec, bannedWords: updated.chatBannedWords } });
