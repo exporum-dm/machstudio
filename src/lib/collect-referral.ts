@@ -1,4 +1,4 @@
-// 등록 폼 친구 초대(추천) — 누가 링크를 퍼뜨렸고, 그 링크로 몇 명이 등록했나.
+// 등록 폼 지인 초대(추천) — 누가 링크를 퍼뜨렸고, 그 링크로 몇 명이 등록했나.
 //
 // 웨비나 추천(webinar-share.ts)과 같은 원칙을 따른다.
 //  - 링크에는 **의미 없는 무작위 코드**만 싣는다(`?ref=K7mQ2xPa3d`). 이름·연락처를 링크에 넣으면
@@ -135,9 +135,9 @@ export function rewardRuleLabel(config: Pick<CollectReferralConfig, "rewardMode"
 }
 
 /**
- * 친구에게 보낼 링크 — 지금 보고 있는 등록 페이지 주소에 추천 코드를 붙인다.
- * 보낸 사람의 utm_* 는 지운다. 남겨 두면 친구의 등록이 보낸 사람이 들어온 광고 캠페인 성과로 잡힌다.
- * 대신 utm_source=referral · utm_medium=invite 로 표시해 유입 분석에서도 "친구 초대" 하나로 묶인다.
+ * 지인에게 보낼 링크 — 지금 보고 있는 등록 페이지 주소에 추천 코드를 붙인다.
+ * 보낸 사람의 utm_* 는 지운다. 남겨 두면 지인의 등록이 보낸 사람이 들어온 광고 캠페인 성과로 잡힌다.
+ * 대신 utm_source=referral · utm_medium=invite 로 표시해 유입 분석에서도 "지인 초대" 하나로 묶인다.
  */
 export function buildInviteUrl(pageUrl: string, code: string): string {
   try {

@@ -57,7 +57,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const eventDates = normalizeCollectForm(source.formConfig).eventInfo.eventDates;
   const attendanceById = new Map(records.map(r => [r.id, recordAttendance(r.data, eventDates, ciById.get(r.id))]));
   const showAttendance = builder || source.checkinEnabled || [...attendanceById.values()].some(Boolean);
-  // 친구 초대 — 켠 적이 있는 폼만(코드가 하나라도 있으면). 추천인은 같은 폼 안의 등록자다.
+  // 지인 초대 — 켠 적이 있는 폼만(코드가 하나라도 있으면). 추천인은 같은 폼 안의 등록자다.
   const showReferral = records.some((r) => r.shareCode || r.referredById);
   const codeById = new Map(records.map((r) => [r.id, r.shareCode ?? ""]));
   const headers = [

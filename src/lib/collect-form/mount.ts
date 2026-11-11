@@ -378,7 +378,7 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
     values[config.branch.fieldKey] = typeOptions[0].value;
   }
   let doneTicketKey: string | null = null;
-  /** 친구 초대 — 이 등록자의 추천 코드(서버가 폼에서 추천을 켰을 때만 준다) */
+  /** 지인 초대 — 이 등록자의 추천 코드(서버가 폼에서 추천을 켰을 때만 준다) */
   let doneShareCode: string | null = null;
   /**
    * 이 페이지를 연 링크의 추천 코드(`?ref=`). 임베드된 호스트 페이지 주소에서 읽는다.
@@ -1294,7 +1294,7 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
   }
 
   /**
-   * 친구 초대 카드 — 공유하기(휴대폰의 공유 창: 카카오톡·왓츠앱·인스타그램 DM·LINE … 깔린 앱이 뜬다)
+   * 지인 초대 카드 — 공유하기(휴대폰의 공유 창: 카카오톡·왓츠앱·인스타그램 DM·LINE … 깔린 앱이 뜬다)
    * + 링크 복사(공유 창이 없는 PC). 순위는 여기서 보여 주지 않는다 — 경쟁할 생각 없는 사람에게
    * 계속 노출하지 않으려고, 궁금한 사람만 "추천 순위 보기"를 눌러 따로 본다.
    * 미리보기에서는 예시 코드로 모양만 보여 준다(버튼은 동작하지 않는다).

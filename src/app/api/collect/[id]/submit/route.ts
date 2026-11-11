@@ -198,7 +198,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
    * **DB 제약이 최종 방어선**이라는 §6.2 의 결론이 그대로다.
    */
   /**
-   * 친구 초대 — 폼에서 켰을 때만. 들어온 링크의 추천 코드(`_ref`)가 **같은 폼**의 등록자 것이면
+   * 지인 초대 — 폼에서 켰을 때만. 들어온 링크의 추천 코드(`_ref`)가 **같은 폼**의 등록자 것이면
    * 그 사람을 추천인으로 남긴다. 다른 폼의 코드·모르는 코드는 조용히 무시한다(등록은 막지 않는다).
    */
   const referral = config.referral.enabled;
