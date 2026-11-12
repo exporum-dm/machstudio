@@ -5,7 +5,7 @@
  * 날짜 미정 항목은 아래 서랍에 모이고, 서랍에서 날짜 칸으로 끌어 놓으면 날짜가 잡힌다.
  * 좁은 화면(모바일)은 칸에 점만 찍고, 고른 날의 목록을 아래에 펼친다 — 7칸에 제목이 들어가지 않는다.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CalendarOff, Plus } from "lucide-react";
 import { FINISH, R, SELECTED_TEXT } from "@/components/ui/primitives";
 import { CONTENT_STATUSES, WEEKDAYS, compareItems, coversDay, dayLabel, groupByDay, isRange, monthGrid, monthKey, moveToDay, weekSpans } from "@/lib/content-calendar";
@@ -25,6 +25,18 @@ export default function CalendarView({ items, month, today, projectName, project
   const layouts = useMemo(() => weeks.map((week) => weekSpans(week, items)), [weeks, items]);
   const undated = useMemo(() => items.filter((i) => !i.date), [items]);
   const [overDay, setOverDay] = useState<string | null>(null);
+  // 끌기 중에는 기간 막대가 마우스를 받지 않게 — 막대가 지나가는 칸 위쪽에 놓아도 그날로 옮겨진다.
+  // 끌기 시작 직후(다음 틱)에 바꾼다: 같은 틱에 바꾸면 끌고 있는 막대 자신의 끌기가 취소된다.
+  const [dragging, setDragging] = useState(false);
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const start = (e: DragEvent) => { if (e.dataTransfer?.types.includes(DRAG_TYPE)) t = setTimeout(() => setDragging(true), 0); };
+    const end = () => { clearTimeout(t); setDragging(false); };
+    document.addEventListener("dragstart", start);
+    document.addEventListener("dragend", end);
+    document.addEventListener("drop", end);
+    return () => { clearTimeout(t); document.removeEventListener("dragstart", start); document.removeEventListener("dragend", end); document.removeEventListener("drop", end); };
+  }, []);
   const [selected, setSelected] = useState<string | null>(null);
   const selectedDay = selected && monthKey(selected) === month ? selected : monthKey(today) === month ? today : `${month}-01`;
   const selectedItems = useMemo(() => items.filter((i) => coversDay(i, selectedDay)).sort(compareItems), [items, selectedDay]);
@@ -115,6 +127,7 @@ export default function CalendarView({ items, month, today, projectName, project
                     key={span.item.id}
                     span={span}
                     top={BAR_TOP + span.lane * RANGE_BAR_ROW}
+                    passThrough={dragging}
                     color={projectColor(span.item.projectId)}
                     showProject={showProject}
                     projectName={projectName(span.item.projectId)}

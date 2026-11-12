@@ -59,8 +59,10 @@ export const RANGE_BAR_ROW = 26;
  * 주가 바뀌면 다음 줄에서 이어지고, 이어지는 쪽 모서리는 둥글리지 않는다.
  * 끌어서 다른 날로 옮기면 길이를 그대로 두고 통째로 옮겨진다.
  */
-export function RangeBar({ span, color, onOpen, showProject, projectName, top }: {
+export function RangeBar({ span, color, onOpen, showProject, projectName, top, passThrough = false }: {
   span: WeekSpan; color: string; onOpen: () => void; showProject: boolean; projectName: string; top: number;
+  /** 끌기 중 — 막대가 마우스를 받지 않아 아래 날짜 칸에 놓을 수 있다 */
+  passThrough?: boolean;
 }) {
   const { item } = span;
   const done = isClosedStatus(item.status);
@@ -77,7 +79,7 @@ export function RangeBar({ span, color, onOpen, showProject, projectName, top }:
         left: `calc(${(span.start / 7) * 100}% + ${span.fromPrev ? 0 : 4}px)`,
         width: `calc(${(cols / 7) * 100}% - ${(span.fromPrev ? 0 : 4) + (span.toNext ? 0 : 4)}px)`,
       }}
-      className={`pointer-events-auto absolute flex h-[22px] min-w-0 items-center gap-1.5 bg-card px-1.5 text-left text-xs transition-colors hover:bg-secondary ${FINISH.s2} cursor-grab active:cursor-grabbing ${
+      className={`${passThrough ? "pointer-events-none" : "pointer-events-auto"} absolute flex h-[22px] min-w-0 items-center gap-1.5 bg-card px-1.5 text-left text-xs transition-colors hover:bg-secondary ${FINISH.s2} cursor-grab active:cursor-grabbing ${
         span.fromPrev ? "rounded-l-none" : "rounded-l-md"} ${span.toNext ? "rounded-r-none" : "rounded-r-md"}`}
     >
       {!span.fromPrev && <span aria-hidden className={`h-3.5 w-1 shrink-0 rounded-full ${color}`} />}
