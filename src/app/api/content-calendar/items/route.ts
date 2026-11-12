@@ -9,7 +9,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireWorkspaceMember } from "@/lib/workspace-access";
 import {
-  assigneeKey, contentRepeatDates, isContentStatus, isValidDay, isValidTime, normalizeTags, parseAssignees, type ContentAssignee,
+  assigneeKey, contentRepeatDates, daysBetween, isContentStatus, isValidDay, isValidTime, normalizeTags, parseAssignees, type ContentAssignee,
 } from "@/lib/content-calendar";
 
 const toDateValue = (v: unknown) => (isValidDay(v) ? new Date(`${v}T00:00:00Z`) : null);
@@ -18,13 +18,13 @@ const text = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slic
 const displayName = (u: { name: string | null; email: string }) => u.name || u.email.split("@")[0];
 
 type ItemRow = {
-  id: string; projectId: string | null; title: string; date: Date | null; time: string; status: string; channels: string[]; formats: string[];
+  id: string; projectId: string | null; title: string; date: Date | null; endDate: Date | null; time: string; status: string; channels: string[]; formats: string[];
   campaign: string; assignees: unknown; body: string; link: string; sourceUrl: string; createdAt: Date; updatedAt: Date;
 };
 
 function serialize(i: ItemRow, names: Map<string, string>) {
   return {
-    id: i.id, projectId: i.projectId, title: i.title, date: toDay(i.date), time: i.time,
+    id: i.id, projectId: i.projectId, title: i.title, date: toDay(i.date), endDate: toDay(i.endDate), time: i.time,
     status: isContentStatus(i.status) ? i.status : "waiting", channels: i.channels, formats: i.formats, campaign: i.campaign,
     assignees: parseAssignees(i.assignees).map((a) => ({ id: a.id, name: (a.id && names.get(a.id)) || a.name || "떠난 팀원" })),
     body: i.body, link: i.link, sourceUrl: i.sourceUrl, createdAt: i.createdAt.toISOString(), updatedAt: i.updatedAt.toISOString(),
@@ -95,9 +95,22 @@ async function readAssignees(v: unknown, workspaceId: string, existing: ContentA
 }
 
 type Fields = Partial<{
-  projectId: string | null; title: string; date: Date | null; time: string; status: string; channels: string[]; formats: string[];
+  projectId: string | null; title: string; date: Date | null; endDate: Date | null; time: string; status: string; channels: string[]; formats: string[];
   campaign: string; assignees: ContentAssignee[]; body: string; link: string;
 }>;
+
+/**
+ * 시작일·종료일 짝 맞추기 — 고친 뒤의 최종 값(date, endDate)으로 본다.
+ * 날짜 미정이면 기간도 없다. 종료일이 시작일과 같으면 하루짜리. 앞이면 오류.
+ */
+function settleRange(fields: Fields, current: { date: Date | null; endDate: Date | null }): string | null {
+  const date = "date" in fields ? fields.date ?? null : current.date;
+  const end = "endDate" in fields ? fields.endDate ?? null : current.endDate;
+  if (!end) return null;
+  if (!date || end.getTime() === date.getTime()) { if (current.endDate || "endDate" in fields) fields.endDate = null; return null; }
+  if (end < date) return "종료일이 시작일보다 앞이에요";
+  return null;
+}
 
 /** 들어온 값 중 있는 것만 검사해서 고칠 칸으로. 잘못된 값은 오류 문구. */
 async function readFields(body: Record<string, unknown>, workspaceId: string, existingAssignees: ContentAssignee[] = []): Promise<Fields | { error: string }> {
@@ -113,6 +126,14 @@ async function readFields(body: Record<string, unknown>, workspaceId: string, ex
       const d = toDateValue(body.date);
       if (!d) return { error: "날짜 형식이 올바르지 않아요" };
       out.date = d;
+    }
+  }
+  if ("endDate" in body) {
+    if (body.endDate === null || body.endDate === "") out.endDate = null;
+    else {
+      const d = toDateValue(body.endDate);
+      if (!d) return { error: "종료일 형식이 올바르지 않아요" };
+      out.endDate = d;
     }
   }
   if ("time" in body) {
@@ -159,7 +180,7 @@ export async function GET(request: Request) {
     prisma.contentItem.findMany({
       where: {
         workspaceId: workspaceId!,
-        OR: [{ date: { gte: from, lte: to } }, { date: null }],
+        OR: [{ date: { gte: from, lte: to } }, { date: null }, { date: { lt: from }, endDate: { gte: from } }],
         // 지운 프로젝트(소프트 삭제)의 항목은 숨긴다 — 프로젝트를 되살리면 다시 보인다.
         AND: [{ OR: [{ projectId: null }, { project: { deletedAt: null } }] }],
       },
@@ -182,6 +203,8 @@ export async function POST(request: Request) {
   if (!("title" in body)) return NextResponse.json({ error: "제목을 입력해주세요" }, { status: 400 });
   const fields = await readFields(body, workspaceId!);
   if ("error" in fields) return NextResponse.json({ error: fields.error }, { status: 400 });
+  const rangeError = settleRange(fields, { date: null, endDate: null });
+  if (rangeError) return NextResponse.json({ error: rangeError }, { status: 400 });
   const item = await prisma.contentItem.create({
     data: { ...fields, assignees: fields.assignees ?? [], title: fields.title!, workspaceId: workspaceId!, createdById: access.userId },
   });
@@ -194,11 +217,12 @@ async function copyItems(body: Record<string, unknown>) {
   const access = await requireWorkspaceMember(source.workspaceId);
   if ("error" in access) return NextResponse.json({ error: access.error }, { status: access.status });
   if (typeof body.requestId !== "string" || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(body.requestId)) return NextResponse.json({ error: "생성 요청을 다시 시도해주세요." }, { status: 400 });
-  const fields = await readFields({ ...source, date: toDay(source.date), ...body, status: "waiting", link: "" }, source.workspaceId, parseAssignees(source.assignees));
+  const fields = await readFields({ ...source, date: toDay(source.date), endDate: toDay(source.endDate), ...body, status: "waiting", link: "" }, source.workspaceId, parseAssignees(source.assignees));
   if ("error" in fields) return NextResponse.json({ error: fields.error }, { status: 400 });
   let dates: Array<string | null>;
   try { dates = body.repeat ? contentRepeatDates(toDay(fields.date ?? null), body.repeat) : [toDay(fields.date ?? null)]; }
   catch (e) { return NextResponse.json({ error: (e as Error).message }, { status: 400 }); }
+  const span = fields.date && fields.endDate && fields.endDate > fields.date ? daysBetween(toDay(fields.date)!, toDay(fields.endDate)!) : 0;
   const prefix = `content-copy:${source.id}:${body.requestId}:`;
   const existingCopies = () => prisma.contentItem.findMany({ where: { workspaceId: source.workspaceId, recurrenceKey: { startsWith: prefix } }, orderBy: [{ date: "asc" }, { id: "asc" }] });
   let items = await existingCopies();
@@ -206,7 +230,9 @@ async function copyItems(body: Record<string, unknown>) {
     try {
       items = await prisma.contentItem.createManyAndReturn({ data: dates.map((date, i) => ({
         ...fields, title: body.repeat ? fields.title! : `${fields.title!.slice(0, 195).trimEnd()} (복사)`,
-        date: toDateValue(date), status: "waiting", link: "", sourceUrl: source.sourceUrl,
+        date: toDateValue(date),
+        endDate: date && span > 0 ? new Date(toDateValue(date)!.getTime() + span * 86_400_000) : null,
+        status: "waiting", link: "", sourceUrl: source.sourceUrl,
         assignees: fields.assignees ?? [], workspaceId: source.workspaceId, createdById: access.userId,
         recurrenceKey: `${prefix}${i}`,
       })) });
@@ -225,12 +251,14 @@ async function copyItems(body: Record<string, unknown>) {
 export async function PATCH(request: Request) {
   const body = await request.json().catch(() => ({}));
   const id = typeof body.id === "string" ? body.id : "";
-  const existing = id ? await prisma.contentItem.findUnique({ where: { id }, select: { workspaceId: true, assignees: true } }) : null;
+  const existing = id ? await prisma.contentItem.findUnique({ where: { id }, select: { workspaceId: true, assignees: true, date: true, endDate: true } }) : null;
   if (!existing) return NextResponse.json({ error: "항목을 찾을 수 없어요" }, { status: 404 });
   const access = await requireWorkspaceMember(existing.workspaceId);
   if ("error" in access) return NextResponse.json({ error: access.error }, { status: access.status });
   const fields = await readFields(body, existing.workspaceId, parseAssignees(existing.assignees));
   if ("error" in fields) return NextResponse.json({ error: fields.error }, { status: 400 });
+  const rangeError = settleRange(fields, existing);
+  if (rangeError) return NextResponse.json({ error: rangeError }, { status: 400 });
   const item = await prisma.contentItem.update({ where: { id }, data: fields });
   const names = await liveNames(assigneeIds([item]), []);
   return NextResponse.json({ item: serialize(item, names) });

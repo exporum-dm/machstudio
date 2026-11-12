@@ -7,7 +7,7 @@
 import { useMemo } from "react";
 import { ExternalLink, Plus } from "lucide-react";
 import { FINISH, R } from "@/components/ui/primitives";
-import { CONTENT_STATUSES, compareItems, dayLabel, isContentStatus, isValidDay } from "@/lib/content-calendar";
+import { CONTENT_STATUSES, compareItems, dayLabel, isContentStatus, isRange, isValidDay, moveToDay } from "@/lib/content-calendar";
 import { ItemCard, StatusDot, type ViewProps } from "./parts";
 
 const CELL_INPUT = `w-full bg-transparent px-2 py-1.5 text-sm transition-colors hover:bg-secondary ${R.control}`;
@@ -66,11 +66,12 @@ export default function ListView({ items, projectName, projectColor, showProject
                     value={item.date ?? ""}
                     onChange={(e) => {
                       const v = e.target.value;
-                      if (v === "") onPatch(item.id, { date: null });
-                      else if (isValidDay(v)) onPatch(item.id, { date: v });
+                      if (v === "") onPatch(item.id, moveToDay(item, null));
+                      else if (isValidDay(v)) onPatch(item.id, moveToDay(item, v));
                     }}
                     className={`${CELL_INPUT} tabular-nums ${item.date ? "" : "text-muted-foreground"}`}
                   />
+                  {isRange(item) && <p className="px-2 pb-1 text-[11px] tabular-nums text-muted-foreground">~ {item.endDate}</p>}
                 </td>
                 <td className="px-3 py-1">
                   <button type="button" onClick={() => onOpen(item.id)} className="w-full py-1.5 text-left font-medium hover:underline">

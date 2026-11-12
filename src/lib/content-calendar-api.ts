@@ -23,6 +23,7 @@ export const MAX_API_CONTENT_ITEMS = 300;
 export interface ApiContentInput {
   title?: string;
   date?: string | null;
+  endDate?: string | null;
   time?: string;
   status?: string;
   channels?: string[];
@@ -39,6 +40,17 @@ type Ctx = { workspaceId: string; userId: string; lockProjectId?: string };
 const displayName = (u: { name: string | null; email: string }) => u.name || u.email.split("@")[0];
 const nameKey = (v: string) => v.normalize("NFC").replace(/\s+/g, "").toLowerCase();
 const toDay = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
+const SELECT = { id: true, projectId: true, title: true, date: true, endDate: true, time: true, status: true, channels: true, formats: true, campaign: true, assignees: true, body: true, link: true } as const;
+
+/** 시작일·종료일 짝 — 최종 값으로 본다. 같은 날이면 하루짜리, 날짜 미정이면 기간 없음, 거꾸로면 오류. */
+function settleRange(fields: Record<string, unknown>, current: { date: Date | null; endDate: Date | null }): string | null {
+  const date = ("date" in fields ? fields.date : current.date) as Date | null;
+  const end = ("endDate" in fields ? fields.endDate : current.endDate) as Date | null;
+  if (!end) return null;
+  if (!date || end.getTime() === date.getTime()) { fields.endDate = null; return null; }
+  if (end < date) return `종료일(${toDay(end)})이 시작일(${toDay(date)})보다 앞이에요`;
+  return null;
+}
 
 export async function isWorkspaceMember(workspaceId: string, userId: string) {
   const m = await prisma.workspaceMember.findUnique({ where: { userId_workspaceId: { userId, workspaceId } }, select: { userId: true } });
@@ -57,13 +69,14 @@ async function members(workspaceId: string) {
 type Member = Awaited<ReturnType<typeof members>>[number];
 
 function serialize(i: {
-  id: string; projectId: string | null; title: string; date: Date | null; time: string; status: string; channels: string[]; formats: string[];
+  id: string; projectId: string | null; title: string; date: Date | null; endDate: Date | null; time: string; status: string; channels: string[]; formats: string[];
   campaign: string; assignees: unknown; body: string; link: string;
 }, names: Map<string, string>, projects: Map<string, string>) {
   return {
     id: i.id,
     title: i.title,
     date: toDay(i.date),
+    endDate: toDay(i.endDate),
     time: i.time,
     status: i.status,
     channels: i.channels,
@@ -94,6 +107,11 @@ function readFields(input: ApiContentInput, ctx: Ctx, team: Member[], projects: 
     if (input.date === null || input.date === "") out.date = null;
     else if (isValidDay(input.date)) out.date = new Date(`${input.date}T00:00:00Z`);
     else return { error: `날짜는 YYYY-MM-DD 형식이어야 해요: ${input.date}` };
+  }
+  if (input.endDate !== undefined) {
+    if (input.endDate === null || input.endDate === "") out.endDate = null;
+    else if (isValidDay(input.endDate)) out.endDate = new Date(`${input.endDate}T00:00:00Z`);
+    else return { error: `종료일은 YYYY-MM-DD 형식이어야 해요: ${input.endDate}` };
   }
   if (input.time !== undefined) {
     const t = typeof input.time === "string" ? input.time.trim() : "";
@@ -150,12 +168,12 @@ export async function listApiContentItems(ctx: Ctx, input: { from: string; to: s
     prisma.contentItem.findMany({
       where: {
         workspaceId: ctx.workspaceId,
-        OR: [{ date: { gte: from, lte: to } }, { date: null }],
+        OR: [{ date: { gte: from, lte: to } }, { date: null }, { date: { lt: from }, endDate: { gte: from } }],
         AND: [projectId ? { projectId } : { OR: [{ projectId: null }, { project: { deletedAt: null } }] }],
       },
       orderBy: [{ date: "asc" }, { createdAt: "asc" }],
       take: 1000,
-      select: { id: true, projectId: true, title: true, date: true, time: true, status: true, channels: true, formats: true, campaign: true, assignees: true, body: true, link: true },
+      select: SELECT,
     }),
     members(ctx.workspaceId),
     projectNames(ctx.workspaceId),
@@ -180,28 +198,32 @@ export async function createApiContentItems(ctx: Ctx, inputs: ApiContentInput[])
   for (const [index, input] of inputs.entries()) {
     const read = readFields(input, ctx, team, projects, true);
     if ("error" in read) return { error: `${index + 1}번째 항목: ${read.error}` } as const;
+    const rangeError = settleRange(read.fields, { date: null, endDate: null });
+    if (rangeError) return { error: `${index + 1}번째 항목: ${rangeError}` } as const;
     rows.push(read.fields);
   }
   // INSERT 한 번 — 전부 들어가거나 하나도 안 들어간다.
   const created = await prisma.contentItem.createManyAndReturn({
     data: rows.map((fields) => ({ assignees: [], ...fields, title: fields.title as string, workspaceId: ctx.workspaceId, createdById: ctx.userId })),
-    select: { id: true, title: true, date: true },
+    select: { id: true, title: true, date: true, endDate: true },
   });
   // 돌려줄 땐 확인용 요약만 — 본문까지 300건을 다시 보내면 AI 대화가 쓸데없이 길어진다.
-  return { created: created.map((i) => ({ id: i.id, title: i.title, date: toDay(i.date) })), count: created.length } as const;
+  return { created: created.map((i) => ({ id: i.id, title: i.title, date: toDay(i.date), endDate: toDay(i.endDate) })), count: created.length } as const;
 }
 
 export async function updateApiContentItem(ctx: Ctx, id: string, input: ApiContentInput) {
-  const existing = await prisma.contentItem.findFirst({ where: { id, workspaceId: ctx.workspaceId }, select: { id: true, projectId: true } });
+  const existing = await prisma.contentItem.findFirst({ where: { id, workspaceId: ctx.workspaceId }, select: { id: true, projectId: true, date: true, endDate: true } });
   if (!existing || (ctx.lockProjectId && existing.projectId !== ctx.lockProjectId)) return { error: "콘텐츠를 찾을 수 없어요" } as const;
   const [team, projects] = await Promise.all([members(ctx.workspaceId), projectNames(ctx.workspaceId)]);
   const read = readFields(input, ctx, team, projects, false);
   if ("error" in read) return { error: read.error } as const;
   if (!Object.keys(read.fields).length) return { error: "고칠 칸이 없어요" } as const;
+  const rangeError = settleRange(read.fields, existing);
+  if (rangeError) return { error: rangeError } as const;
   const item = await prisma.contentItem.update({
     where: { id },
     data: read.fields,
-    select: { id: true, projectId: true, title: true, date: true, time: true, status: true, channels: true, formats: true, campaign: true, assignees: true, body: true, link: true },
+    select: SELECT,
   });
   return { item: serialize(item, new Map(team.map((m) => [m.id, m.name])), projects) } as const;
 }

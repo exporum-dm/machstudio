@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   EMPTY_FILTER, assigneeOptions, channelOptions, compareItems, groupByDay, isValidMonth, isValidTime, matchesFilter, monthGrid, monthRange,
   contentRepeatDates, normalizeTags, parseAssignees, shiftMonth, type ContentItemDto,
+  coversDay, isRange, moveToDay, overlaps, weekSpans,
 } from "@/lib/content-calendar";
 
 const item = (over: Partial<ContentItemDto>): ContentItemDto => ({
-  id: "x", projectId: null, title: "제목", date: null, time: "", status: "waiting", channels: [], formats: [], campaign: "",
+  id: "x", projectId: null, title: "제목", date: null, endDate: null, time: "", status: "waiting", channels: [], formats: [], campaign: "",
   assignees: [], body: "", link: "", sourceUrl: "", createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-01T00:00:00.000Z",
   ...over,
 });
@@ -129,5 +130,36 @@ describe("정렬·묶기", () => {
   it("담당 후보 — 팀원 + 계정 없는 사람", () => {
     expect(assigneeOptions([item({ assignees: [{ id: null, name: "엄재호" }, { id: "u1", name: "이창환" }] })], [{ id: "u1", name: "이창환" }]))
       .toEqual([{ value: "u1", label: "이창환" }, { value: "~엄재호", label: "엄재호 (계정 없음)" }]);
+  });
+});
+
+describe("기간 콘텐츠", () => {
+  const range = item({ id: "r", date: "2026-12-21", endDate: "2027-01-29" });
+  it("기간·걸침 판정", () => {
+    expect(isRange(range)).toBe(true);
+    expect(isRange(item({ date: "2026-12-21", endDate: "2026-12-21" }))).toBe(false);
+    expect(coversDay(range, "2027-01-05")).toBe(true);
+    expect(coversDay(range, "2027-01-30")).toBe(false);
+    expect(overlaps(range, "2027-01-01", "2027-01-31")).toBe(true);
+    expect(overlaps(item({ date: "2026-12-21" }), "2027-01-01", "2027-01-31")).toBe(false);
+  });
+  it("옮기면 길이를 그대로 두고 통째로", () => {
+    expect(moveToDay(range, "2026-12-24")).toEqual({ date: "2026-12-24", endDate: "2027-02-01" });
+    expect(moveToDay(item({ date: "2026-12-21" }), "2026-12-24")).toEqual({ date: "2026-12-24", endDate: null });
+    expect(moveToDay(range, null)).toEqual({ date: null, endDate: null });
+  });
+  it("한 주 배치 — 이어지는 쪽 표시, 겹치면 다음 줄", () => {
+    const week = ["2027-01-03", "2027-01-04", "2027-01-05", "2027-01-06", "2027-01-07", "2027-01-08", "2027-01-09"];
+    const a = item({ id: "a", date: "2027-01-04", endDate: "2027-01-06" });
+    const b = item({ id: "b", date: "2027-01-05", endDate: "2027-01-12" });
+    const c = item({ id: "c", date: "2027-01-07", endDate: "2027-01-08" });
+    const { spans, lanes } = weekSpans(week, [range, a, b, c, item({ id: "d", date: "2027-01-05" })]);
+    const by = Object.fromEntries(spans.map((x) => [x.item.id, x]));
+    expect(by.r).toMatchObject({ start: 0, end: 6, lane: 0, fromPrev: true, toNext: true });
+    expect(by.a).toMatchObject({ start: 1, end: 3, lane: 1 });
+    expect(by.b).toMatchObject({ start: 2, end: 6, lane: 2, toNext: true });
+    expect(by.c).toMatchObject({ start: 4, end: 5, lane: 1 });
+    expect(by.d).toBeUndefined();
+    expect(lanes).toBe(3);
   });
 });

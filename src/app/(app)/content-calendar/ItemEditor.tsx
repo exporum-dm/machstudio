@@ -89,7 +89,7 @@ export default function ItemEditor({ item, isNew, projects, members, known, onCh
   const lastCopy = useRef<{ signature: string; requestId: string } | null>(null);
   const createCopies = async (repeat?: ContentRepeat) => {
     if (copyBusy) return;
-    const signature = JSON.stringify([item.id, item.title, item.date, item.time, item.projectId, item.body, item.formats, item.channels, item.campaign, item.assignees, repeat]);
+    const signature = JSON.stringify([item.id, item.title, item.date, item.endDate, item.time, item.projectId, item.body, item.formats, item.channels, item.campaign, item.assignees, repeat]);
     if (lastCopy.current?.signature !== signature) lastCopy.current = { signature, requestId: crypto.randomUUID() };
     setCopyBusy(true); setCopyError("");
     try { await onCopy(lastCopy.current.requestId, repeat); lastCopy.current = null; }
@@ -196,7 +196,7 @@ export default function ItemEditor({ item, isNew, projects, members, known, onCh
             </div>
           </div>
 
-          <div className="grid grid-cols-[1fr_7rem] gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_1fr_6.5rem]">
             <label>
               <span className={LABEL}>날짜</span>
               <input
@@ -204,10 +204,27 @@ export default function ItemEditor({ item, isNew, projects, members, known, onCh
                 value={item.date ?? ""}
                 onChange={(e) => {
                   const v = e.target.value;
-                  if (v === "") onChange({ date: null }, "now");
-                  else if (isValidDay(v)) onChange({ date: v }, "now");
+                  if (v === "") onChange({ date: null, endDate: null }, "now");
+                  // 시작일을 종료일 뒤로 옮기면 하루짜리로 — 종료일만 남아 거꾸로 된 기간이 되지 않게
+                  else if (isValidDay(v)) onChange(item.endDate && v >= item.endDate ? { date: v, endDate: null } : { date: v }, "now");
                 }}
                 className={`w-full bg-background px-3 py-2 text-sm tabular-nums ${R.control} ${FINISH.s2}`}
+              />
+            </label>
+            <label>
+              <span className={LABEL}>종료일 <span className="font-normal text-muted-foreground">(기간)</span></span>
+              <input
+                type="date"
+                value={item.endDate ?? ""}
+                min={item.date ?? undefined}
+                disabled={!item.date}
+                aria-label="종료일 — 비우면 하루짜리"
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "" || (isValidDay(v) && item.date && v <= item.date)) onChange({ endDate: null }, "now");
+                  else if (isValidDay(v)) onChange({ endDate: v }, "now");
+                }}
+                className={`w-full bg-background px-3 py-2 text-sm tabular-nums disabled:opacity-50 ${R.control} ${FINISH.s2}`}
               />
             </label>
             <label>
@@ -223,7 +240,7 @@ export default function ItemEditor({ item, isNew, projects, members, known, onCh
               />
             </label>
             {item.date && (
-              <button type="button" onClick={() => onChange({ date: null }, "now")} className="col-span-2 justify-self-start text-[11px] text-muted-foreground underline-offset-2 hover:underline">
+              <button type="button" onClick={() => onChange({ date: null, endDate: null }, "now")} className="col-span-2 sm:col-span-3 justify-self-start text-[11px] text-muted-foreground underline-offset-2 hover:underline">
                 날짜 미정으로 돌리기
               </button>
             )}

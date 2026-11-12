@@ -984,6 +984,8 @@ model ContentItem {
   title       String
   /// 발행일. NULL = 날짜 미정(아이디어)
   date        DateTime? @db.Date
+  /// 기간 콘텐츠의 마지막 날(캠페인·연재 등). NULL = 하루짜리. 늘 date 보다 뒤.
+  endDate     DateTime? @db.Date
   /// "HH:MM" 또는 ""
   time        String    @default("")
   /// waiting · planning · doing · design · confirm · done · stopped (lib/content-calendar.ts)

@@ -8,21 +8,26 @@
 import { useMemo, useState } from "react";
 import { CalendarOff, Plus } from "lucide-react";
 import { FINISH, R, SELECTED_TEXT } from "@/components/ui/primitives";
-import { CONTENT_STATUSES, WEEKDAYS, dayLabel, groupByDay, monthGrid, monthKey } from "@/lib/content-calendar";
+import { CONTENT_STATUSES, WEEKDAYS, compareItems, coversDay, dayLabel, groupByDay, isRange, monthGrid, monthKey, moveToDay, weekSpans } from "@/lib/content-calendar";
 import { holidayName } from "@/lib/business-days";
-import { CalendarChip, DRAG_TYPE, ItemCard, StatusDot, type ViewProps } from "./parts";
+import { CalendarChip, DRAG_TYPE, ItemCard, RANGE_BAR_ROW, RangeBar, StatusDot, type ViewProps } from "./parts";
+
+/** 칸 위쪽(날짜 숫자 줄)의 높이 — 기간 막대는 그 아래부터 그린다. p-1.5(6) + 숫자 h-6(24) + mb-1(4) */
+const BAR_TOP = 34;
 
 export default function CalendarView({ items, month, today, projectName, projectColor, showProject, onOpen, onCreate, onPatch }: ViewProps & {
   month: string;
   today: string;
 }) {
   const weeks = useMemo(() => monthGrid(month), [month]);
-  const byDay = useMemo(() => groupByDay(items), [items]);
+  // 하루짜리만 칸 안의 줄로. 기간 콘텐츠는 주마다 칸을 가로지르는 막대로 따로 그린다.
+  const byDay = useMemo(() => groupByDay(items.filter((i) => !isRange(i))), [items]);
+  const layouts = useMemo(() => weeks.map((week) => weekSpans(week, items)), [weeks, items]);
   const undated = useMemo(() => items.filter((i) => !i.date), [items]);
   const [overDay, setOverDay] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const selectedDay = selected && monthKey(selected) === month ? selected : monthKey(today) === month ? today : `${month}-01`;
-  const selectedItems = byDay.get(selectedDay) ?? [];
+  const selectedItems = useMemo(() => items.filter((i) => coversDay(i, selectedDay)).sort(compareItems), [items, selectedDay]);
 
   const dropProps = (day: string | null) => ({
     onDragOver: (e: React.DragEvent) => {
@@ -40,7 +45,7 @@ export default function CalendarView({ items, month, today, projectName, project
       if (!id) return;
       e.preventDefault();
       const item = items.find((i) => i.id === id);
-      if (item && item.date !== day) onPatch(id, { date: day });
+      if (item && item.date !== day) onPatch(id, moveToDay(item, day));
     },
   });
 
@@ -50,11 +55,14 @@ export default function CalendarView({ items, month, today, projectName, project
         <div className="grid grid-cols-7 border-b border-border text-center text-[11px] font-medium text-muted-foreground">
           {WEEKDAYS.map((w, i) => <div key={w} className={`py-2 ${i === 0 ? "text-rose-500" : i === 6 ? "text-sky-600 dark:text-sky-400" : ""}`}>{w}</div>)}
         </div>
-        {weeks.map((week) => (
-          <div key={week[0]} className="grid grid-cols-7 border-b border-border last:border-b-0">
+        {weeks.map((week, w) => {
+          const { spans, lanes } = layouts[w];
+          return (
+          <div key={week[0]} className="relative grid grid-cols-7 border-b border-border last:border-b-0">
             {week.map((day, i) => {
               const inMonth = monthKey(day) === month;
               const list = byDay.get(day) ?? [];
+              const dots = lanes ? items.filter((it) => coversDay(it, day)) : list;
               const isToday = day === today;
               const isOver = overDay === day;
               const dayNum = Number(day.slice(8));
@@ -84,22 +92,40 @@ export default function CalendarView({ items, month, today, projectName, project
                   </div>
                   {/* 넓은 화면: 제목 줄 */}
                   <div className="hidden space-y-1 sm:block">
+                    {lanes > 0 && <div aria-hidden style={{ height: lanes * RANGE_BAR_ROW - 4 }} />}
                     {list.map((item) => (
                       <CalendarChip key={item.id} item={item} color={projectColor(item.projectId)} showProject={showProject} projectName={projectName(item.projectId)} onOpen={() => onOpen(item.id)} />
                     ))}
                   </div>
                   {/* 좁은 화면: 점 */}
-                  {list.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-0.5 sm:hidden" aria-label={`${list.length}건`}>
-                      {list.slice(0, 4).map((item) => <span key={item.id} aria-hidden className={`h-1.5 w-1.5 rounded-full ${projectColor(item.projectId)}`} />)}
-                      {list.length > 4 && <span className="text-[10px] leading-none text-muted-foreground">+{list.length - 4}</span>}
+                  {dots.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-0.5 sm:hidden" aria-label={`${dots.length}건`}>
+                      {dots.slice(0, 4).map((item) => <span key={item.id} aria-hidden className={`h-1.5 w-1.5 ${isRange(item) ? "w-3 rounded-sm" : "rounded-full"} ${projectColor(item.projectId)}`} />)}
+                      {dots.length > 4 && <span className="text-[10px] leading-none text-muted-foreground">+{dots.length - 4}</span>}
                     </div>
                   )}
                 </div>
               );
             })}
+            {/* 기간 막대 — 넓은 화면에서만. 막대 밖은 칸이 그대로 눌리고 끌어 놓을 수 있다. */}
+            {spans.length > 0 && (
+              <div className="pointer-events-none absolute inset-0 hidden sm:block">
+                {spans.map((span) => (
+                  <RangeBar
+                    key={span.item.id}
+                    span={span}
+                    top={BAR_TOP + span.lane * RANGE_BAR_ROW}
+                    color={projectColor(span.item.projectId)}
+                    showProject={showProject}
+                    projectName={projectName(span.item.projectId)}
+                    onOpen={() => onOpen(span.item.id)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* 좁은 화면: 고른 날 */}
