@@ -21,6 +21,7 @@ const rangeSchema = z.object({
 const contentFields = {
   title: z.string().describe("Content title"),
   date: z.string().nullable().optional().describe("Publish date YYYY-MM-DD (KST). null or omitted = date undecided"),
+  endDate: z.string().nullable().optional().describe("Last day YYYY-MM-DD for content that runs over a period (campaign, series) — shown as one continuous bar from date to endDate. Omit or null for single-day content."),
   time: z.string().optional().describe("Publish time HH:MM 24h, or empty"),
   status: z.enum(["waiting", "planning", "doing", "design", "confirm", "done", "stopped"]).optional()
     .describe("waiting=대기(default), planning=기획 중, doing=진행 중, design=디자인 중, confirm=컨펌 대기, done=완료, stopped=중단"),

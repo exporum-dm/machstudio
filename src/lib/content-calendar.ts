@@ -83,6 +83,8 @@ export interface ContentItemDto {
   title: string;
   /** YYYY-MM-DD, null = 날짜 미정 */
   date: string | null;
+  /** 기간 콘텐츠의 마지막 날(YYYY-MM-DD). null = 하루짜리 */
+  endDate: string | null;
   /** "HH:MM" 또는 "" */
   time: string;
   status: ContentStatus;
@@ -227,6 +229,74 @@ export function compareItems(a: ContentItemDto, b: ContentItemDto): number {
     return a.time < b.time ? -1 : 1;
   }
   return a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0;
+}
+
+/** 두 날짜 사이 일수(b − a). */
+export function daysBetween(a: string, b: string): number {
+  return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
+}
+
+type Dated = { date: string | null; endDate: string | null };
+
+/** 기간 콘텐츠인가 — 종료일이 시작일보다 뒤. */
+export const isRange = (i: Dated): boolean => !!i.date && !!i.endDate && i.endDate > i.date;
+
+/** 기간의 마지막 날(하루짜리는 그날, 날짜 미정은 null). */
+export const lastDay = (i: Dated): string | null => (isRange(i) ? i.endDate : i.date);
+
+/** 그날에 걸쳐 있는가 — 하루짜리는 그날만, 기간은 시작~종료 사이 모든 날. */
+export const coversDay = (i: Dated, day: string): boolean => !!i.date && i.date <= day && (lastDay(i) ?? i.date) >= day;
+
+/** 기간 안에 하루라도 걸치는가(달·주 범위에 보일지). */
+export const overlaps = (i: Dated, from: string, to: string): boolean => !!i.date && i.date <= to && (lastDay(i) ?? i.date) >= from;
+
+/**
+ * 다른 날로 옮길 때 바꿀 칸 — 기간 콘텐츠는 **길이를 그대로** 두고 통째로 옮긴다(노션과 같다).
+ * day 가 null 이면 날짜 미정으로(기간도 지운다).
+ */
+export function moveToDay(i: Dated, day: string | null): Dated {
+  if (!day) return { date: null, endDate: null };
+  if (isRange(i)) {
+    const span = daysBetween(i.date!, i.endDate!);
+    const end = new Date(Date.parse(`${day}T00:00:00Z`) + span * 86_400_000).toISOString().slice(0, 10);
+    return { date: day, endDate: end };
+  }
+  return { date: day, endDate: null };
+}
+
+/** 한 주에 그릴 기간 막대 하나 — start/end 는 그 주 안의 칸 번호(0=일 … 6=토). */
+export interface WeekSpan<T extends Dated = ContentItemDto> {
+  item: T;
+  start: number;
+  end: number;
+  /** 몇 번째 줄(위에서부터) */
+  lane: number;
+  /** 지난주에서 이어져 온다(왼쪽 모서리를 둥글리지 않는다) */
+  fromPrev: boolean;
+  /** 다음 주로 이어진다 */
+  toNext: boolean;
+}
+
+/**
+ * 한 주(7칸)에 걸친 기간 콘텐츠를 겹치지 않게 줄을 나눠 배치한다.
+ * 먼저 시작하는 것 → 긴 것 순으로 위 줄부터 채운다(노션 캘린더와 같은 배치).
+ */
+export function weekSpans<T extends Dated & { createdAt?: string }>(week: string[], items: T[]): { spans: WeekSpan<T>[]; lanes: number } {
+  const first = week[0];
+  const last = week[week.length - 1];
+  const list = items
+    .filter((i) => isRange(i) && overlaps(i, first, last))
+    .sort((a, b) => (a.date! !== b.date! ? (a.date! < b.date! ? -1 : 1)
+      : daysBetween(b.date!, b.endDate!) - daysBetween(a.date!, a.endDate!) || String(a.createdAt ?? "").localeCompare(String(b.createdAt ?? ""))));
+  const laneEnds: number[] = [];
+  const spans = list.map((item) => {
+    const start = item.date! < first ? 0 : week.indexOf(item.date!);
+    const end = item.endDate! > last ? week.length - 1 : week.indexOf(item.endDate!);
+    let lane = laneEnds.findIndex((e) => e < start);
+    if (lane < 0) { lane = laneEnds.length; laneEnds.push(end); } else laneEnds[lane] = end;
+    return { item, start, end, lane, fromPrev: item.date! < first, toNext: item.endDate! > last };
+  });
+  return { spans, lanes: laneEnds.length };
 }
 
 /** 날짜별로 묶는다(날짜 미정 제외). 각 날의 항목은 compareItems 순. */

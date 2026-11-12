@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronDown, Clock } from "lucide-react";
 import { FINISH, R, SELECTED } from "@/components/ui/primitives";
-import { isClosedStatus, statusMeta, type ContentItemDto } from "@/lib/content-calendar";
+import { isClosedStatus, isRange, statusMeta, type ContentItemDto, type WeekSpan } from "@/lib/content-calendar";
 
 /** 세 보기가 같이 받는 것 */
 export interface ViewProps {
@@ -51,6 +51,44 @@ export function CalendarChip({ item, color, onOpen, showProject, projectName }: 
   );
 }
 
+/** 캘린더 막대 한 줄의 높이(px) — CalendarView 가 칸 안에 같은 높이만큼 자리를 비운다. */
+export const RANGE_BAR_ROW = 26;
+
+/**
+ * 기간 콘텐츠 막대 — 시작일부터 종료일까지 칸을 가로질러 이어진다(노션처럼).
+ * 주가 바뀌면 다음 줄에서 이어지고, 이어지는 쪽 모서리는 둥글리지 않는다.
+ * 끌어서 다른 날로 옮기면 길이를 그대로 두고 통째로 옮겨진다.
+ */
+export function RangeBar({ span, color, onOpen, showProject, projectName, top }: {
+  span: WeekSpan; color: string; onOpen: () => void; showProject: boolean; projectName: string; top: number;
+}) {
+  const { item } = span;
+  const done = isClosedStatus(item.status);
+  const cols = span.end - span.start + 1;
+  return (
+    <button
+      type="button"
+      draggable
+      onDragStart={(e) => { e.dataTransfer.setData(DRAG_TYPE, item.id); e.dataTransfer.effectAllowed = "move"; }}
+      onClick={(e) => { e.stopPropagation(); onOpen(); }}
+      title={`${showProject ? `[${projectName}] ` : ""}${item.title} · ${shortDay(item.date!)} ~ ${shortDay(item.endDate!)} · ${statusMeta(item.status).label}`}
+      style={{
+        top,
+        left: `calc(${(span.start / 7) * 100}% + ${span.fromPrev ? 0 : 4}px)`,
+        width: `calc(${(cols / 7) * 100}% - ${(span.fromPrev ? 0 : 4) + (span.toNext ? 0 : 4)}px)`,
+      }}
+      className={`pointer-events-auto absolute flex h-[22px] min-w-0 items-center gap-1.5 bg-card px-1.5 text-left text-xs transition-colors hover:bg-secondary ${FINISH.s2} cursor-grab active:cursor-grabbing ${
+        span.fromPrev ? "rounded-l-none" : "rounded-l-md"} ${span.toNext ? "rounded-r-none" : "rounded-r-md"}`}
+    >
+      {!span.fromPrev && <span aria-hidden className={`h-3.5 w-1 shrink-0 rounded-full ${color}`} />}
+      <span className={`min-w-0 flex-1 truncate ${done ? "text-muted-foreground line-through decoration-muted-foreground/40" : ""}`}>
+        {span.fromPrev && <span className="text-muted-foreground">← </span>}{item.title}
+      </span>
+      {!span.toNext && <StatusDot status={item.status} />}
+    </button>
+  );
+}
+
 /** 보드·날짜 미정 목록의 카드 */
 export function ItemCard({ item, color, projectName, showProject, onOpen, showDate = true }: {
   item: ContentItemDto; color: string; projectName: string; showProject: boolean; onOpen: () => void; showDate?: boolean;
@@ -70,7 +108,7 @@ export function ItemCard({ item, color, projectName, showProject, onOpen, showDa
       )}
       <span className="whitespace-pre-line text-sm font-medium leading-snug">{item.title}</span>
       <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-        {showDate && item.date && <span className="inline-flex items-center gap-1 tabular-nums"><Clock className="h-3 w-3" aria-hidden />{shortDay(item.date)}{item.time && ` ${item.time}`}</span>}
+        {(showDate || isRange(item)) && item.date && <span className="inline-flex items-center gap-1 tabular-nums"><Clock className="h-3 w-3" aria-hidden />{shortDay(item.date)}{isRange(item) && ` ~ ${shortDay(item.endDate!)}`}{item.time && ` ${item.time}`}</span>}
         {item.campaign && <span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-violet-700 dark:text-violet-300">{item.campaign}</span>}
         {item.formats.map((f) => <span key={f} className="rounded bg-secondary px-1.5 py-0.5">{f}</span>)}
         {item.channels.map((c) => <span key={c} className="rounded bg-secondary px-1.5 py-0.5">{c}</span>)}

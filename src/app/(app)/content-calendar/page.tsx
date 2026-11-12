@@ -23,7 +23,7 @@ import { useUndoableDelete } from "@/components/ui/use-undoable-delete";
 import { useWorkspace } from "@/contexts/workspace";
 import {
   CONTENT_STATUSES, EMPTY_FILTER, NO_PROJECT_COLOR, PROJECT_COLORS, assigneeOptions, campaignOptions, channelOptions, formatOptions,
-  isValidMonth, kstToday, matchesFilter,
+  isValidMonth, kstToday, matchesFilter, overlaps,
   monthGrid, monthKey, monthLabel, monthRange, shiftMonth,
   type ContentFilter, type ContentItemDto, type ContentMemberDto, type ContentRepeat,
 } from "@/lib/content-calendar";
@@ -45,7 +45,7 @@ const isTmp = (id: string) => id.startsWith(TMP);
 const newTmpId = () => `${TMP}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const nowIso = () => new Date().toISOString();
 /** 보낼 수 있는 칸만 — 화면용 칸(createdAt 등)은 빼고 */
-const SENDABLE = ["projectId", "title", "date", "time", "status", "channels", "formats", "campaign", "assignees", "body", "link"] as const;
+const SENDABLE = ["projectId", "title", "date", "endDate", "time", "status", "channels", "formats", "campaign", "assignees", "body", "link"] as const;
 const pickSendable = (fields: Partial<ContentItemDto>) =>
   Object.fromEntries(SENDABLE.filter((k) => k in fields).map((k) => [k, fields[k]]));
 
@@ -194,7 +194,7 @@ export default function ContentCalendarPage() {
     const item: ContentItemDto = {
       id: newTmpId(),
       projectId: scope !== "all" && scope !== "none" ? scope : null,
-      title: "", time: "", status: "waiting", channels: [], formats: [], campaign: "",
+      title: "", endDate: null, time: "", status: "waiting", channels: [], formats: [], campaign: "",
       assignees: [], body: "", link: "", sourceUrl: "", createdAt: now, updatedAt: now,
       ...defaults,
       date,
@@ -278,7 +278,7 @@ export default function ContentCalendarPage() {
   const scoped = items.filter((i) => scope === "all" || (i.projectId ?? "none") === scope);
   const visible = items.filter((i) => matchesFilter(i, fullFilter));
   // 보드·목록은 이 달 + 날짜 미정(캘린더는 앞뒤 달 칸도 보여 주므로 그대로)
-  const inMonth = visible.filter((i) => !i.date || (i.date >= mStart && i.date <= mEnd));
+  const inMonth = visible.filter((i) => !i.date || overlaps(i, mStart, mEnd));
   const filterActive = filter.statuses.length + filter.channels.length + filter.formats.length + filter.campaigns.length + filter.assignees.length > 0
     || filter.query.trim() !== "";
   const known = { channels: channelOptions(items), formats: formatOptions(items), campaigns: campaignOptions(items) };
