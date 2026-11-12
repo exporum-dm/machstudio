@@ -14,7 +14,11 @@ import {
   CONTENT_STATUSES, isContentStatus, isValidDay, isValidTime, normalizeTags, parseAssignees, type ContentAssignee,
 } from "@/lib/content-calendar";
 
-export const MAX_API_CONTENT_ITEMS = 50;
+/**
+ * 한 번에 넣는 최대 건수 — 1년 치 계획(주 5~6건)을 한 번에. 그보다 많으면 AI 가 나눠서 부른다.
+ * 서버는 INSERT 한 번(createManyAndReturn)이라 300건도 가볍다.
+ */
+export const MAX_API_CONTENT_ITEMS = 300;
 
 export interface ApiContentInput {
   title?: string;
@@ -178,12 +182,13 @@ export async function createApiContentItems(ctx: Ctx, inputs: ApiContentInput[])
     if ("error" in read) return { error: `${index + 1}번째 항목: ${read.error}` } as const;
     rows.push(read.fields);
   }
-  const created = await prisma.$transaction(rows.map((fields) => prisma.contentItem.create({
-    data: { assignees: [], ...fields, title: fields.title as string, workspaceId: ctx.workspaceId, createdById: ctx.userId },
-    select: { id: true, projectId: true, title: true, date: true, time: true, status: true, channels: true, formats: true, campaign: true, assignees: true, body: true, link: true },
-  })));
-  const names = new Map(team.map((m) => [m.id, m.name]));
-  return { created: created.map((i) => serialize(i, names, projects)), count: created.length } as const;
+  // INSERT 한 번 — 전부 들어가거나 하나도 안 들어간다.
+  const created = await prisma.contentItem.createManyAndReturn({
+    data: rows.map((fields) => ({ assignees: [], ...fields, title: fields.title as string, workspaceId: ctx.workspaceId, createdById: ctx.userId })),
+    select: { id: true, title: true, date: true },
+  });
+  // 돌려줄 땐 확인용 요약만 — 본문까지 300건을 다시 보내면 AI 대화가 쓸데없이 길어진다.
+  return { created: created.map((i) => ({ id: i.id, title: i.title, date: toDay(i.date) })), count: created.length } as const;
 }
 
 export async function updateApiContentItem(ctx: Ctx, id: string, input: ApiContentInput) {

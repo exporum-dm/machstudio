@@ -15,7 +15,7 @@ vi.mock("@/lib/external-api-data", () => ({
 }));
 
 vi.mock("@/lib/content-calendar-api", () => ({
-  MAX_API_CONTENT_ITEMS: 50,
+  MAX_API_CONTENT_ITEMS: 300,
   isWorkspaceMember: vi.fn(async () => true),
   listApiContentItems: vi.fn(async () => ({ items: [], count: 0, teamMembers: ["이창환"], statuses: [] })),
   createApiContentItems: vi.fn(async (_ctx: unknown, items: unknown[]) => ({ created: items, count: items.length })),
