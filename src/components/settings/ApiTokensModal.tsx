@@ -34,6 +34,8 @@ const SCOPES = [
   { id: "sources:write",   label: "수집 소스 관리" },
   { id: "dashboards:read", label: "대시보드 조회" },
   { id: "ads:read",        label: "광고 성과 조회" },
+  { id: "content:read",    label: "콘텐츠 캘린더 조회" },
+  { id: "content:write",   label: "콘텐츠 캘린더 추가/수정" },
 ];
 
 export default function ApiTokensModal({ workspaceId, projects, onClose }: Props) {

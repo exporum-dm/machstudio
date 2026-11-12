@@ -14,7 +14,16 @@ vi.mock("@/lib/external-api-data", () => ({
   getApiAdPerformance: vi.fn(async () => ({ totals: { cost: 100, cpm: 10, cpc: 2, cpa: 5, roas: 3 } })),
 }));
 
+vi.mock("@/lib/content-calendar-api", () => ({
+  MAX_API_CONTENT_ITEMS: 50,
+  isWorkspaceMember: vi.fn(async () => true),
+  listApiContentItems: vi.fn(async () => ({ items: [], count: 0, teamMembers: ["이창환"], statuses: [] })),
+  createApiContentItems: vi.fn(async (_ctx: unknown, items: unknown[]) => ({ created: items, count: items.length })),
+  updateApiContentItem: vi.fn(async () => ({ item: { id: "c1" } })),
+}));
+
 import { createMachstudioMcpServer } from "@/lib/machstudio-mcp";
+import { createApiContentItems } from "@/lib/content-calendar-api";
 import { getApiDashboard } from "@/lib/external-api-data";
 
 const servers: Array<{ close(): Promise<void> }> = [];
@@ -62,5 +71,23 @@ describe("Machstudio MCP", () => {
 
     await client.callTool({ name: "get_dashboard_summary", arguments: { projectId: "some-other-project" } });
     expect(vi.mocked(getApiDashboard)).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-1" }));
+  });
+
+  it("content tools — 조회 전용 토큰에는 안 보이고, content:write 면 추가가 된다(프로젝트 잠금 전달)", async () => {
+    const readOnly = await connect(["dashboards:read"]);
+    const names = (await readOnly.listTools()).tools.map((t) => t.name);
+    expect(names).not.toContain("create_content_items");
+    expect(names).not.toContain("list_content_items");
+
+    const writer = await connect(["content:write"], "project-1");
+    const writerNames = (await writer.listTools()).tools.map((t) => t.name);
+    expect(writerNames).toEqual(expect.arrayContaining(["list_content_items", "create_content_items", "update_content_item"]));
+    const out = await writer.callTool({ name: "create_content_items", arguments: { items: [{ title: "카드뉴스 1", date: "2026-12-01", channels: ["인스타그램"] }] } });
+    expect(out.isError).toBeFalsy();
+    expect(out.structuredContent).toMatchObject({ count: 1 });
+    expect(vi.mocked(createApiContentItems)).toHaveBeenCalledWith(
+      { workspaceId: "workspace-1", userId: "user-1", lockProjectId: "project-1" },
+      [expect.objectContaining({ title: "카드뉴스 1" })],
+    );
   });
 });

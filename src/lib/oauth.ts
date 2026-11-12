@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { getPublicAppOrigin } from "@/lib/app-url";
 
-export const OAUTH_SCOPES = ["dashboards:read", "ads:read"] as const;
+export const OAUTH_SCOPES = ["dashboards:read", "ads:read", "content:read", "content:write"] as const;
 
 export function oauthOrigin(request?: Request) {
   return getPublicAppOrigin() || (request ? new URL(request.url).origin : "");

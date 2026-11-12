@@ -73,7 +73,9 @@ export default async function OAuthAuthorizePage({ searchParams }: { searchParam
             <ul className="mt-3 space-y-2 text-sm text-slate-600">
               {scopes.includes("dashboards:read") && <li>✓ {lockedProject ? `"${lockedProject.name}" 프로젝트의 ` : ""}사전등록·UTM·앰배서더 대시보드 조회</li>}
               {scopes.includes("ads:read") && <li>✓ {lockedProject ? `"${lockedProject.name}" 프로젝트의 ` : ""}연결된 광고 성과 조회</li>}
-              <li className="text-emerald-700">✓ 등록·수정·삭제 권한 없음</li>
+              {scopes.includes("content:read") && <li>✓ 콘텐츠 캘린더 조회</li>}
+              {scopes.includes("content:write") && <li>✓ 콘텐츠 캘린더에 콘텐츠 추가·수정 (삭제는 안 돼요)</li>}
+              <li className="text-emerald-700">✓ 사전등록자 개인정보 조회·수정·삭제 권한 없음</li>
             </ul>
           </div>
           <div className="flex items-center justify-end gap-3 border-t border-slate-100 pt-6">
