@@ -1,4 +1,4 @@
-import { oauthOrigin } from "@/lib/oauth";
+import { OAUTH_SCOPES, oauthOrigin } from "@/lib/oauth";
 
 export async function GET(request: Request) {
   const origin = oauthOrigin(request);
@@ -12,6 +12,6 @@ export async function GET(request: Request) {
     grant_types_supported: ["authorization_code", "refresh_token"],
     code_challenge_methods_supported: ["S256"],
     token_endpoint_auth_methods_supported: ["none"],
-    scopes_supported: ["dashboards:read", "ads:read"],
+    scopes_supported: [...OAUTH_SCOPES],
   }, { headers: { "Cache-Control": "public, max-age=3600" } });
 }
