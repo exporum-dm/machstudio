@@ -250,10 +250,20 @@ export function NotificationPanel({ sidebarWidth = 248 }: Props) {
     setNotifications(data.notifications ?? []);
   }, []);
 
+  /**
+   * 알림 폴링 — **보이는 탭에서만** 60초마다. 예전엔 숨은 탭에서도 30초마다 최근 50건을 통째로
+   * 받아(사무실에서 하루 종일 열어 둔 탭마다) DB 전송량(egress)을 꾸준히 태웠다.
+   * 탭으로 돌아오면 바로 한 번 받아 늦게 보이는 일이 없게 한다.
+   */
   useEffect(() => {
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 30000);
-    return () => clearInterval(interval);
+    const tick = () => { if (!document.hidden) void fetchNotifications().catch(() => undefined); };
+    tick();
+    const interval = setInterval(tick, 60_000);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", tick);
+    };
   }, [fetchNotifications]);
 
   useEffect(() => {

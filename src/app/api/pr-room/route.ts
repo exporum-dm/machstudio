@@ -16,7 +16,8 @@ export async function PATCH(request: Request) {
   const projectId = typeof body?.projectId === "string" ? body.projectId : "";
   const g = await guardProject(projectId, { write: true });
   if (!g.ok) return g.response;
-  const current = await prisma.prRoom.findUnique({ where: { projectId } });
+  // 버전 확인에 필요한 것만 — 홍보실은 기사·댓글이 든 큰 JSON(최대 4MB)이라 통째로 읽으면 저장 한 번에 DB 전송량이 두 배가 된다.
+  const current = await prisma.prRoom.findUnique({ where: { projectId }, select: { id: true, updatedAt: true } });
   if (!current) return NextResponse.json({ error: "홍보실을 찾을 수 없어요" }, { status: 404 });
   const expectedUpdatedAt = typeof body?.expectedUpdatedAt === "string" ? new Date(body.expectedUpdatedAt) : current.updatedAt;
   if (Number.isNaN(expectedUpdatedAt.getTime())) return NextResponse.json({ error: "저장 버전을 확인해 주세요" }, { status: 400 });
