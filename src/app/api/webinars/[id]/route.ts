@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withLiveSignal } from "@/lib/webinar-live-signal";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma";
@@ -42,7 +43,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   return NextResponse.json({ webinar: full });
 }
 
-export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function patchHandler(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "인증 필요" }, { status: 401 });
@@ -164,7 +165,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   return NextResponse.json({ webinar: updated });
 }
 
-export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function deleteHandler(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "인증 필요" }, { status: 401 });
@@ -187,3 +188,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
 
   return NextResponse.json({ ok: true });
 }
+
+// 라이브 시청 화면 즉시 알림 — 성공한 변경만(src/lib/webinar-live-signal.ts)
+export const PATCH = withLiveSignal("webinar", patchHandler);
+export const DELETE = withLiveSignal("webinar", deleteHandler);

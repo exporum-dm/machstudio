@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
+import { withLiveSignal } from "@/lib/webinar-live-signal";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/activity";
 
-export async function PATCH(request: Request, { params }: { params: Promise<{ id: string; qaId: string }> }) {
+async function patchHandler(request: Request, { params }: { params: Promise<{ id: string; qaId: string }> }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "인증 필요" }, { status: 401 });
@@ -75,7 +76,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
  * 소속 검증은 두 조건을 다 건다: id 하나만 맞으면 다른 웨비나의 질문을 지울 수 있다.
  * 삭제하면 부분 유니크 인덱스(웨비나당 송출 1개)도 자연히 비므로 onScreen 별도 처리는 없다.
  */
-export async function DELETE(
+async function deleteHandler(
   _request: Request,
   { params }: { params: Promise<{ id: string; qaId: string }> },
 ) {
@@ -117,3 +118,7 @@ export async function DELETE(
 
   return NextResponse.json({ ok: true });
 }
+
+// 라이브 시청 화면 즉시 알림 — 성공한 변경만(src/lib/webinar-live-signal.ts)
+export const PATCH = withLiveSignal("qa", patchHandler);
+export const DELETE = withLiveSignal("qa", deleteHandler);

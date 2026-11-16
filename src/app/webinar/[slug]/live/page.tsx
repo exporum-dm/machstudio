@@ -27,6 +27,7 @@ import {
 } from "@/lib/webinar-config";
 import { MultiChoiceField, SingleChoiceField } from "@/components/webinar/choice-fields";
 import { readStatusRefresh } from "../status-refresh";
+import { useLiveSignal } from "@/components/webinar/use-live-signal";
 import { buildUtmEnvelope, sendVisitBeacon } from "@/lib/attribution-client";
 import { buildShareUrl, normalizeShareCode, readShareCode, type ShareChannel, type ShareSurface } from "@/lib/webinar-share";
 import { PUBLIC_REGISTRATION_FORM_CSS } from "@/lib/webinar-public-form-css";
@@ -322,8 +323,8 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
 
   // 라이브 전 상태 전환 감지용 경량 폴 — /status(상태만) 를 받아 view/serverNow/isTrulyLive 갱신.
   // 세션·테마·config 를 30초마다 다시 받지 않아 대기 시청자 egress 를 줄인다(정적 콘텐츠는 최초 /info 1회).
-  const fetchStatus = useCallback(async () => {
-    const refresh = await readStatusRefresh(() => fetch(`/api/webinar/${slug}/status`));
+  const fetchStatus = useCallback(async (v?: number) => {
+    const refresh = await readStatusRefresh(() => fetch(`/api/webinar/${slug}/status${v ? `?v=${v}` : ""}`));
     setWaitingCount(refresh.waitingCount);
     setRegistrantCount(refresh.registrantCount);
     const data = refresh.data;
@@ -353,7 +354,7 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
   // 예전엔 announcements/qa/chat 3개 + LivePushLayer 자체 3개로 분산 폴링했다.
   // fullChat=true 면 채팅 전체 재동기화(모더레이션 삭제 반영), 아니면 커서 이후 증분만. 최근 100개 유지.
   const liveReqRef = useRef(0); // 인플라이트 응답 펜스 — 늦게 온 전체 재동기화가 최신 상태(방금 보낸 채팅·커서)를 덮지 않게
-  const fetchLiveState = useCallback(async (fullChat = false) => {
+  const fetchLiveState = useCallback(async (fullChat = false, v?: number) => {
     const gen = ++liveReqRef.current;
     try {
       const useChat = chatEnabled && activeTab === "chat" && !!registrationId;
@@ -367,6 +368,8 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
         params.set("chat", "1");
         if (after) params.set("chatAfter", after);
       }
+      // v = 즉시 알림의 바뀐 시각 — 서버 묶음 캐시가 그보다 오래된 답을 주지 않게
+      if (v) params.set("v", String(v));
       const qs = params.toString();
       const res = await fetch(`/api/webinar/${slug}/live-state${qs ? `?${qs}` : ""}`);
       if (!res.ok) return;
@@ -653,7 +656,23 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
     return () => clearInterval(interval);
   }, [view, fetchStatus, registrationId, slug]);
 
-  // 라이브 중 통합 폴링 — 12초 주기(탭 비활성 시 스킵). 공지·답변 Q&A·채팅·투표·팝업·Tally·상태를
+  /**
+   * 즉시 알림(Supabase Realtime) — 운영자가 공지·투표·팝업·Q&A·영상·상태를 바꾸는 순간 신호가 오고,
+   * 그때 바로 다시 받는다(1초 안). 대기 화면에서는 상태만, 라이브 중에는 라이브 상태 전체.
+   * 연결돼 있으면 아래 폴링은 예비라 30초로 늦추고, 연결이 안 되면(동시 접속 한도 초과·차단 네트워크) 5초로
+   * 촘촘히 — 서버 묶음 캐시 덕에 DB 부담은 시청자 수와 무관하다.
+   */
+  const signalConnected = useLiveSignal(
+    webinar?.id,
+    (at) => {
+      if (document.hidden) return;
+      if (view === "live") void fetchLiveState(false, at);
+      else if (view === "signup") void fetchStatus(at);
+    },
+    { enabled: !isPreviewUrl() && view !== "ended" },
+  );
+
+  // 라이브 중 통합 폴링 — 즉시 알림이 연결돼 있으면 30초(예비), 아니면 5초(탭 비활성 시 스킵). 공지·답변 Q&A·채팅·투표·팝업·Tally·상태를
   // 한 번의 요청으로 받는다. fetchLiveState 가 activeTab/채팅 여부를 반영하므로 탭 전환 시 이 이펙트가
   // 재실행되어 즉시 재동기화된다. 5주기(약 60초)마다 채팅 전체 재동기화(모더레이션 삭제 반영).
   // registrationId 없는 입장 확인 화면 시청자도 공지 배너·상태 전환은 받아야 하므로 view=live 면 폴링한다
@@ -667,9 +686,9 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
       if (document.hidden) return;
       liveTickRef.current += 1;
       void fetchLiveState(liveTickRef.current % 5 === 0);
-    }, 12000);
+    }, signalConnected ? 30_000 : 5_000);
     return () => clearInterval(interval);
-  }, [view, registrationId, fetchLiveState]);
+  }, [view, registrationId, fetchLiveState, signalConnected]);
 
   // presence ping
   useEffect(() => {

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withLiveSignal } from "@/lib/webinar-live-signal";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { logActivity, logWebinarUpdate } from "@/lib/activity";
@@ -43,7 +44,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 }
 
 // 어드민 POST — 호스트(운영자) 발언.
-export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function postHandler(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "인증 필요" }, { status: 401 });
@@ -73,7 +74,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 }
 
 // 어드민 PATCH — 채팅 모더레이션 설정(천천히 모드 초·금지어)을 components 에 병합(다른 플래그 보존).
-export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function patchHandler(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "인증 필요" }, { status: 401 });
@@ -122,3 +123,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   return NextResponse.json({ ok: true, settings: { slowSec: updated.chatSlowSec, bannedWords: updated.chatBannedWords } });
 }
+
+// 라이브 시청 화면 즉시 알림 — 성공한 변경만(src/lib/webinar-live-signal.ts)
+export const POST = withLiveSignal("chat", postHandler);
+export const PATCH = withLiveSignal("chat", patchHandler);
