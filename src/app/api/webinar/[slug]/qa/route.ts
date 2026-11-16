@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
+import { signalLive } from "@/lib/webinar-live-signal";
 import { prisma } from "@/lib/prisma";
 import { rateLimitAsync } from "@/lib/ratelimit";
 import { resolveWebinarStatus } from "@/lib/webinar-status";
@@ -113,6 +114,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     },
   });
 
+  after(() => signalLive(webinar.id, "qa"));
   return NextResponse.json({ qa: { id: qa.id } }, {
     status: 201,
     headers: { "Access-Control-Allow-Origin": "*" },

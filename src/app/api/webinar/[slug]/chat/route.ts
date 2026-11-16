@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
+import { signalLive } from "@/lib/webinar-live-signal";
 import { prisma } from "@/lib/prisma";
 import { rateLimitAsync, rateLimitPeekAsync } from "@/lib/ratelimit";
 import { resolveWebinarStatus } from "@/lib/webinar-status";
@@ -172,6 +173,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     select: { id: true },
   });
 
+  after(() => signalLive(webinar.id, "chat"));
   return NextResponse.json({ message: { id: created.id } }, { status: 201, headers: CORS });
 }
 

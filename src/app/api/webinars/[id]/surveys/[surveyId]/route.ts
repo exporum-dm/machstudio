@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withLiveSignal } from "@/lib/webinar-live-signal";
 import type { Prisma } from "@/generated/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
@@ -24,7 +25,7 @@ function logSurveyUpdate(workspaceId: string, userId: string, webinarId: string,
   });
 }
 
-export async function PATCH(request: Request, { params }: { params: Promise<{ id: string; surveyId: string }> }) {
+async function patchHandler(request: Request, { params }: { params: Promise<{ id: string; surveyId: string }> }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "인증 필요" }, { status: 401 });
@@ -184,7 +185,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   return NextResponse.json({ survey, retired: retiredCount });
 }
 
-export async function DELETE(request: Request, { params }: { params: Promise<{ id: string; surveyId: string }> }) {
+async function deleteHandler(request: Request, { params }: { params: Promise<{ id: string; surveyId: string }> }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "인증 필요" }, { status: 401 });
@@ -200,3 +201,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   await logActivity({ workspaceId: webinar.workspaceId, userId: user.id, action: "webinar.survey_deleted", meta: { webinarId: id, surveyId } });
   return NextResponse.json({ ok: true });
 }
+
+// 라이브 시청 화면 즉시 알림 — 성공한 변경만(src/lib/webinar-live-signal.ts)
+export const PATCH = withLiveSignal("survey", patchHandler);
+export const DELETE = withLiveSignal("survey", deleteHandler);
