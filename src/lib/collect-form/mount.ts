@@ -15,6 +15,7 @@ import { h, clearNode } from "@/lib/dom/h";
 import { safeRichTextFragment } from "@/lib/dom/safe-rich-text";
 import { onAccentColor } from "@/lib/competition-render";
 import { ensureFormStyles } from "./css";
+import { collectFormCopy, type CollectFormCopy } from "./strings";
 import {
   DEFAULT_LOCALE,
   REGISTRATION_STATUSES,
@@ -33,7 +34,7 @@ import {
   type RegistrationStatus,
   type SubmissionIssue,
 } from "@/lib/collect-form-config";
-import { fill, formCopy, type FormCopy } from "./copy";
+import { fill, formCopy } from "./copy";
 import { isValidCollectEmail } from "@/lib/collect-email";
 import { COUNTRY_DIALS, flagEmoji, isKnownCountry } from "@/lib/collect-country";
 import { resolveRedirect } from "@/lib/collect-redirect";
@@ -74,21 +75,6 @@ function maskedEmail(value: string): string {
 function maskedPhone(value: string): string {
   const digits = value.replace(/\D/g, "");
   return digits.length < 8 ? "" : `•••••• ${digits.slice(-4)}`;
-}
-
-
-/** 기본 문구는 copy.ts — "기본 정보 › 폼 언어"(config.defaultLocale)로 한국어·영어를 고른다(2026-11-03). */
-function issueCopy(COPY: FormCopy): Record<SubmissionIssue["code"], string> {
-  return {
-    required: COPY.required,
-    invalid_email: COPY.invalidEmail,
-    invalid_phone: COPY.invalidPhone,
-    invalid_number: COPY.invalidNumber,
-    unknown_key: COPY.unknownKey,
-    too_many: COPY.tooMany,
-    not_an_option: COPY.notAnOption,
-    consent_required: COPY.consentRequired,
-  };
 }
 
 /** "기타(직접 입력)"를 고른 상태의 select·radio 값 — 실제로 저장되는 건 적은 글자다 */
@@ -176,7 +162,7 @@ function openTermsPopup(
   format: "text" | "html",
   onAgree: () => void,
   themeStyle: Record<string, string | null>,
-  COPY: FormCopy,
+  COPY: Pick<CollectFormCopy, "close" | "agree">,
   open?: FormOverlayOpener,
 ): () => void {
   const closeBtn = h("button", { type: "button", class: "msf-terms-close" }, COPY.close);
@@ -257,9 +243,25 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
   let closeTerms: (() => void) | null = null;
   const preview = opts.preview === true;
   const lang = opts.locale || config.defaultLocale || DEFAULT_LOCALE;
+  const localizedCopy = collectFormCopy(lang);
+  const baseCopy = formCopy(lang);
+  const COPY = lang === "zh" ? {
+    ...baseCopy,
+    ...localizedCopy,
+    before: { title: localizedCopy.beforeTitle, body: localizedCopy.beforeBody },
+    closed: { title: localizedCopy.closedTitle, body: localizedCopy.closedBody },
+  } : { ...localizedCopy, ...baseCopy, doneRegNoLabel: baseCopy.regNoLabel };
+  const ISSUE_COPY: Record<SubmissionIssue["code"], string> = {
+    required: COPY.required,
+    invalid_email: COPY.invalidEmail,
+    invalid_phone: COPY.invalidPhone,
+    invalid_number: COPY.invalidNumber,
+    unknown_key: COPY.unknownKey,
+    too_many: lang === "zh" ? COPY.tooManySelected : COPY.tooMany,
+    not_an_option: COPY.notAnOption,
+    consent_required: COPY.consentRequired,
+  };
   const t = (v: Localized | undefined) => localize(v, lang);
-  const COPY = formCopy(lang);
-  const ISSUE_COPY = issueCopy(COPY);
   /** "기타"를 고른 항목(글자를 아직 안 적었어도 칸이 열려 있어야 한다) · 적은 글자 — 다시 그려도 남게 */
   const otherOpen = new Set<string>();
   const otherText = new Map<string, string>();
@@ -1349,7 +1351,7 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
         ...identity,
         badgeBackgroundColor: visitorBadgePalette(identity.visitorType, config.badgeRules).background,
         accentColor: config.theme.accentColor,
-      }).catch(() => window.alert("We couldn't save the ticket image. Please take a screenshot instead.")); },
+      }).catch(() => window.alert(COPY.saveFailed)); },
     }, COPY.saveImage);
   }
 
@@ -1451,7 +1453,7 @@ export function mountCollectForm(opts: MountCollectFormOptions): CollectFormHand
             ...identityRows.flatMap(([label, value]) => [h("dt", null, label), h("dd", null, value)]),
           ) : null,
           h("div", { class: "msf-regno" }, doneRegNo),
-          h("div", { class: "msf-regno-label" }, preview ? COPY.previewDone : COPY.regNoLabel),
+          h("div", { class: "msf-regno-label" }, preview ? COPY.previewDone : COPY.doneRegNoLabel),
           config.completion.showQr ? saveTicketLink(doneRegNo, identity) : null,
           !preview && config.completion.showQr ? h("div", { class: "msf-save-hint" }, COPY.saveHint) : null,
           ticketLink(doneRegNo),

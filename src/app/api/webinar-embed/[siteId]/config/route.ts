@@ -11,7 +11,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolveWebinarStatus } from "@/lib/webinar-status";
 import { endedSurveyLinks } from "@/lib/webinar-ended-surveys";
-import { buildPublicRegistrationFormPayload } from "@/lib/webinar-public-registration-form";
+import { buildPublicRegistrationFormPayload, publicRegistrationFormLocales } from "@/lib/webinar-public-registration-form";
+import { parseLocaleSignalParam, resolveLocaleFromRawSignals } from "@/lib/form-locale";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -40,6 +41,16 @@ function originAllowed(reqOrigin: string | null, allowed: string[]) {
 
 export async function GET(req: Request, { params }: { params: Promise<{ siteId: string }> }) {
   const { siteId } = await params;
+
+  /**
+   * **호스트 페이지의 언어 신호**(hl=a|b|c|d). 로더가 네 값을 읽어 **판정 없이** 실어 보내고,
+   * 고르는 일은 여기서 한다 — 손으로 쓴 로더 스크립트 안에 언어 판정이 한 벌 더 생기면
+   * 반드시 정본과 갈라진다(색 계산이 네 벌로 갈라져 생긴 사고가 이미 있다).
+   *
+   * 캐시가 언어마다 갈라지지만, 실제로 나타나는 값은 사이트당 한두 개뿐이다
+   * (그 사이트가 실제로 번역해 둔 언어로 좁혀지므로).
+   */
+  const localeSignals = parseLocaleSignalParam(new URL(req.url).searchParams.get("hl"));
 
   const site = await prisma.webinarEmbedSite.findUnique({
     where: { id: siteId },
@@ -97,6 +108,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ siteId: 
   const webinar = site.activeWebinar;
   const statusInfo = resolveWebinarStatus(webinar);
   const config = (webinar.config ?? {}) as Record<string, unknown>;
+
+  // 신호를 **실제로 번역이 있는 언어**로 좁힌다. 번역이 없는 언어를 고르면 문구마다 원문으로
+  // 폴백해 화면이 그대로인데, 운영자는 "영문 페이지인데 왜 국문이지" 에서 멈춘다.
+  const formLocales = publicRegistrationFormLocales(webinar.config);
+  const viewerLocale = resolveLocaleFromRawSignals(localeSignals, formLocales.locales, formLocales.defaultLocale);
 
   // 절대 URL 기준 — 스니펫/로더가 파트너 사이트에서 실행되므로 배포 오리진이어야 한다(w/l 라우트와 동일 방식).
   const appOrigin = process.env.NEXT_PUBLIC_APP_URL ?? new URL(req.url).origin;
@@ -156,7 +172,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ siteId: 
     })(),
     theme: webinar.theme ?? {},
     components: webinar.components ?? {},
-    registrationForm: buildPublicRegistrationFormPayload(webinar.config),
+    registrationForm: buildPublicRegistrationFormPayload(webinar.config, viewerLocale),
     links: {
       livePageUrl: site.livePageUrl ?? null,
       surveyUrl: endedSurveyUrl,

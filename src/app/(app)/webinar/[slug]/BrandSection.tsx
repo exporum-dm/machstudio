@@ -17,6 +17,7 @@
 
 import { useMemo, useState } from "react";
 import { onAccentColor } from "@/app/webinar/[slug]/LiveContentStk";
+import { contrastRatio, readableTextOn, READABLE_MIN_CONTRAST } from "@/lib/color";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useAutosave, useExternalSync } from "@/components/ui/use-autosave";
@@ -97,6 +98,30 @@ export default function BrandSection({
   );
   useExternalSync(incoming, setTheme, dirty);
 
+  /**
+   * 고른 색 조합 중 **공개 화면에서 자동으로 바뀔 것**을 미리 알려 준다.
+   *
+   * 여기서 경고만 하고 값은 안 고치는 이유: 운영자가 저장한 건 운영자의 색이고,
+   * 보정은 렌더 시점(buildStkCss → readableTextOn)의 일이다. 저장값을 말없이 덮어쓰면
+   * 배경을 다시 어둡게 바꿨을 때 원래 고른 글자색이 돌아오지 않는다.
+   */
+  const contrastNotes = useMemo(() => {
+    const notes: { key: string; bg: string; chosen: string; message: string }[] = [];
+    const check = (key: string, bgLabel: string, bg: string, chosen: string) => {
+      const ratio = contrastRatio(chosen, bg);
+      if (ratio >= READABLE_MIN_CONTRAST) return;
+      notes.push({
+        key,
+        bg,
+        chosen,
+        message: `텍스트 컬러가 ${bgLabel} 위에서 대비 ${ratio.toFixed(1)}:1 이라 거의 안 보여요. 공개 화면에서는 ${readableTextOn(bg, chosen)} 로 자동 보정돼요.`,
+      });
+    };
+    check("surface", "서피스 컬러", theme.surfaceColor, theme.textColor);
+    check("bg", "배경 컬러", theme.bgColor, theme.textColor);
+    return notes;
+  }, [theme.surfaceColor, theme.bgColor, theme.textColor]);
+
   return (
     <section className="space-y-4">
       {/* 제목·설명은 부모(SourceInfoTab 의 AreaDivider)가 그린다 — 예전엔 여기서도
@@ -128,6 +153,31 @@ export default function BrandSection({
           </div>
         ))}
       </div>
+
+      {/* 읽힘 경고 — 색을 고르는 자리 **바로 아래**에 인라인으로. 저장을 막지는 않는다:
+          공개 화면이 이미 자동으로 뒤집어 주므로 사고는 안 나고, 여기서 알려 주는 건
+          "내가 고른 색과 실제로 보이는 색이 다르다" 는 사실 하나다. */}
+      {contrastNotes.length > 0 && (
+        <motion.ul
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={spring}
+          className="space-y-1 rounded-xl bg-amber-500/8 p-3"
+        >
+          {contrastNotes.map((note) => (
+            <li key={note.key} className="flex items-start gap-2 text-xs leading-relaxed text-amber-700 dark:text-amber-400">
+              <span
+                aria-hidden
+                className="mt-0.5 inline-flex h-4 w-8 flex-none items-center justify-center rounded text-[9px] font-bold"
+                style={{ backgroundColor: note.bg, color: note.chosen }}
+              >
+                Aa
+              </span>
+              <span>{note.message}</span>
+            </li>
+          ))}
+        </motion.ul>
+      )}
 
       <div className="space-y-2">
         <p className="text-xs font-medium text-muted-foreground">폰트</p>
@@ -204,8 +254,10 @@ export default function BrandSection({
           >
             W
           </div>
-          <p className="font-semibold" style={{ color: theme.textColor }}>웨비나 제목 예시</p>
-          <p className="text-sm opacity-70" style={{ color: theme.textColor }}>웨비나 설명 텍스트가 여기에 표시돼요</p>
+          {/* 공개 화면과 **같은 보정**을 거친 색으로 그린다 — 미리보기가 저장값 그대로를
+              보여 주면 "여기선 안 보이는데 실제로는 보인다" 가 되어 경고와 어긋난다. */}
+          <p className="font-semibold" style={{ color: readableTextOn(theme.bgColor, theme.textColor) }}>웨비나 제목 예시</p>
+          <p className="text-sm opacity-70" style={{ color: readableTextOn(theme.bgColor, theme.textColor) }}>웨비나 설명 텍스트가 여기에 표시돼요</p>
           <button
             type="button"
             className="px-4 py-2 text-sm font-medium"

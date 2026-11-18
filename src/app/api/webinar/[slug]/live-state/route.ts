@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import { surveyAcceptingWhere } from "@/lib/webinar-survey";
 import { prisma } from "@/lib/prisma";
-import { resolveWebinarStatus } from "@/lib/webinar-status";
-import { normalizeQaMode } from "@/lib/webinar-config";
 import { maskName } from "@/lib/mask";
+import { getWebinarLiveSnapshot } from "@/lib/webinar-live-snapshot";
 
 const CORS = { "Access-Control-Allow-Origin": "*" };
 
@@ -33,31 +31,29 @@ async function liveState(request: Request, { params }: { params: Promise<{ slug:
   const wantQa = url.searchParams.get("qa") === "1"; // Q&A 탭 활성 시에만 100행 보드 전송(egress 절감)
   const chatAfterRaw = url.searchParams.get("chatAfter");
 
-  const webinar = await prisma.webinar.findUnique({
-    where: { slug },
-    select: {
-      id: true, statusOverride: true, liveStartAt: true, liveEndAt: true, signupDeadline: true, components: true, config: true,
-      project: { select: { deletedAt: true } },
-    },
-  });
-  // project.deletedAt 이 있으면 삭제 유예(30일) 중인 프로젝트 — 지금 못 찾는 웨비나와 동일하게 처리한다.
-  if (!webinar || webinar.project.deletedAt !== null) {
+  /**
+   * **모든 시청자가 똑같이 받는 부분은 한 번만 읽는다**(5초 스냅샷, lib/webinar-live-snapshot).
+   * 공지·투표·팝업·Tally·설문·시청자수·웨비나 행이 여기 들어 있다 — 500명이 12초마다 부르면
+   * 초당 42요청인데, 예전에는 그 요청마다 같은 답을 내는 쿼리를 7건씩 따로 날렸다.
+   * 아래 **시청자별**로 달라지는 조회(소속 확인·Q&A 보드·채팅·송출 질문·고정 메시지)만 매번 한다.
+   */
+  const snap = await getWebinarLiveSnapshot(slug);
+  if (!snap.webinar || !snap.status) {
     return NextResponse.json({ error: "없는 웨비나예요" }, { status: 404, headers: CORS });
   }
 
-  const statusInfo = resolveWebinarStatus(webinar);
-  const components = (webinar.components ?? {}) as Record<string, unknown>;
-  const chatEnabled = components.chatEnabled === true;
+  const statusInfo = snap.status;
+  const chatEnabled = snap.chatEnabled;
   // 폐쇄형(주최자만 열람)이면 보드를 **조회조차 하지 않는다** — 뷰어에서 숨기는 건 게이팅이 아니다.
   // (응답에 실리면 개발자도구에서 그대로 읽힌다). 겸사겸사 100행 전송도 사라져 egress 도 줄어든다.
-  const qaMode = normalizeQaMode(components);
-  const wid = webinar.id;
+  const qaMode = snap.qaMode;
+  const wid = snap.webinar.id;
 
   // registrationId 는 쿼리스트링에서 온 **자칭**이다 — "값이 있다"가 아니라 "이 웨비나의 등록자다"를
   // 확인해야 한다. 예전엔 아래 youtubeId 만 소속을 검증하고, Q&A 보드·채팅·송출 질문·고정 메시지는
   // truthy 검사만 했다. 그래서 ?registrationId=아무거나 로 등록자 전용 콘텐츠(질문·채팅 원문)가
   // 미등록자에게도, 심지어 다른 웨비나 등록자에게도 그대로 나갔다.
-  // 여기서 한 번 확인하고 모든 게이트가 그 결과를 쓴다(아래 youtubeId 조회도 이걸 재사용 → 쿼리 수는 그대로).
+  // **이 조회만은 캐시하지 않는다** — 소속 판정이 낡으면 권한이 낡는다.
   const viewer = registrationId
     ? await prisma.webinarRegistration.findFirst({
         where: { id: registrationId, webinarId: wid },
@@ -66,19 +62,9 @@ async function liveState(request: Request, { params }: { params: Promise<{ slug:
     : null;
   const isViewer = viewer !== null;
 
-  // 실시간 동시 시청자 수 — 라이브 중에만(사회적 증거 배지). 어드민 대시보드의 presenceSince 와
-  // 같은 최근성 창(5분) — 최근성 필터가 없으면 leave 신호가 거의 안 오는 모바일에서 과대 편향된다.
-  const PRESENCE_WINDOW_MS = 5 * 60_000;
-  const presenceSince = new Date(Date.now() - PRESENCE_WINDOW_MS);
-
-  // 동시 병렬 조회 — 필요할 때만 (Q&A/채팅은 게이팅). 풀(max 2)이 알아서 큐잉하므로
-  // 여기 몇 개를 늘어놓든 인스턴스가 잡는 연결 수는 늘지 않는다 — src/lib/prisma.ts 참고.
-  const [announcements, qaRows, pollRow, popupRow, tallyRow, surveyRow, chatRows, pushedRow, pinnedRow, viewerCount] = await Promise.all([
-    prisma.webinarAnnouncement.findMany({
-      where: { webinarId: wid, isActive: true },
-      orderBy: { createdAt: "desc" },
-      select: { id: true, type: true, message: true, createdAt: true },
-    }),
+  // 시청자별 조회만 병렬로. 풀(max 2)이 알아서 큐잉하므로 여기 몇 개를 늘어놓든
+  // 인스턴스가 잡는 연결 수는 늘지 않는다 — src/lib/prisma.ts 참고.
+  const [qaRows, chatRows, pushedRow, pinnedRow] = await Promise.all([
     isViewer && wantQa && qaMode === "open"
       ? prisma.webinarQA.findMany({
           where: { webinarId: wid, status: { not: "dismissed" } },
@@ -87,35 +73,6 @@ async function liveState(request: Request, { params }: { params: Promise<{ slug:
           select: { id: true, question: true, sessionNumber: true, status: true, createdAt: true, name: true, voteCount: true },
         })
       : Promise.resolve(null),
-    prisma.webinarPoll.findFirst({
-      where: { webinarId: wid, isActive: true },
-      orderBy: { updatedAt: "desc" },
-      select: { id: true, question: true, updatedAt: true, options: { orderBy: { order: "asc" }, select: { id: true, label: true, voteCount: true } } },
-    }),
-    prisma.webinarPopup.findFirst({
-      where: { webinarId: wid, isActive: true },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true, type: true, title: true, message: true, buttonLabel: true, buttonUrl: true,
-        secondaryLabel: true, secondaryUrl: true, integrationType: true, embedCode: true,
-        tallyFormId: true, tallyEmojiText: true, tallyEmojiAnimation: true, tallyLayout: true,
-        tallyWidth: true, tallyAutoClose: true, dismissible: true, updatedAt: true,
-      },
-    }),
-    prisma.webinarTallyPush.findFirst({
-      where: { webinarId: wid, isActive: true },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true, title: true, formId: true, emojiText: true, emojiAnimation: true,
-        layout: true, width: true, autoClose: true, showOnce: true, doNotShowAfterSubmit: true, updatedAt: true,
-      },
-    }),
-    // 자체 설문 푸시 — 발행 중(isActive)이고 지금 응답을 받는 것만(온·오프 + 응답 기간).
-    // questions 는 폴 페이로드에 싣지 않는다(매 폴 중복 전송 방지) — 모달이 공개 GET 으로 1회 로드.
-    prisma.webinarSurvey.findFirst({
-      where: { webinarId: wid, isActive: true, ...surveyAcceptingWhere() },
-      select: { id: true, title: true, pushedAt: true },
-    }),
     wantChat && chatEnabled && isViewer
       ? (() => {
           const afterMs = chatAfterRaw ? Date.parse(chatAfterRaw) : NaN;
@@ -147,15 +104,6 @@ async function liveState(request: Request, { params }: { params: Promise<{ slug:
           select: { id: true, name: true, message: true, isHost: true, createdAt: true },
         })
       : Promise.resolve(null),
-    statusInfo.status === "live"
-      ? prisma.webinarRegistration.count({
-          where: {
-            webinarId: wid,
-            isActive: true,
-            OR: [{ presencePingAt: { gte: presenceSince } }, { lastPingAt: { gte: presenceSince } }],
-          },
-        })
-      : Promise.resolve(null),
   ]);
 
   const answeredQA = qaRows
@@ -176,7 +124,7 @@ async function liveState(request: Request, { params }: { params: Promise<{ slug:
   // 소속 확인은 위에서 이미 했다 — 같은 조회를 두 번 하지 않는다.
   let youtubeId: string | null = null;
   if (isViewer) {
-    const yt = (webinar.config as Record<string, unknown> | null)?.youtubeId;
+    const yt = (snap.webinar.config as Record<string, unknown> | null)?.youtubeId;
     youtubeId = typeof yt === "string" ? yt : null;
   }
 
@@ -189,14 +137,14 @@ async function liveState(request: Request, { params }: { params: Promise<{ slug:
       // 라이브 중 콘솔에서 모드를 바꿔도 이미 보고 있는 시청자가 다음 폴에서 따라오게(chatEnabled 와 동일 패턴)
       qaMode,
       youtubeId,
-      viewerCount,
-      announcements,
+      viewerCount: snap.viewerCount,
+      announcements: snap.announcements,
       answeredQA,
       chat,
-      poll: pollRow ?? null,
-      popup: popupRow ?? null,
-      tally: tallyRow ?? null,
-      survey: surveyRow ?? null,
+      poll: snap.poll ?? null,
+      popup: snap.popup ?? null,
+      tally: snap.tally ?? null,
+      survey: snap.survey ?? null,
       pushedQuestion,
       pinnedMessage,
     },

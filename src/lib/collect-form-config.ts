@@ -40,6 +40,9 @@ export const FORM_LOCALES = [
   { id: "en", label: "English" },
   { id: "fr", label: "Français" },
   { id: "ja", label: "日本語" },
+  { id: "zh", label: "中文" },
+  { id: "es", label: "Español" },
+  { id: "vi", label: "Tiếng Việt" },
 ] as const;
 export type FormLocale = (typeof FORM_LOCALES)[number]["id"];
 export const isFormLocale = (v: unknown): v is FormLocale => FORM_LOCALES.some((l) => l.id === v);
@@ -79,6 +82,86 @@ export function localize(value: Localized | undefined, locale = DEFAULT_LOCALE):
   const own = (k: string) => (Object.prototype.hasOwnProperty.call(value, k) ? value[k] : undefined);
   const picked = own(locale) ?? own(DEFAULT_LOCALE) ?? Object.values(value)[0];
   return typeof picked === "string" ? picked : "";
+}
+
+/**
+ * 저장된 "열어 둔 언어" 목록을 정리한다 — 문자열만, 중복 제거, 기본 언어는 뺀다.
+ *
+ * **여기서는 번역 내용을 보지 않는다.** 아직 한 글자도 안 적은 언어도 목록에 남아야
+ * 새로고침 후에도 번역 탭이 그대로 있다. 실제 번역 유무는 `collectFormLocales` 의 질문이고,
+ * 둘을 합쳐 보여 주는 일은 편집 화면이 한다(`editableFormLocales`).
+ */
+function normalizeExplicitLocales(raw: unknown, base: string): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const item of raw) {
+    const v = safeStr(item).trim().toLowerCase();
+    if (!v || v === base || out.includes(v)) continue;
+    out.push(v);
+  }
+  return out;
+}
+
+/**
+ * 편집 화면에 띄울 언어 탭 — **열어 둔 언어 ∪ 실제 번역이 있는 언어**. 기본 언어가 맨 앞.
+ *
+ * 합집합인 이유: `locales` 가 생기기 전에 저장된 폼에는 목록이 없는데 번역은 들어 있을 수
+ * 있다(로케일 맵은 처음부터 있었다). 그때 탭이 안 뜨면 이미 적어 둔 번역이 화면에서
+ * 사라진 것처럼 보이고, 운영자는 그 글을 다시 찾을 방법이 없다.
+ */
+export function editableFormLocales(config: CollectFormConfig): string[] {
+  const base = config.defaultLocale || DEFAULT_LOCALE;
+  const out = [base];
+  for (const l of [...config.locales, ...collectFormLocales(config)]) {
+    if (l && l !== base && !out.includes(l)) out.push(l);
+  }
+  return out;
+}
+
+/**
+ * 이 폼에 **실제로 번역이 들어 있는** 언어들. 기본 언어가 항상 맨 앞이다.
+ *
+ * 왜 "설정된 언어 목록" 컬럼을 따로 안 두나: 그 목록과 실제 번역이 어긋나는 순간이
+ * 반드시 온다(언어를 추가했다가 한 글자도 안 적고 떠난 경우, 마지막 번역을 지운 경우).
+ * 그때 화면은 "영어로 바꿨는데 아무것도 안 바뀐다" 가 되고, 원인이 안 보인다.
+ * 저장된 글에서 **되읽는** 쪽은 어긋날 수가 없다.
+ *
+ * 훑는 범위는 방문자가 **보는 글** 전부다 — 항목(라벨·플레이스홀더·선택지), 유형 분기 안의
+ * 항목, 안내 블록, 동의 문구, 제출 버튼, 행사 개요. 확인 메일 문구는 뺀다: 메일은 화면이
+ * 아니라서 언어 전환의 근거가 되면 "메일만 번역했는데 폼 언어가 생겼다" 가 된다.
+ */
+export function collectFormLocales(config: CollectFormConfig): string[] {
+  const seen = new Set<string>();
+  const add = (v: Localized | undefined) => {
+    if (!v) return;
+    for (const k of Object.keys(v)) if (v[k]) seen.add(k);
+  };
+  const addField = (f: CollectField) => {
+    add(f.label);
+    add(f.placeholder);
+    for (const o of f.options) add(o);
+  };
+
+  for (const f of config.fields) addField(f);
+  for (const g of config.branch.groups) for (const f of g.fields) addField(f);
+  for (const n of config.notices) {
+    add(n.title);
+    add(n.body);
+  }
+  for (const c of [config.consent.privacy, config.consent.marketing, config.consent.thirdParty]) {
+    add(c.label);
+    add(c.body);
+  }
+  add(config.submitLabel);
+  add(config.eventInfo.venue);
+  for (const r of config.eventInfo.extraRows) {
+    add(r.label);
+    add(r.value);
+  }
+
+  const base = config.defaultLocale || DEFAULT_LOCALE;
+  seen.delete(base);
+  return [base, ...[...seen].sort()];
 }
 
 // ── 항목 ──────────────────────────────────────────────────────────────
@@ -343,6 +426,14 @@ export interface CollectFormConfig {
   submitLabel: Localized;
   defaultLocale: string;
   /**
+   * 운영자가 **열어 둔** 번역 언어(기본 언어 제외).
+   *
+   * `collectFormLocales` 와 다른 질문에 답한다. 그쪽은 "실제로 번역이 들어 있는 언어"(= 방문자
+   * 화면이 바뀌는 근거)이고, 이쪽은 "번역 탭을 띄워 둔 언어"다. 둘을 하나로 묶으면 언어를
+   * 추가하고 아직 한 글자도 안 적은 상태가 **저장되지 않아** 새로고침하면 탭이 사라진다.
+   */
+  locales: string[];
+  /**
    * 접수 창 수동 전환. 시각 계산을 이기고 상태를 고정한다 — 마감을 앞당기거나 연장할 일이
    * 실제로 생긴다(웨비나 statusOverride 와 같은 이유). null 이면 시각으로 판정.
    */
@@ -406,6 +497,7 @@ export const EMPTY_FORM_CONFIG: CollectFormConfig = {
   theme: { accentColor: "", textColor: "", surfaceColor: "" },
   submitLabel: {},
   defaultLocale: DEFAULT_LOCALE,
+  locales: [],
   statusOverride: null,
   referral: EMPTY_REFERRAL,
 };
@@ -743,6 +835,7 @@ export function normalizeCollectForm(raw: unknown): CollectFormConfig {
     },
     submitLabel: toLocalized(c.submitLabel, locale),
     defaultLocale: locale,
+    locales: normalizeExplicitLocales(c.locales, locale),
     statusOverride: REGISTRATION_STATUSES.includes(override as RegistrationStatus)
       ? (override as RegistrationStatus)
       : null,

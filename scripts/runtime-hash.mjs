@@ -105,6 +105,9 @@ export function formSourceFiles(root) {
     // 전문 팝업이 닫힐 때 포커스를 돌려준다. **`dom/focus` 만** 들어온다 —
     // `@/lib/expo/*` 를 값으로 가져오면 expo 4개 + scroll-lock 이 딸려 와 약 +12KB 다.
     join(root, "src/lib/dom/focus.ts"),
+    // 호스트 페이지의 언어를 읽어 폼 언어를 고른다 — 판정이 한 곳에 있어야 한다
+    // (서버·미리보기·임베드가 같은 함수를 쓴다).
+    join(root, "src/lib/form-locale.ts"),
   ]).sort();
 }
 

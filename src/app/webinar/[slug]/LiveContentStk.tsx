@@ -16,7 +16,7 @@ import { buildSessionNumbering, cleanSessionText, isPauseSession, isRealSession,
 import SurveyForm, { SURVEY_FORM_CSS, clearSurveyDraft } from "./SurveyForm";
 import { formatSurveyOpensAt, type SurveyAnswers, type SurveyQuestion } from "@/lib/webinar-survey";
 import { IMAGE_PRESETS, transformedImageUrl } from "@/lib/webinar-image";
-import { onAccentColor } from "@/lib/color";
+import { onAccentColor, readableTextOn } from "@/lib/color";
 
 const spring = { type: "spring", stiffness: 420, damping: 30 } as const;
 
@@ -141,11 +141,12 @@ export { onAccentColor } from "@/lib/color";
 
 export function buildStkCss(accent: string, text: string, surface: string, borderRadius?: string) {
   const rs = webinarRadiusScale(borderRadius);
+  const ink = readableTextOn(surface, text);
   return `
 .stk-live { --key: ${accent}; --on-key: ${onAccentColor(accent)}; --key-dim: color-mix(in srgb, ${accent} 12%, transparent); --key-border: color-mix(in srgb, ${accent} 36%, transparent);
-  --text:${text}; --muted:color-mix(in srgb, ${text} 62%, transparent); --sub:color-mix(in srgb, ${text} 42%, transparent);
-  --card:${surface}; --card-2:color-mix(in srgb, ${text} 5%, ${surface});
-  --line:color-mix(in srgb, ${text} 10%, transparent); --line-md:color-mix(in srgb, ${text} 17%, transparent); --r-scale:${rs}; --radius-sm:${12 * rs}px; --radius:${20 * rs}px; --radius-lg:${28 * rs}px;
+  --text:${ink}; --muted:color-mix(in srgb, ${ink} 62%, transparent); --sub:color-mix(in srgb, ${ink} 42%, transparent);
+  --card:${surface}; --card-2:color-mix(in srgb, ${ink} 5%, ${surface});
+  --line:color-mix(in srgb, ${ink} 10%, transparent); --line-md:color-mix(in srgb, ${ink} 17%, transparent); --r-scale:${rs}; --radius-sm:${12 * rs}px; --radius:${20 * rs}px; --radius-lg:${28 * rs}px;
   --card-shadow:0 1px 3px rgba(0,0,0,0.05), 0 14px 34px -16px rgba(0,0,0,0.22);
   --btn-shadow:0 1px 2px rgba(0,0,0,0.05), 0 2px 5px -2px rgba(0,0,0,0.13);
   --btn-shadow-hover:0 2px 5px -1px rgba(0,0,0,0.10), 0 10px 20px -6px rgba(0,0,0,0.22);

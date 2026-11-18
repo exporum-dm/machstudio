@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/activity";
-import { normalizeCollectForm } from "@/lib/collect-form-config";
+import { collectFormLocales, normalizeCollectForm } from "@/lib/collect-form-config";
 import { isBuilderSource } from "@/lib/collect-columns";
 import { normalizeEmail, primaryFieldKey } from "@/lib/collect-submit";
 import { toE164 } from "@/lib/collect-phone";
@@ -51,7 +51,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const scan = aggregate._count._all ? { firstAt: aggregate._min.scannedAt, lastAt: aggregate._max.scannedAt, count: aggregate._count._all, days: days.map(d => d.eventDate) } : undefined;
   const attendance = recordAttendance(record.data, normalizeCollectForm(auth.source.formConfig).eventInfo.eventDates, scan);
-  return NextResponse.json({ record: { ...record, attendance, checkIns, checkinTimezone: auth.source.checkinTimezone ?? "Asia/Seoul" } });
+  const formLocales = collectFormLocales(normalizeCollectForm(auth.source.formConfig));
+  return NextResponse.json({ record: { ...record, attendance, checkIns, checkinTimezone: auth.source.checkinTimezone ?? "Asia/Seoul" }, formLocales });
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string; recordId: string }> }) {

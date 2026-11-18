@@ -53,7 +53,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
     request.headers.get("x-real-ip") ??
     "unknown";
-  const rl = await rateLimitAsync(`webinar-qa:${slug}:${ip}`, { limit: 30, windowMs: 60_000 });
+  /**
+   * 질문 등록 — Q&A 시간이 열리면 짧은 창에 몰린다.
+   *
+   * 한도를 30/분에서 600/분으로 올린다. 사내망·VPN 뒤에서는 시청자 수백 명이
+   * **같은 출구 IP** 를 쓰므로 예전 값으로는 500명 규모 웨비나에서 정상 사용자가 막혔다.
+   * 여기는 행을 만드는 경로라 IP 만으로 두지 않고, 아래 등록 확인 직후 **등록 건당 한도**를 한 번 더 건다.
+   */
+  const rl = await rateLimitAsync(`webinar-qa:${slug}:${ip}`, { limit: 600, windowMs: 60_000 });
   if (!rl.allowed) {
     return NextResponse.json(
       { error: "요청이 너무 잦아요. 잠시 후 다시 시도해주세요." },
@@ -99,6 +106,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   if (!reg) {
     return NextResponse.json({ error: "등록 후 입장한 시청자만 질문할 수 있어요." }, { status: 403, headers: { "Access-Control-Allow-Origin": "*" } });
   }
+  // 등록 건당 한도 — 행을 만드는 경로의 **주 방어선**. 한 사람이 분당 10건이면 넉넉하다.
+  const regRl = await rateLimitAsync(`webinar-qa-reg:${registrationId}`, { limit: 10, windowMs: 60_000 });
+  if (!regRl.allowed) {
+    return NextResponse.json(
+      { error: "질문을 너무 자주 보내고 있어요. 잠시 후 다시 시도해주세요." },
+      { status: 429, headers: { "Access-Control-Allow-Origin": "*", "Retry-After": Math.ceil(regRl.retryAfterMs / 1000).toString() } },
+    );
+  }
+
   const displayName = reg.name || nameValue;
 
   const qa = await prisma.webinarQA.create({

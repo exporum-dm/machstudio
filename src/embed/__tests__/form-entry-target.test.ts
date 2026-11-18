@@ -144,8 +144,14 @@ describe("지정 자리 경로", () => {
     document.head.appendChild(script);
 
     const { boot } = await load();
-    boot({ ...CFG, view: "check" }, script);
+    container.setAttribute("data-mach-lang", "jp");
+    boot({
+      ...CFG,
+      formConfig: { ...CFG.formConfig, submitLabel: { en: "Register", ja: "登録" } },
+      view: "check",
+    }, script);
     expect(mountLookup).toHaveBeenCalledTimes(1);
+    expect(mountLookup).toHaveBeenCalledWith(expect.objectContaining({ locale: "ja" }));
     expect(mountForm).not.toHaveBeenCalled();
   });
 });
