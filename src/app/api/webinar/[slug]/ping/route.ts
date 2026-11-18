@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { resolveWebinarStatus } from "@/lib/webinar-status";
-import { rateLimitAsync } from "@/lib/ratelimit";
+import { getClientIp, rateLimitAsync } from "@/lib/ratelimit";
+import { getWebinarLiveSnapshot } from "@/lib/webinar-live-snapshot";
 
 const CORS_HEADERS = { "Access-Control-Allow-Origin": "*" };
 
@@ -9,33 +9,43 @@ const CORS_HEADERS = { "Access-Control-Allow-Origin": "*" };
 // 그보다 오래 끊겼다 돌아오면 새 구간을 만든다. 시청 곡선("몇 분 지점에 몇 명")의 원천.
 const SEGMENT_GAP_MS = 90_000;
 
+/**
+ * 등록 건당 한도. heartbeat 는 60±10초 주기라 분당 1회가 정상이고, 탭 여러 개·재접속·
+ * enter/leave 가 겹쳐도 분당 12회면 넉넉하다.
+ */
+const PER_REGISTRATION_LIMIT = 12;
+
+/**
+ * IP 백스톱. **등록 건당 한도가 주 방어선이고 이쪽은 보조**다.
+ *
+ * 예전에는 IP 하나당 120/분이 유일한 한도였다. 사내망·VPN 뒤에서는 시청자 수백 명이
+ * **같은 출구 IP** 를 쓰므로, 500명 규모 사내 웨비나에서 분당 500건이 한 키로 몰려
+ * 380명분의 heartbeat 가 429 로 버려진다 — 시청자 수·시청 시간·시청 곡선이 전부 과소
+ * 집계되고, 정작 막으려던 남용은 등록 id 를 바꿔 가며 그대로 통과한다.
+ * 한도를 등록 건당으로 옮기고, IP 는 **단일 호스트의 맹목적 폭주**만 자르는 높은 선으로 둔다.
+ */
+const PER_IP_LIMIT = 3000;
+
 export async function POST(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
+  const ip = getClientIp(request);
 
-  // 무인증 쓰기 — IP당 한도로 증폭/비용 방어 (시청자 heartbeat 는 60±10초 주기라 넉넉)
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
-    request.headers.get("x-real-ip") ??
-    "unknown";
-  if (!(await rateLimitAsync(`webinar-ping:${ip}`, { limit: 120, windowMs: 60_000 })).allowed) {
+  if (!(await rateLimitAsync(`webinar-ping-ip:${slug}:${ip}`, { limit: PER_IP_LIMIT, windowMs: 60_000 })).allowed) {
     return new NextResponse(null, { status: 429, headers: CORS_HEADERS });
   }
 
-  const webinar = await prisma.webinar.findUnique({
-    where: { slug },
-    select: {
-      id: true,
-      liveStartAt: true,
-      liveEndAt: true,
-      signupDeadline: true,
-      statusOverride: true,
-      // components 는 ping 에서 미사용 — heartbeat 마다 JSON 컬럼을 끌어오지 않게 제외.
-    },
-  });
-  if (!webinar) return NextResponse.json({ error: "없는 웨비나예요" }, { status: 404 });
-
-  // 상태를 응답에 동봉 — live 페이지가 별도 요청 없이 상태 전환을 감지할 수 있게 (Phase 2 에서 소비)
-  const statusInfo = resolveWebinarStatus(webinar);
+  /**
+   * 웨비나 행은 **live-state 와 같은 5초 스냅샷**에서 읽는다(lib/webinar-live-snapshot).
+   * heartbeat 는 시청자당 분당 1회라 500명이면 초당 8요청인데, 그때마다 같은 행을 다시
+   * 읽을 이유가 없다 — 이 라우트에서 꼭 지금 값이어야 하는 것은 아래 쓰기뿐이다.
+   */
+  const snap = await getWebinarLiveSnapshot(slug);
+  if (!snap.webinar || !snap.status) {
+    return NextResponse.json({ error: "없는 웨비나예요" }, { status: 404, headers: CORS_HEADERS });
+  }
+  const webinar = snap.webinar;
+  // 상태를 응답에 동봉 — live 페이지가 별도 요청 없이 상태 전환을 감지할 수 있게
+  const statusInfo = snap.status;
 
   const body = await request.json().catch(async () => {
     const text = await request.text().catch(() => "");
@@ -49,6 +59,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
 
   if (!registrationId || typeof registrationId !== "string") {
     return NextResponse.json({ ok: true, status: statusInfo.status }, { headers: CORS_HEADERS });
+  }
+
+  // 주 한도 — 자칭 등록 id 기준. 위조 id 로 우회해도 아래 UPDATE 가 0행이라 얻는 게 없고,
+  // 그 폭주는 IP 백스톱이 자른다.
+  if (!(await rateLimitAsync(`webinar-ping-reg:${registrationId}`, { limit: PER_REGISTRATION_LIMIT, windowMs: 60_000 })).allowed) {
+    return new NextResponse(null, { status: 429, headers: CORS_HEADERS });
   }
 
   const now = new Date();

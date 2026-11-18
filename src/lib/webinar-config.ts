@@ -83,6 +83,34 @@ export interface WebinarWaitingFollowUpConfig {
   ctaUrl: string;
 }
 
+/**
+ * 한 언어의 **덮어쓸 문구만** 담는다 — 구조(항목·키·유형·순서)는 담지 않는다.
+ *
+ * 왜 Localized 맵이 아니라 덮개(overlay)인가: 웨비나 등록 폼의 문구는 지금 전부 `string` 이고,
+ * 그 값을 읽는 곳이 네 군데다(라이브 페이지 React, 임베드 로더 **문자열 스크립트**,
+ * 어드민 편집기, 등록 라우트). 타입을 로케일 맵으로 바꾸면 네 곳을 동시에 고쳐야 하고,
+ * 그중 하나는 번들링도 트랜스파일도 거치지 않는 손으로 쓴 JS 다. 덮개로 두면 **읽는 쪽은
+ * 한 글자도 바뀌지 않는다** — 정규화가 locale 을 받아 이미 덮어쓴 값을 내려 주기 때문이다.
+ *
+ * 구조를 안 담는 것이 핵심이다. 영어에서만 항목을 하나 더 만들 수 있으면 두 언어의 저장 키가
+ * 달라지고, 그러면 등록 데이터를 한 명단에 모으려던 이유가 사라진다.
+ */
+export interface WebinarFormTranslation {
+  /** 저장 키 → 그 항목의 번역. 선택지는 **같은 순서**로 짝지어진다. */
+  fields: Record<string, { label?: string; placeholder?: string; options?: string[] }>;
+  privacyText?: string;
+  marketingText?: string;
+  privacyBody?: string;
+  marketingBody?: string;
+  thirdPartyText?: string;
+  thirdPartyBody?: string;
+  submitLabel?: string;
+  successCtaLabel?: string;
+}
+
+/** 로케일 → 번역. 기본 언어는 여기 없다(기본 언어는 덮개가 아니라 원문이다). */
+export type WebinarFormI18n = Record<string, WebinarFormTranslation>;
+
 export interface WebinarRegistrationFormConfig {
   fields: WebinarRegistrationField[];
   privacyText: string;
@@ -117,6 +145,16 @@ export interface WebinarRegistrationFormConfig {
    * 이 값은 등록 다음 걸음을 아예 다른 페이지로 넘기는 것이라 같은 탭에서 이동한다.
    */
   successRedirectUrl: string;
+  /**
+   * 원문을 쓴 언어. 기본값 "ko" — 이 폼의 문구는 처음부터 한국어로 쓰여 왔다.
+   * (수집 빌더는 "en" 이 기본이다. 두 제품의 첫 사용처가 달랐고, 이미 저장된 글의
+   *  언어를 바꿔 말할 수는 없다.)
+   */
+  defaultLocale: string;
+  /** 운영자가 **열어 둔** 번역 언어. 한 글자도 안 적은 언어도 남는다(탭이 안 사라지게). */
+  locales: string[];
+  /** 언어별 덮개. `normalizeRegistrationForm(config, { locale })` 가 이미 적용해 내려 준다. */
+  i18n: WebinarFormI18n;
 }
 
 /** 항목 형식의 단일 출처 — 사전등록 빌더(collect-form-config)도 이걸 import 한다. */
@@ -795,7 +833,15 @@ function normalizeFieldType(value: unknown): WebinarFieldType {
 
 export function normalizeRegistrationForm(
   config: unknown,
-  opts?: { includeDisabled?: boolean },
+  opts?: {
+    includeDisabled?: boolean;
+    /**
+     * 이 언어로 **이미 덮어쓴** 폼을 받는다. 호출부는 번역이 있는지 없는지 몰라도 된다 —
+     * 없으면 원문 그대로다. 읽는 쪽 네 군데(라이브 페이지·임베드 로더·어드민·등록 라우트)가
+     * 각자 덮개를 적용하면 반드시 한 곳이 빠지고, 그 빠짐은 "영문 폼인데 동의 문구만 한글" 로 드러난다.
+     */
+    locale?: string;
+  },
 ): WebinarRegistrationFormConfig {
   const configRaw =
     config && typeof config === "object" && !Array.isArray(config)
@@ -856,7 +902,7 @@ export function normalizeRegistrationForm(
       ((savedOrder.get(b.key) as number | undefined) ?? Number.MAX_SAFE_INTEGER),
   );
 
-  return {
+  const result: WebinarRegistrationFormConfig = {
     /**
      * 공개 화면에서는 비활성 필드와 **선택지 0개인 선택형**을 제외한다.
      * 그릴 수 없는 항목을 필수로 두면 등록 자체가 막히기 때문이다(드롭다운·복수 선택 공통).
@@ -890,5 +936,161 @@ export function normalizeRegistrationForm(
       url: typeof successCtaRaw.url === "string" ? successCtaRaw.url : "",
     },
     successRedirectUrl: typeof raw?.successRedirectUrl === "string" ? raw.successRedirectUrl : "",
+    defaultLocale: typeof raw?.defaultLocale === "string" && raw.defaultLocale.trim() ? raw.defaultLocale.trim().toLowerCase() : "ko",
+    locales: normalizeFormLocaleList(raw?.locales, typeof raw?.defaultLocale === "string" ? raw.defaultLocale : "ko"),
+    i18n: normalizeFormI18n(raw?.i18n),
   };
+
+  return opts?.locale ? applyWebinarFormLocale(result, opts.locale) : result;
+}
+
+/** 열어 둔 번역 언어 목록 정리 — 문자열만, 중복 제거, 기본 언어 제외. */
+function normalizeFormLocaleList(raw: unknown, base: string): string[] {
+  if (!Array.isArray(raw)) return [];
+  const baseKey = (base || "ko").trim().toLowerCase();
+  const out: string[] = [];
+  for (const item of raw) {
+    const v = typeof item === "string" ? item.trim().toLowerCase() : "";
+    if (!v || v === baseKey || out.includes(v)) continue;
+    out.push(v);
+  }
+  return out;
+}
+
+/** 저장된 덮개를 모양만 맞춰 읽는다 — JSONB 라 무엇이든 들어올 수 있다. */
+function normalizeFormI18n(raw: unknown): WebinarFormI18n {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: WebinarFormI18n = {};
+  for (const [locale, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const v = value as Record<string, unknown>;
+    const fieldsRaw = v.fields && typeof v.fields === "object" && !Array.isArray(v.fields)
+      ? (v.fields as Record<string, unknown>)
+      : {};
+    const fields: WebinarFormTranslation["fields"] = {};
+    for (const [key, entry] of Object.entries(fieldsRaw)) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+      const e = entry as Record<string, unknown>;
+      fields[key] = {
+        ...(typeof e.label === "string" ? { label: e.label } : {}),
+        ...(typeof e.placeholder === "string" ? { placeholder: e.placeholder } : {}),
+        // 선택지는 **길이를 맞추지 않는다** — 원문 쪽이 늘거나 줄 수 있고, 짝은 인덱스로 맞춘다.
+        ...(Array.isArray(e.options) ? { options: e.options.map((o) => String(o ?? "")) } : {}),
+      };
+    }
+    const str = (k: string) => (typeof v[k] === "string" ? (v[k] as string) : undefined);
+    out[locale.trim().toLowerCase()] = {
+      fields,
+      privacyText: str("privacyText"),
+      marketingText: str("marketingText"),
+      privacyBody: str("privacyBody"),
+      marketingBody: str("marketingBody"),
+      thirdPartyText: str("thirdPartyText"),
+      thirdPartyBody: str("thirdPartyBody"),
+      submitLabel: str("submitLabel"),
+      successCtaLabel: str("successCtaLabel"),
+    };
+  }
+  return out;
+}
+
+/** 비어 있지 않은 번역만 고른다 — 빈 문자열은 "번역 안 함" 과 같다. */
+function pick(translated: string | undefined, base: string): string {
+  return translated && translated.trim() ? translated : base;
+}
+
+/**
+ * 덮개를 씌운 폼. **번역이 없는 칸은 원문 그대로** 남는다 — 섞이는 것이 비는 것보다 낫다
+ * (빈 라벨은 사용자에게 "고장" 으로 보인다).
+ */
+export function applyWebinarFormLocale(
+  form: WebinarRegistrationFormConfig,
+  locale: string,
+): WebinarRegistrationFormConfig {
+  const tr = form.i18n[locale];
+  if (!locale || locale === form.defaultLocale || !tr) return form;
+
+  return {
+    ...form,
+    fields: form.fields.map((field) => {
+      const f = tr.fields[field.key];
+      if (!f) return field;
+      return {
+        ...field,
+        label: pick(f.label, field.label),
+        placeholder: pick(f.placeholder, field.placeholder),
+        // 인덱스로 짝짓는다. 번역이 모자라거나 남으면 **원문 길이를 따른다** —
+        // 선택지 개수가 언어마다 다르면 저장 값이 갈라진다.
+        options: field.options.map((option, i) => pick(f.options?.[i], option)),
+      };
+    }),
+    privacyText: pick(tr.privacyText, form.privacyText),
+    marketingText: pick(tr.marketingText, form.marketingText),
+    privacyBody: pick(tr.privacyBody, form.privacyBody),
+    marketingBody: pick(tr.marketingBody, form.marketingBody),
+    thirdPartyText: pick(tr.thirdPartyText, form.thirdPartyText),
+    thirdPartyBody: pick(tr.thirdPartyBody, form.thirdPartyBody),
+    submitLabel: pick(tr.submitLabel, form.submitLabel),
+    successCta: { ...form.successCta, label: pick(tr.successCtaLabel, form.successCta.label) },
+  };
+}
+
+/**
+ * **실제로 번역이 들어 있는** 언어들. 기본 언어가 맨 앞.
+ *
+ * `locales`(열어 둔 언어)와 다른 질문이다 — 방문자 화면은 글이 있을 때만 바뀐다.
+ * 한 글자도 안 적은 언어로 폼을 내보내면 전부 원문으로 폴백해 "바꿨는데 안 바뀐다" 가 된다.
+ */
+export function webinarFormTranslatedLocales(form: WebinarRegistrationFormConfig): string[] {
+  const out = [form.defaultLocale];
+  for (const [locale, tr] of Object.entries(form.i18n)) {
+    if (locale === form.defaultLocale || out.includes(locale)) continue;
+    const hasText =
+      [tr.privacyText, tr.marketingText, tr.privacyBody, tr.marketingBody, tr.thirdPartyText, tr.thirdPartyBody, tr.submitLabel, tr.successCtaLabel]
+        .some((v) => v && v.trim()) ||
+      Object.values(tr.fields).some(
+        (f) => (f.label && f.label.trim()) || (f.placeholder && f.placeholder.trim()) || (f.options ?? []).some((o) => o.trim()),
+      );
+    if (hasText) out.push(locale);
+  }
+  return out;
+}
+
+/** 편집 화면 탭 — 열어 둔 언어 ∪ 글이 있는 언어. 기본 언어가 맨 앞. */
+export function webinarFormEditableLocales(form: WebinarRegistrationFormConfig): string[] {
+  const out = [form.defaultLocale];
+  for (const l of [...form.locales, ...webinarFormTranslatedLocales(form)]) {
+    if (l && l !== form.defaultLocale && !out.includes(l)) out.push(l);
+  }
+  return out;
+}
+
+/**
+ * 번역된 선택지로 들어온 답을 **원문 값으로 되돌린다.**
+ *
+ * 왜 꼭 필요한가: 영문 폼에서 "Buyer" 를 고른 사람과 국문 폼에서 "바이어" 를 고른 사람이
+ * 같은 열에 다른 값으로 쌓이면, 한 테이블에 모은 의미가 없다 — 분석·필터·CSV 가 두 갈래로
+ * 갈리고, 그걸 합치는 일은 사람이 손으로 하게 된다. 저장되는 어휘는 **언제나 원문**이다.
+ *
+ * 되돌릴 수 없는 값(= '기타(직접입력)' 으로 쓴 자유 문장)은 그대로 둔다.
+ */
+export function toBaseLocaleAnswer(
+  form: WebinarRegistrationFormConfig,
+  locale: string,
+  fieldKey: string,
+  value: string,
+): string {
+  const tr = form.i18n[locale];
+  if (!tr || locale === form.defaultLocale) return value;
+  const translated = tr.fields[fieldKey]?.options;
+  const field = form.fields.find((f) => f.key === fieldKey);
+  if (!translated || !field) return value;
+
+  const mapOne = (one: string): string => {
+    const i = translated.findIndex((o) => o && o.trim() === one.trim());
+    return i >= 0 && field.options[i] ? field.options[i] : one;
+  };
+  // 복수 선택은 합친 문자열이다(MULTI_VALUE_SEPARATOR) — 조각마다 되돌린 뒤 같은 규칙으로 합친다.
+  if (field.type === "multiple") return joinMultiValue(splitMultiValue(value).map(mapOne));
+  return mapOne(value);
 }

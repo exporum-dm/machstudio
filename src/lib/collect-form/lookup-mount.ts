@@ -10,14 +10,13 @@
  */
 import { h, clearNode } from "@/lib/dom/h";
 import { ensureFormStyles } from "./css";
+import { lookupCopy } from "./copy";
+import { collectFormCopy } from "./strings";
 import { onAccentColor } from "@/lib/competition-render";
 import { COUNTRY_DIALS, flagEmoji, isKnownCountry } from "@/lib/collect-country";
 import type { CollectFormConfig } from "@/lib/collect-form-config";
 import { visitorBadgeCssVars, visitorBadgePalette } from "@/lib/collect-badge";
 import { downloadTicketImage } from "./ticket-image";
-import { lookupCopy } from "./copy";
-
-
 
 export interface MountLookupOptions {
   mount: HTMLElement;
@@ -26,6 +25,7 @@ export interface MountLookupOptions {
   sourceId: string;
   /** 미리보기 — 조회를 실제로 보내지 않고 표본 결과를 그린다. */
   preview?: boolean;
+  locale?: string;
   /** 스타일을 넣을 루트. 안 주면 문서(지금까지와 같다). */
   styleRoot?: Document | ShadowRoot;
 }
@@ -61,8 +61,19 @@ export function mountCollectLookup(opts: MountLookupOptions): LookupHandle {
   ensureFormStyles(opts.styleRoot);
   const { config, mount } = opts;
   const preview = opts.preview === true;
-  // 기본 문구 — "기본 정보 › 폼 언어"(config.defaultLocale)를 따른다(copy.ts)
-  const COPY = lookupCopy(config.defaultLocale);
+  const lang = opts.locale || config.defaultLocale;
+  const localizedCopy = collectFormCopy(lang);
+  const baseCopy = lookupCopy(lang);
+  const COPY = lang === "zh" ? localizedCopy : {
+    ...localizedCopy,
+    ...baseCopy,
+    lookupTitle: baseCopy.title,
+    lookupDesc: baseCopy.desc,
+    lookupSubmit: baseCopy.submit,
+    lookupError: baseCopy.networkError,
+    ticketRegNoLabel: baseCopy.regNoLabel,
+    tooManyAttempts: baseCopy.tooMany,
+  };
 
   const useEmail = config.lookup.fields.includes("email");
   const usePhone = config.lookup.fields.includes("phone");
@@ -129,7 +140,7 @@ export function mountCollectLookup(opts: MountLookupOptions): LookupHandle {
    * 잠깐 바뀔 뿐, 티켓을 찾았다는 사실도 등록번호도 낭독되지 않았다(WCAG 4.1.3).
    */
   const resultHost = h("div", { role: "status", "aria-live": "polite" });
-  const submitBtn = h("button", { type: "button", class: "msf-submit" }, COPY.submit) as HTMLButtonElement;
+  const submitBtn = h("button", { type: "button", class: "msf-submit" }, COPY.lookupSubmit) as HTMLButtonElement;
 
   function showBanner(text: string): void {
     banner.setAttribute("data-tone", "warn");
@@ -218,7 +229,7 @@ export function mountCollectLookup(opts: MountLookupOptions): LookupHandle {
         );
       }
       card.appendChild(h("div", { class: "msf-regno" }, view.registrationNo));
-      card.appendChild(h("div", { class: "msf-regno-label" }, COPY.regNoLabel));
+      card.appendChild(h("div", { class: "msf-regno-label" }, COPY.ticketRegNoLabel));
 
       if (!preview) {
         const save = h("button", {
@@ -235,7 +246,7 @@ export function mountCollectLookup(opts: MountLookupOptions): LookupHandle {
             maskedPhone: view.maskedPhone,
             extras: view.extras,
             accentColor: config.theme.accentColor,
-          }).catch(() => window.alert("We couldn't save the ticket image. Please take a screenshot instead.")); },
+          }).catch(() => window.alert(COPY.saveFailed)); },
         }, COPY.saveImage);
         card.appendChild(save);
         card.appendChild(h("div", { class: "msf-save-hint" }, COPY.saveHint));
@@ -334,7 +345,7 @@ export function mountCollectLookup(opts: MountLookupOptions): LookupHandle {
         credentials: "omit",
         body: JSON.stringify({ email, phone, phoneCountry: usePhone ? phoneCountrySel.value : "" }),
       });
-      if (res.status === 429) { showBanner(COPY.tooMany); return; }
+      if (res.status === 429) { showBanner(COPY.tooManyAttempts); return; }
       const data = (await res.json().catch(() => null)) as
         | {
             found?: boolean; ticketKey?: string; registrationNo?: string; name?: string; visitorType?: string;
@@ -342,7 +353,7 @@ export function mountCollectLookup(opts: MountLookupOptions): LookupHandle {
             extras?: Array<{ label: string; value: string }>;
           }
         | null;
-      if (!res.ok || !data) { showBanner(COPY.networkError); return; }
+      if (!res.ok || !data) { showBanner(COPY.lookupError); return; }
       if (!data.found || !data.registrationNo) { showBanner(COPY.notFound); return; }
       renderResult({
         registrationNo: data.registrationNo,
@@ -355,11 +366,11 @@ export function mountCollectLookup(opts: MountLookupOptions): LookupHandle {
         extras: data.extras ?? [],
       });
     } catch {
-      if (!destroyed) showBanner(COPY.networkError);
+      if (!destroyed) showBanner(COPY.lookupError);
     } finally {
       busy = false;
       submitBtn.removeAttribute("aria-busy");
-      submitBtn.textContent = COPY.submit;
+      submitBtn.textContent = COPY.lookupSubmit;
     }
   }
 
@@ -379,8 +390,8 @@ export function mountCollectLookup(opts: MountLookupOptions): LookupHandle {
     // (AGENTS.md §4 "config 토글 ON + 실제 데이터 있음" 이중 게이트).
     if (!config.lookup.enabled) return;
 
-    stack.appendChild(h("div", { class: "msf-state-title" }, COPY.title));
-    stack.appendChild(h("div", { class: "msf-hint" }, needBoth ? COPY.needBoth : COPY.desc));
+    stack.appendChild(h("div", { class: "msf-state-title" }, COPY.lookupTitle));
+    stack.appendChild(h("div", { class: "msf-hint" }, needBoth ? COPY.needBoth : COPY.lookupDesc));
     if (useEmail) stack.appendChild(field(COPY.email, emailInput.id, emailInput));
     if (usePhone) stack.appendChild(field(COPY.phone, phoneInput.id, phoneWrap));
     stack.appendChild(submitBtn);

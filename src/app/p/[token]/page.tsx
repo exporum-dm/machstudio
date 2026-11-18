@@ -17,6 +17,7 @@ import { prisma } from "@/lib/prisma";
 import { getClientIp, rateLimitAsync } from "@/lib/ratelimit";
 import {
   REGISTRATION_STATUSES,
+  collectFormLocales,
   normalizeCollectForm,
   resolveCollectFormConfigOrgTokens,
   type RegistrationStatus,
@@ -112,12 +113,9 @@ export default async function CollectFormPreviewPage({
   const forceType = branchValues.includes(typeParam) ? typeParam : undefined;
 
   // 실제로 번역이 들어 있는 로케일만 고를 수 있게 — 빈 언어를 고르면 폴백 때문에
-  // 아무것도 안 바뀐 것처럼 보인다.
-  const locales = [...new Set([
-    config.defaultLocale,
-    ...config.fields.flatMap((f) => Object.keys(f.label)),
-    ...config.notices.flatMap((n) => [...Object.keys(n.title), ...Object.keys(n.body)]),
-  ])].filter(Boolean);
+  // 아무것도 안 바뀐 것처럼 보인다. 판정은 임베드 런타임이 쓰는 것과 **같은 함수**다
+  // (여기서만 따로 세면 미리보기에 뜨는 언어와 실제로 나가는 언어가 갈린다).
+  const locales = collectFormLocales(config);
 
   return (
     <div className="min-h-dvh bg-secondary/30">

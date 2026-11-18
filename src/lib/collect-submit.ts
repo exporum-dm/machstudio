@@ -15,6 +15,7 @@ import { isValidPhoneForCountry, toE164 } from "@/lib/collect-phone";
 import { isKnownCountry } from "@/lib/collect-country";
 import { generateRegistrationNo, domesticRegistrationNo } from "@/lib/collect-registration-no";
 import {
+  collectFormLocales,
   entryChannelAt,
   resolveRegistrationStatus,
   validateSubmission,
@@ -209,8 +210,11 @@ export function prepareBuilderSubmission(
 
   // 로케일은 뷰어가 보낸 값을 **폼이 아는 것 중에서만** 받는다. 아무 문자열이나 저장하면
   // 나중에 언어별 재발송이 그 값으로 갈라져 보낼 수 없는 언어가 생긴다.
-  const known = new Set<string>([config.defaultLocale]);
-  for (const f of config.fields) for (const k of Object.keys(f.label)) known.add(k);
+  //
+  // 아는 언어의 판정은 `collectFormLocales` 한 곳에서 온다. 예전엔 여기서 **항목 라벨만**
+  // 훑었는데, 그러면 안내문·동의문만 번역한 폼에서 뷰어가 보낸 로케일이 거부돼
+  // 영문 페이지에서 낸 등록이 전부 기본 언어로 기록됐다 — 보이는 화면과 기록이 어긋난다.
+  const known = new Set<string>(collectFormLocales(config));
   const asked = str(input.locale).trim();
   const locale = asked && known.has(asked) ? asked : config.defaultLocale;
 

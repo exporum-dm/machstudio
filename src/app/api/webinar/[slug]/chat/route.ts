@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { rateLimitAsync, rateLimitPeekAsync } from "@/lib/ratelimit";
+import { getClientIp, rateLimitAsync, rateLimitPeekAsync } from "@/lib/ratelimit";
 import { resolveWebinarStatus } from "@/lib/webinar-status";
 import { maskName } from "@/lib/mask";
 
 const CORS = { "Access-Control-Allow-Origin": "*" };
 const MAX_LEN = 300;
+
+/** 한 사람이 1분에 보낼 수 있는 메시지 수. 아래 3건/10초(도배 방지)와 함께 쓴다. */
+const PER_REGISTRATION_LIMIT = 15;
+/** 단일 호스트 폭주만 자르는 보조 한도 — 사내망 뒤에서는 수백 명이 한 IP 를 공유한다. */
+const PER_IP_LIMIT = 1200;
 // 링크 도배 방지 — http(s):// 또는 www. 로 시작하는 토큰만 보수적으로 매칭(일반 문장의 마침표는 건드리지 않음)
 const LINK_RE = /(https?:\/\/|www\.)\S+/gi;
 
@@ -72,19 +77,31 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
 export async function POST(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
 
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
-    request.headers.get("x-real-ip") ??
-    "unknown";
-  const rl = await rateLimitAsync(`webinar-chat:${slug}:${ip}`, { limit: 15, windowMs: 60_000 });
-  if (!rl.allowed) {
+  /**
+   * IP 백스톱 — **분당 한도의 주 방어선은 등록 건당**이고(PER_REGISTRATION_LIMIT),
+   * 이쪽은 단일 호스트의 맹목적 폭주만 자른다.
+   *
+   * 예전에는 `webinar-chat:{slug}:{ip}` 15/분이 유일한 한도였다. 사내망·VPN 뒤에서는 시청자
+   * 수백 명이 같은 출구 IP 를 쓰므로, 그 방 **전체가 합쳐 분당 15건**만 보낼 수 있었다 —
+   * 500명 웨비나에서는 채팅이 사실상 닫힌다. 그런데 정작 남용자는 IP 를 바꾸면 그만이었다.
+   */
+  const ip = getClientIp(request);
+  const ipRl = await rateLimitAsync(`webinar-chat-ip:${slug}:${ip}`, { limit: PER_IP_LIMIT, windowMs: 60_000 });
+  if (!ipRl.allowed) {
     return NextResponse.json(
       { error: "메시지를 너무 자주 보내고 있어요. 잠시 후 다시 시도해주세요." },
-      { status: 429, headers: { ...CORS, "Retry-After": Math.ceil(rl.retryAfterMs / 1000).toString() } },
+      { status: 429, headers: { ...CORS, "Retry-After": Math.ceil(ipRl.retryAfterMs / 1000).toString() } },
     );
   }
 
-  const webinar = await prisma.webinar.findUnique({ where: { slug } });
+  // 필요한 컬럼만 — 이 라우트는 config·theme·landingPage 같은 JSON 덩어리를 쓰지 않는다.
+  const webinar = await prisma.webinar.findUnique({
+    where: { slug },
+    select: {
+      id: true, components: true, statusOverride: true, liveStartAt: true, liveEndAt: true,
+      signupDeadline: true, chatHideLinks: true, chatBannedWords: true, chatBannedRegIds: true, chatSlowSec: true,
+    },
+  });
   if (!webinar) return NextResponse.json({ error: "없는 웨비나예요" }, { status: 404, headers: CORS });
 
   const components = (webinar.components ?? {}) as Record<string, unknown>;
@@ -140,6 +157,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   // 차단된 시청자 — 운영자가 이 등록자를 채팅에서 차단함(전용 컬럼).
   if ((webinar.chatBannedRegIds ?? []).includes(registrationId)) {
     return NextResponse.json({ error: "채팅이 제한되었어요." }, { status: 403, headers: CORS });
+  }
+
+  // 분당 한도 — **등록 건당**. 한 사람이 창을 여러 개 띄우거나 IP 가 바뀌어도 같은 키로 센다.
+  const minuteRl = await rateLimitAsync(`webinar-chat-reg-min:${webinar.id}:${registrationId}`, {
+    limit: PER_REGISTRATION_LIMIT,
+    windowMs: 60_000,
+  });
+  if (!minuteRl.allowed) {
+    return NextResponse.json(
+      { error: "메시지를 너무 자주 보내고 있어요. 잠시 후 다시 시도해주세요." },
+      { status: 429, headers: { ...CORS, "Retry-After": Math.ceil(minuteRl.retryAfterMs / 1000).toString() } },
+    );
   }
 
   // 도배 방지 — 3건/10초는 peek 로 선검사만 하고, 모든 검사 통과 후 create 직전에 실제 기록(거절 요청이 토큰을 소모하지 않게).
