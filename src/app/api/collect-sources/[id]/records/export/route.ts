@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { collectColumnsFor, formatCollectValue, isBuilderSource } from "@/lib/collect-columns";
+import { collectFormLocales, normalizeCollectForm } from "@/lib/collect-form-config";
+import { formLocaleLabel } from "@/lib/form-locale";
 import { formatKstDateTime, kstDateString } from "@/lib/datetime";
 import { logActivity } from "@/lib/activity";
 import { attendanceCsvHeaders, attendanceCsvValues, recordAttendance } from "@/lib/collect-record-attendance";
-import { normalizeCollectForm } from "@/lib/collect-form-config";
 
 function csvEscape(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -53,6 +54,17 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   for (const d of checkInDays) daysById.set(d.recordId, [...(daysById.get(d.recordId) ?? []), d.eventDate]);
   const ciById = new Map(checkIns.map((c) => [c.recordId, { firstAt: c._min.scannedAt, lastAt: c._max.scannedAt, count: c._count._all, days: daysById.get(c.recordId) ?? [] }]));
 
+  /**
+   * 언어 열은 **번역이 둘 이상 있을 때만** 붙인다.
+   *
+   * 한 언어짜리 폼에서는 모든 행이 같은 값이라 열 하나가 통째로 잡음이고, 무엇보다
+   * 기존 CSV 의 열 구성이 말없이 바뀌면 그걸 받아 쓰는 엑셀 양식·업로드 서식이 깨진다.
+   * 다국어 폼에서는 반대로 **반드시 있어야 한다** — 국문 페이지와 영문 페이지의 등록이
+   * 한 테이블에 섞여 들어오므로, 어느 쪽에서 왔는지가 여기밖에 안 남는다.
+   */
+  const formLocales = builder ? collectFormLocales(normalizeCollectForm(source.formConfig)) : [];
+  const multilingual = formLocales.length > 1;
+
   // 입장 시각은 체크인 시간대(행사 현지) — KST 로 찍으면 LA 오후 입장이 다음 날로 보인다.
   const eventDates = normalizeCollectForm(source.formConfig).eventInfo.eventDates;
   const attendanceById = new Map(records.map(r => [r.id, recordAttendance(r.data, eventDates, ciById.get(r.id))]));
@@ -65,6 +77,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     ...(builder ? ["등록번호"] : []),
     ...(showAttendance ? attendanceCsvHeaders(source.checkinTimezone) : []),
     ...columns.map((f) => f.label || f.key),
+    ...(multilingual ? ["작성 언어"] : []),
     "UTM 소스 (last)", "UTM 매체 (last)", "UTM 캠페인 (last)", "UTM 키워드 (last)", "UTM 콘텐츠 (last)",
     "First UTM 소스", "First UTM 매체", "First UTM 캠페인", "First UTM 키워드", "First UTM 콘텐츠",
     "First Referrer", "First Seen (KST)",
@@ -79,6 +92,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       ...(builder ? [r.registrationNo ?? ""] : []),
       ...(showAttendance ? attendanceCsvValues(attendanceById.get(r.id), source.checkinTimezone) : []),
       ...columns.map((f) => formatCollectValue(data[f.key])),
+      ...(multilingual ? [formLocaleLabel(r.locale || formLocales[0])] : []),
       r.utmSource ?? "",
       r.utmMedium ?? "",
       r.utmCampaign ?? "",

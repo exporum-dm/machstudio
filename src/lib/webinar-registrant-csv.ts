@@ -20,6 +20,7 @@ import {
 } from "@/lib/webinar-survey";
 import { formatQAForCell } from "@/lib/webinar-qa";
 import type { RegistrantFieldLabels } from "@/lib/webinar-config";
+import { formLocaleLabel } from "@/lib/form-locale";
 
 /** 명단에 실리는 등록자 — 라우트의 select 와 같은 모양(필요한 것만). */
 export interface CsvRegistrant {
@@ -43,6 +44,8 @@ export interface CsvRegistrant {
   firstUtmMedium: string | null;
   firstUtmCampaign: string | null;
   referrer: string | null;
+  /** 어느 언어 폼에서 신청했나. NULL 은 이 값이 없던 시절의 등록(= 폼 기본 언어). */
+  locale?: string | null;
 }
 
 export interface CsvSurveyColumn {
@@ -87,6 +90,16 @@ export interface RegistrantCsvInput {
   qaByRegistrant: Map<string, CsvQAItem[]>;
   /** registrationId → 참여 점수·세그먼트 */
   engagementByRegistrant: Map<string, CsvEngagement>;
+  /**
+   * 이 폼에 **실제로 번역이 있는 언어들**(기본 언어가 맨 앞). 둘 이상일 때만 '작성 언어'
+   * 열이 붙는다.
+   *
+   * 왜 조건부인가: 한 언어짜리 폼에서는 모든 행이 같은 값이라 열 하나가 통째로 잡음이고,
+   * 무엇보다 기존 CSV 의 열 구성이 말없이 바뀌면 그걸 받아 쓰는 엑셀 양식·업로드 서식이
+   * 깨진다. 다국어 폼에서는 반대로 **반드시 있어야 한다** — 국문 페이지와 영문 페이지의
+   * 등록이 한 명단에 섞여 들어오므로 어느 쪽에서 왔는지가 여기밖에 안 남는다.
+   */
+  formLocales?: string[];
 }
 
 /** 한 열 = 헤더 하나 + 값 하나. 짝을 강제하는 게 이 타입의 존재 이유다. */
@@ -144,8 +157,15 @@ function surveyColumns(surveys: CsvSurveyColumn[], answersByRegistrant: Registra
 
 export function buildRegistrantCsvColumns(input: RegistrantCsvInput): Column[] {
   const { customFields, fieldLabels, surveys, answersByRegistrant, qaByRegistrant, engagementByRegistrant } = input;
+  const formLocales = input.formLocales ?? [];
+  const multilingual = formLocales.length > 1;
   return [
     ...fixedColumns(engagementByRegistrant, fieldLabels),
+    // 다국어 폼에서만. 기본 언어 바로 뒤가 아니라 고정 열 끝에 두는 이유는 기존 열의
+    // 자리를 밀지 않기 위해서다(앞에 끼우면 모든 후속 열의 인덱스가 바뀐다).
+    ...(multilingual
+      ? [{ header: "작성 언어", value: (r: CsvRegistrant) => formLocaleLabel(r.locale || formLocales[0]) }]
+      : []),
     ...customFields.map((field) => ({
       header: field.label,
       value: (r: CsvRegistrant) => {

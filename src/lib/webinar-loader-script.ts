@@ -40,9 +40,43 @@ export function buildWebinarLoaderScript({ siteId, baseUrl }: { siteId: string; 
   window.__MACH_WEBINAR_LOADER__ = SITE_ID;
 
   var BASE = ${JSON.stringify(baseUrl)};
-  var CONFIG_URL = BASE + "/api/webinar-embed/" + SITE_ID + "/config";
+  /* ── 호스트 페이지의 언어 신호 ───────────────────────────────────────────
+     여기서는 **읽기만** 한다. 어느 언어로 그릴지 고르는 일은 서버(form-locale.ts)가 한다 —
+     판정을 이 스크립트에도 적으면 계산이 두 벌이 되고, 두 벌은 반드시 갈라진다
+     (색 계산이 네 벌로 갈라져 2026-11 형광색 사고가 났다).
+
+     순서는 정본(hostLocaleCandidates)과 같다: 운영자가 직접 적은 값 → ?lang= → 경로 첫 조각
+     → html lang. html lang 이 맨 뒤인 이유는 가장 흔하면서 **제일 자주 틀려 있어서**다
+     (템플릿 기본값을 그대로 둔 채 영문 페이지를 만든 사이트가 많다). */
+  function hostLangSignal() {
+    var shape = /^[a-z]{2}(-[a-z0-9]{2,4})?$/i;
+    /* 칸 순서는 정본(hostLocaleCandidates)의 신호 순서와 **같아야 한다** —
+       서버가 받은 순서대로 고르기 때문이다. */
+    var parts = ["", "", "", "", ""];
+    try {
+      var el = document.querySelector("[data-mach-lang]");
+      if (el) parts[0] = el.getAttribute("data-mach-lang") || "";
+      var sp = new URLSearchParams(location.search);
+      parts[1] = sp.get("lang") || sp.get("hl") || sp.get("locale") || sp.get("language") || "";
+      /* 경로 첫 조각 — /en/ 형태. 언어 태그 모양일 때만 보낸다("events" 를 보내면
+         서버가 매번 헛돌고 캐시 키만 갈라진다). */
+      var seg = location.pathname.split("/").filter(Boolean)[0] || "";
+      if (shape.test(seg)) parts[2] = seg;
+      /* 호스트명 첫 라벨 — en.japan.k-expo.org 형태. 언어를 **서브도메인**으로 나누는
+         사이트가 실제로 우리 전시 사이트다. 이 칸이 없으면 그런 사이트에서는 URL 신호가
+         아예 없어 html lang 하나에 매달리게 되고, 그 값은 틀려 있기 쉽다. */
+      var label = (location.hostname || "").split(".")[0];
+      if (shape.test(label)) parts[3] = label;
+      parts[4] = document.documentElement.getAttribute("lang") || "";
+    } catch (e) {}
+    return parts.join("|");
+  }
+  var HOST_LANG = hostLangSignal();
+  var CONFIG_URL = BASE + "/api/webinar-embed/" + SITE_ID + "/config?hl=" + encodeURIComponent(HOST_LANG);
   var SEEN_URL = BASE + "/api/webinar-embed/" + SITE_ID + "/seen";
-  var CFG_CACHE_KEY = "mw_cfg_" + SITE_ID;
+  /* 언어가 캐시 키에 들어가야 한다 — 한 사이트 안에서 국문 페이지와 영문 페이지를 오가면
+     같은 세션에서 두 언어의 설정을 번갈아 쓴다. 키가 하나면 먼저 연 쪽 언어가 계속 나온다. */
+  var CFG_CACHE_KEY = "mw_cfg_" + SITE_ID + "_" + HOST_LANG;
   var CFG_CACHE_TTL = 60 * 1000;
   var LIVE_WINDOW_PAD_MS = 30 * 60 * 1000;
   var LIVE_POLL_MS = 120 * 1000;
@@ -779,6 +813,10 @@ ${ON_ACCENT_JS}  function theme() {
       payload.agreeThirdParty = tpCb ? tpCb.checked : false;
       payload._hp = hp.value || "";
       payload._utm = buildUtmEnvelope();
+      /* 이 폼이 **어느 언어로 그려졌는지** 되돌려 보낸다. 서버가 그 값으로 번역된 선택지를
+         원문 값으로 되돌려 저장한다 — 영문 페이지의 "Buyer" 와 국문 페이지의 "바이어" 가
+         한 열에 다른 값으로 쌓이면 한 명단에 모은 의미가 없다. */
+      payload.locale = form.locale || "";
 
       fetch(BASE + "/api/webinar/" + CFG.slug + "/register", {
         method: "POST",

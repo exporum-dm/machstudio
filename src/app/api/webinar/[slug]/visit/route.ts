@@ -48,7 +48,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     request.headers.get("x-real-ip") ??
     "unknown";
   // 무인증 비콘이 퍼널 분모를 갱신하므로 한도는 공유 스토어(Redis)로 강제한다 — seen 과 동일.
-  const rl = await rateLimitAsync(`webinar-visit:${ip}`, { limit: 60, windowMs: 60_000 });
+  // 방문 비콘 — 페이지를 여는 사람마다 1건. 슬러그 구분 없이 IP 하나로 세고 있었으므로
+  // 사내망 뒤 500명이 동시에 열면 60/분을 즉시 넘겨 유입 통계가 통째로 비었다.
+  const rl = await rateLimitAsync(`webinar-visit:${ip}`, { limit: 1200, windowMs: 60_000 });
   if (!rl.allowed) return new NextResponse(null, { status: 429, headers: CORS_HEADERS });
 
   const body = await request.json().catch(async () => {

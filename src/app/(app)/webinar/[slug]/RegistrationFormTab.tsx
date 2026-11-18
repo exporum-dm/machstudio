@@ -3,7 +3,7 @@
 import { useId, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { motion } from "framer-motion";
 // Trash2·GripVertical 은 골격(EditableList)이 핸들·삭제를 대신 그리면서 쓸 곳이 없어졌다.
-import { Plus, Smartphone, SquareCheck, ChevronDown } from "lucide-react";
+import { Plus, Smartphone, SquareCheck, ChevronDown, Languages, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAutosave } from "@/components/ui/use-autosave";
 import { useReportAutosave } from "@/components/ui/autosave-scope";
@@ -16,7 +16,27 @@ import { OptionRows } from "@/components/ui/option-rows";
 import { CHOICE_TYPES, REG_TYPE_META, RegTypeMenu, useRegPopover } from "@/components/form-builder/field-types";
 import { maxSelectFor } from "@/lib/webinar-config";
 import { EditableList } from "@/components/ui/editable-list";
-import { normalizeRegistrationForm, safeHttpUrl, type WebinarLinkCtaConfig, type WebinarRegistrationField } from "@/lib/webinar-config";
+import {
+  applyWebinarFormLocale,
+  normalizeRegistrationForm,
+  safeHttpUrl,
+  webinarFormEditableLocales,
+  webinarFormTranslatedLocales,
+  type WebinarFormI18n,
+  type WebinarLinkCtaConfig,
+  type WebinarRegistrationField,
+  type WebinarRegistrationFormConfig,
+} from "@/lib/webinar-config";
+import {
+  dropWebinarFormLocale,
+  retagWebinarFormLocale,
+  webinarFormLocaleMismatch,
+  webinarTranslationEntries,
+} from "@/lib/webinar-form-i18n";
+import { TranslationTable } from "@/components/form-builder/TranslationTable";
+import { FORM_LOCALES, formLocaleLabel } from "@/lib/form-locale";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { btnCls } from "@/components/ui/primitives";
 import { buildStkCss } from "@/app/webinar/[slug]/LiveContentStk";
 
 const spring = { type: "spring", stiffness: 420, damping: 30 } as const;
@@ -529,6 +549,26 @@ export default function RegistrationFormTab({ webinar, onSilentUpdate, confirmLi
   const [liveReg, setLiveReg] = useState<"auto" | "open" | "closed">(() => liveRegOf(webinar.components));
   const [submitLabel, setSubmitLabel] = useState(initial.submitLabel);
 
+  /**
+   * ── 언어별 문구 ──────────────────────────────────────────────────────
+   * 구조(항목·키·유형·순서)는 **기본 언어 탭에서만** 바꾼다. 다른 언어는 같은 구조에 문구만
+   * 채운다 — 영어에서만 항목을 하나 더하면 두 언어의 저장 키가 달라지고, 그러면 등록이
+   * 한 명단에 쌓이지 않는다(그게 이 기능이 존재하는 이유다).
+   *
+   * 기본 언어 변경은 여기 두지 않는다. 웨비나 등록 폼의 원문은 처음부터 한국어였고
+   * (수집 빌더와 달리) 그 전제를 뒤집을 이유가 아직 없다 — 필요해지면 수집 쪽의
+   * `retagFormLocale` 과 같은 이전을 붙인다.
+   */
+  const [i18n, setI18n] = useState<WebinarFormI18n>(initial.i18n);
+  const [formLocales, setFormLocales] = useState<string[]>(initial.locales);
+  const [editLocale, setEditLocale] = useState<string>(initial.defaultLocale);
+  /**
+   * 원문이 어느 언어로 쓰였나. 기본값 "ko" 는 이 폼의 문구가 처음부터 한국어였기 때문이고,
+   * **영문 전용 웨비나에서는 틀리다** — 그때 영어가 원문 자리를 못 차지해 영어 번역을
+   * 추가할 수 없으므로 정정할 수단이 있어야 한다(아래 언어 막대).
+   */
+  const [baseLocale, setBaseLocale] = useState<string>(initial.defaultLocale);
+
   const previewTheme = useMemo(() => ({
     accent: webinar.theme?.accentColor || "#6D28D9",
     text: webinar.theme?.textColor || "#141320",
@@ -594,6 +634,9 @@ export default function RegistrationFormTab({ webinar, onSilentUpdate, confirmLi
                 url: successCta.url.trim(),
               },
               successRedirectUrl: successRedirectUrl.trim(),
+              defaultLocale: baseLocale,
+              locales: formLocales,
+              i18n,
             },
           },
         }),
@@ -615,6 +658,7 @@ export default function RegistrationFormTab({ webinar, onSilentUpdate, confirmLi
       fields, privacyText, marketingText, privacyBody, marketingBody, privacyBodyMode, marketingBodyMode, privacyLinkUrl, marketingLinkUrl, privacyDefaultChecked, marketingDefaultChecked,
       thirdPartyEnabled, thirdPartyText, thirdPartyBody, thirdPartyBodyMode, thirdPartyLinkUrl, thirdPartyDefaultChecked,
       submitLabel, successCta, successRedirectUrl, deadline, liveReg,
+      i18n, formLocales, baseLocale,
     },
     save,
   );
@@ -638,9 +682,76 @@ export default function RegistrationFormTab({ webinar, onSilentUpdate, confirmLi
 
   const hasTel = fields.some((f) => f.enabled && f.type === "tel");
 
+  /**
+   * 번역 표가 읽는 **지금 화면의 폼**. 상태가 칸마다 쪼개져 있어 한 덩어리로 다시 모은다 —
+   * 번역 칸은 "원문이 무엇인가" 를 알아야 짝을 지을 수 있고, 그 원문은 저장된 값이 아니라
+   * **지금 편집 중인 값**이어야 한다(라벨을 고치면 번역 표의 원문도 즉시 따라와야 한다).
+   */
+  const formForI18n: WebinarRegistrationFormConfig = {
+    ...initial,
+    fields,
+    privacyText,
+    marketingText,
+    privacyBody,
+    marketingBody,
+    privacyBodyMode,
+    marketingBodyMode,
+    privacyLinkUrl,
+    marketingLinkUrl,
+    privacyDefaultChecked,
+    marketingDefaultChecked,
+    submitLabel,
+    successCta,
+    successRedirectUrl,
+    defaultLocale: baseLocale,
+    locales: formLocales,
+    i18n,
+  };
+
+  const editableLocales = webinarFormEditableLocales(formForI18n);
+  // 다른 창에서 언어가 지워져 지금 보던 탭이 사라지면 기본 언어로 돌아간다.
+  const activeLocale = editableLocales.includes(editLocale) ? editLocale : baseLocale;
+  const translating = activeLocale !== baseLocale;
+
+/** 번역 표가 돌려준 폼에서 **언어 관련 부분만** 상태로 되받는다(구조는 번역 모드에서 안 바뀐다). */
+  const applyI18n = (next: WebinarRegistrationFormConfig) => {
+    setI18n(next.i18n);
+    setFormLocales(next.locales);
+    setBaseLocale(next.defaultLocale);
+  };
+
+  /**
+   * 미리보기는 **지금 고른 언어로** 그린다 — 번역을 적는 옆에서 실제 화면을 봐야
+   * 줄바꿈·길이 문제를 그 자리에서 잡는다(AGENTS.md §2 "인접 실시간 미리보기").
+   */
+  const previewForm = translating ? applyWebinarFormLocale(formForI18n, activeLocale) : formForI18n;
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] space-y-6 2xl:grid 2xl:grid-cols-[minmax(0,1fr)_440px] 2xl:gap-8 2xl:space-y-0 2xl:items-start">
       <div className="space-y-6 min-w-0">
+        <WebinarFormLocaleBar
+          form={formForI18n}
+          locales={editableLocales}
+          active={activeLocale}
+          baseLocale={baseLocale}
+          onSelect={setEditLocale}
+          onChange={(next, nextLocale) => {
+            applyI18n(next);
+            if (nextLocale) setEditLocale(nextLocale);
+          }}
+        />
+
+        {translating ? (
+          <TranslationTable
+            config={formForI18n}
+            entries={webinarTranslationEntries(formForI18n, activeLocale)}
+            locale={activeLocale}
+            baseLocale={baseLocale}
+            onChange={applyI18n}
+            emptyHint="탭에서 항목·동의 문구를 먼저 채우면 여기에 그대로 나타나요."
+          />
+        ) : (
+        <>
         {/* 접수 창 — 무엇을 받는지(아래)보다 상위 결정이라 위에 둔다. 두 줄이라 아래를 밀어내지 않는다. */}
         <section className="space-y-3">
           <div>
@@ -872,25 +983,191 @@ export default function RegistrationFormTab({ webinar, onSilentUpdate, confirmLi
             )}
           </div>
         </section>
+        </>
+        )}
       </div>
 
       <RegistrationFormPreview
-        fields={fields}
-        privacyText={privacyText}
-        marketingText={marketingText}
-        privacyBody={privacyBody}
-        marketingBody={marketingBody}
-        privacyDefaultChecked={privacyDefaultChecked}
-        marketingDefaultChecked={marketingDefaultChecked}
+        fields={previewForm.fields}
+        privacyText={previewForm.privacyText}
+        marketingText={previewForm.marketingText}
+        privacyBody={previewForm.privacyBody}
+        marketingBody={previewForm.marketingBody}
+        privacyDefaultChecked={previewForm.privacyDefaultChecked}
+        marketingDefaultChecked={previewForm.marketingDefaultChecked}
+        // 제3자 제공 동의는 아직 번역 표에 없다 — 편집 중 값을 그대로 쓴다(후속 작업).
         thirdPartyEnabled={thirdPartyEnabled}
         thirdPartyText={thirdPartyText}
         thirdPartyBody={thirdPartyBody}
         thirdPartyDefaultChecked={thirdPartyDefaultChecked}
-        submitLabel={submitLabel}
-        successCta={successCta}
+        submitLabel={previewForm.submitLabel}
+        successCta={previewForm.successCta}
         theme={previewTheme}
         slug={webinar.slug}
       />
+    </div>
+  );
+}
+
+/**
+ * 언어 막대 — 편집할 언어를 고르고, 언어를 더하고 지운다.
+ *
+ * ── 왜 폼 하나에 언어 여러 개인가 ─────────────────────────────────────
+ * 홈페이지를 언어별 페이지로 나눠 쓰면(국문 `/`, 영문 `/en/`) 폼도 둘로 만들고 싶어지는데,
+ * 그러면 **등록 데이터가 두 명단으로 갈라진다** — 입장 확인·CSV·리마인더가 전부 두 벌이 되고,
+ * 합치는 일은 사람이 손으로 하게 된다. 그래서 폼은 하나, 문구만 언어별이다.
+ * 방문자가 보는 언어는 임베드 로더가 **호스트 페이지에서 읽어** 서버가 정한다(lib/form-locale).
+ *
+ * ── 삭제가 항상 보이는 자리에 있는 이유 ───────────────────────────────
+ * 언어를 더할 수 있으면 지울 수도 있어야 하고, 그 버튼이 hover 에만 있으면 터치 기기에서는
+ * 없는 것과 같다. 지금 고른 언어 바로 옆에 둔다(파괴적이므로 확인 단계는 거친다).
+ */
+function WebinarFormLocaleBar({
+  form,
+  locales,
+  active,
+  baseLocale,
+  onSelect,
+  onChange,
+}: {
+  form: WebinarRegistrationFormConfig;
+  locales: string[];
+  active: string;
+  baseLocale: string;
+  onSelect: (locale: string) => void;
+  onChange: (next: WebinarRegistrationFormConfig, nextLocale?: string) => void;
+}) {
+  const confirm = useConfirm();
+  const translated = useMemo(() => new Set(webinarFormTranslatedLocales(form)), [form]);
+  const addable = FORM_LOCALES.filter((l) => !locales.includes(l.code));
+  const mismatch = useMemo(() => webinarFormLocaleMismatch(form), [form]);
+
+  const changeBase = async (next: string) => {
+    if (next === baseLocale) return;
+    const ok = await confirm({
+      title: `원문 언어를 ${formLocaleLabel(next)}(으)로 바꿀까요?`,
+      description: `적어 둔 글은 그대로 남고, "이 문구는 ${formLocaleLabel(next)}로 쓰였다" 는 표시만 바뀌어요. 그다음부터 ${formLocaleLabel(baseLocale)} 번역을 추가할 수 있어요.`,
+      confirmLabel: "원문 언어 변경",
+    });
+    if (!ok) return;
+    onChange(retagWebinarFormLocale(form, next), next);
+    toast.success(`원문 언어를 ${formLocaleLabel(next)}(으)로 바꿨어요`);
+  };
+
+  const removeActive = async () => {
+    const ok = await confirm({
+      title: `${formLocaleLabel(active)} 번역을 지울까요?`,
+      description:
+        "이 언어로 적어 둔 문구가 전부 사라져요. 지우고 나면 그 언어 페이지에서도 기본 언어 폼이 나갑니다.",
+      confirmLabel: "번역 삭제",
+      tone: "danger",
+    });
+    if (!ok) return;
+    onChange(dropWebinarFormLocale(form, active), baseLocale);
+    toast.success(`${formLocaleLabel(active)} 번역을 지웠어요`);
+  };
+
+  return (
+    <div className={`${R.surface} bg-card p-3 ${FINISH.s2}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <Languages className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+
+        {locales.map((code) => {
+          const isBase = code === baseLocale;
+          const on = code === active;
+          return (
+            <button
+              key={code}
+              type="button"
+              onClick={() => onSelect(code)}
+              aria-pressed={on}
+              className={`rounded-lg px-2.5 py-1 text-xs transition-shadow ${on ? `bg-violet-500/12 ${FINISH.s2Key}` : "hover:bg-secondary"}`}
+            >
+              {formLocaleLabel(code)}
+              {isBase ? (
+                <span className="ml-1 text-[10px] text-muted-foreground">기본</span>
+              ) : (
+                // 한 글자도 안 적은 언어는 그렇게 보여야 한다 — 안 그러면 "만들어 뒀다"와
+                // "실제로 나간다"를 구분할 수 없다(방문자 화면은 글이 있을 때만 바뀐다).
+                !translated.has(code) && <span className="ml-1 text-[10px] text-amber-600">비어 있음</span>
+              )}
+            </button>
+          );
+        })}
+
+        {addable.length > 0 && (
+          <select
+            value=""
+            onChange={(e) => {
+              const code = e.target.value;
+              if (!code) return;
+              onChange({ ...form, locales: [...form.locales, code] }, code);
+            }}
+            aria-label="번역 언어 추가"
+            className="rounded-lg bg-secondary/60 px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <option value="">+ 언어 추가</option>
+            {addable.map((l) => (
+              <option key={l.code} value={l.code}>
+                {l.label}
+              </option>
+            ))}
+          </select>
+        )}
+
+        <div className="ml-auto flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            원문 언어
+            <select
+              value={baseLocale}
+              onChange={(e) => void changeBase(e.target.value)}
+              className="rounded-lg bg-secondary/60 px-2 py-1 text-xs text-foreground"
+            >
+              {/* 번역이 이미 들어 있는 언어는 막는다 — 원문과 덮개가 같은 언어로 겹치면
+                  어느 쪽이 보일지 알 수 없다. */}
+              {FORM_LOCALES.map((l) => {
+                const taken = l.code !== baseLocale && translated.has(l.code);
+                return (
+                  <option key={l.code} value={l.code} disabled={taken}>
+                    {l.label}
+                    {taken ? " (번역 있음)" : ""}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+
+          {active !== baseLocale && (
+            <button type="button" onClick={() => void removeActive()} className={btnCls("dangerQuiet")}>
+              <Trash2 className="h-3.5 w-3.5" />
+              {formLocaleLabel(active)} 삭제
+            </button>
+          )}
+        </div>
+      </div>
+
+      {mismatch && (
+        <p className="mt-2 rounded-lg bg-amber-500/8 px-2.5 py-2 text-[11px] leading-relaxed text-amber-700 dark:text-amber-400">
+          원문 언어가 <b>{formLocaleLabel(baseLocale)}</b>로 되어 있는데, 적혀 있는 글은{" "}
+          <b>{formLocaleLabel(mismatch)}</b>로 보여요. 오른쪽 <b>원문 언어</b>를 {formLocaleLabel(mismatch)}로 바꾸면{" "}
+          {formLocaleLabel(baseLocale)} 번역을 추가할 수 있어요.
+        </p>
+      )}
+
+      <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+        {active === baseLocale ? (
+          <>
+            항목·동의 문구 <b className="text-foreground">구조는 여기서만</b> 바꿔요. 다른 언어 탭에서는 같은 구조에
+            문구만 채웁니다 — 그래야 어느 언어로 등록해도 한 명단에 쌓여요.
+          </>
+        ) : (
+          <>
+            영문 페이지(<code className="rounded bg-secondary px-1">/en/</code>)에 같은 임베드 코드를 붙이면 이 번역이
+            자동으로 나가요. 라이브 페이지 링크에는{" "}
+            <code className="rounded bg-secondary px-1">?lang={active}</code>를 붙이세요.
+          </>
+        )}
+      </p>
     </div>
   );
 }

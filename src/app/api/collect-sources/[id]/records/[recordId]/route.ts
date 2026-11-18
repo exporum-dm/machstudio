@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/activity";
-import { normalizeCollectForm } from "@/lib/collect-form-config";
+import { collectFormLocales, normalizeCollectForm } from "@/lib/collect-form-config";
 import { isBuilderSource } from "@/lib/collect-columns";
 import { normalizeEmail, primaryFieldKey } from "@/lib/collect-submit";
 import { toE164 } from "@/lib/collect-phone";
@@ -50,8 +50,20 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   ]);
 
   const scan = aggregate._count._all ? { firstAt: aggregate._min.scannedAt, lastAt: aggregate._max.scannedAt, count: aggregate._count._all, days: days.map(d => d.eventDate) } : undefined;
-  const attendance = recordAttendance(record.data, normalizeCollectForm(auth.source.formConfig).eventInfo.eventDates, scan);
-  return NextResponse.json({ record: { ...record, attendance, checkIns, checkinTimezone: auth.source.checkinTimezone ?? "Asia/Seoul" } });
+  const form = normalizeCollectForm(auth.source.formConfig);
+  const attendance = recordAttendance(record.data, form.eventInfo.eventDates, scan);
+
+  /**
+   * 이 폼이 **실제로 번역돼 있는 언어들**. 상세 화면이 '작성 언어' 줄을 띄울지 판정한다 —
+   * 한 언어짜리 폼에서는 모든 레코드가 같은 값이라 그 줄이 잡음이다.
+   * 레코드에 저장된 `locale` 하나만으로는 "언어가 여럿인가" 를 알 수 없어 여기서 함께 준다.
+   */
+  const formLocales = collectFormLocales(form);
+
+  return NextResponse.json({
+    record: { ...record, attendance, checkIns, checkinTimezone: auth.source.checkinTimezone ?? "Asia/Seoul" },
+    formLocales,
+  });
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string; recordId: string }> }) {

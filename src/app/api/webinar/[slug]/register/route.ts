@@ -9,10 +9,12 @@ import {
   maxSelectFor,
   normalizeEmail,
   normalizePhone,
+  applyWebinarFormLocale,
   normalizeRegistrationForm,
   splitMultiValue,
   registrantFieldLabels,
   registrantFieldMaxLength,
+  toBaseLocaleAnswer,
 } from "@/lib/webinar-config";
 import { parseUtmEnvelope } from "@/lib/webinar-attribution";
 import { generateShareCode, normalizeShareCode } from "@/lib/webinar-share";
@@ -31,7 +33,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
     request.headers.get("x-real-ip") ??
     "unknown";
-  const rl = await rateLimitAsync(`webinar-register:${slug}:${ip}`, { limit: 30, windowMs: 60_000 });
+  /**
+   * 사전등록 — 메일이 나간 직후나 사내 공지 직후 한 조직에서 한꺼번에 들어온다.
+   *
+   * 한도를 30/분에서 600/분으로 올린다. 사내망·VPN 뒤에서는 시청자 수백 명이
+   * **같은 출구 IP** 를 쓰므로 예전 값으로는 500명 규모 웨비나에서 정상 사용자가 막혔다.
+   * 중복 등록은 한도가 아니라 `WebinarRegistration_webinarId_phone_key` · `..._email_lower_key` 부분 유니크 인덱스가 막는다(P2002 → 409).
+   */
+  const rl = await rateLimitAsync(`webinar-register:${slug}:${ip}`, { limit: 600, windowMs: 60_000 });
   if (!rl.allowed) {
     return NextResponse.json(
       { error: "요청이 너무 잦아요. 잠시 후 다시 시도해주세요." },
@@ -89,7 +98,25 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   }
   const normalizedPhone = normalizePhone(phone);
   const normalizedEmail = normalizeEmail(email);
-  const fields = normalizeRegistrationForm(webinar.config).fields;
+  /**
+   * **어느 언어로 그려진 폼에서 왔는가.**
+   *
+   * 두 가지에 쓴다:
+   *  (1) 오류 문구 — "Full name 항목을 입력해주세요" 가 아니라 그 사람이 본 라벨로 말한다.
+   *  (2) **선택지 되돌리기** — 영문 폼의 "Buyer" 를 원문 "바이어" 로 바꿔 저장한다.
+   *      이게 없으면 같은 열에 언어별로 다른 값이 쌓여, 한 명단에 모은 의미가 사라진다
+   *      (분석·필터·CSV 가 두 갈래가 되고 합치는 일은 사람이 하게 된다).
+   *
+   * 자칭 값이지만 위험하지 않다 — 모르는 로케일이면 기본 언어로 떨어지고, 그때는 되돌릴
+   * 짝이 없어 받은 값을 그대로 쓴다(지금까지와 같은 동작).
+   */
+  const baseForm = normalizeRegistrationForm(webinar.config);
+  const askedLocale = typeof body?.locale === "string" ? body.locale.trim().toLowerCase() : "";
+  const viewerLocale = askedLocale && baseForm.i18n[askedLocale] ? askedLocale : baseForm.defaultLocale;
+  const toBase = (key: string, value: unknown) =>
+    typeof value === "string" ? toBaseLocaleAnswer(baseForm, viewerLocale, key, value) : value;
+
+  const fields = applyWebinarFormLocale(baseForm, viewerLocale).fields;
   const customAnswersRaw = typeof customFields === "object" && customFields !== null && !Array.isArray(customFields)
     ? (customFields as Record<string, unknown>)
     : {};
@@ -100,7 +127,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     if (!allowedCustomKeys.has(key)) continue;
     if (value === null || value === undefined) continue;
     if (typeof value === "object") continue; // 중첩 객체·배열 거부
-    const text = String(value);
+    // 선택지 답은 **원문 어휘로 되돌려** 저장한다(위 viewerLocale 주석).
+    const text = String(toBase(key, String(value)));
     customAnswers[key] = text.length > MEMO_MAX ? text.slice(0, MEMO_MAX) : text;
   }
 
@@ -249,10 +277,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     name: name.trim(),
     phone: normalizedPhone,
     email: normalizedEmail,
-    company: clean(company),
-    department: clean(department),
-    jobTitle: clean(jobTitle),
-    industry: clean(industry),
+    // 시스템 항목도 선택형으로 바꿀 수 있다(업종 드롭다운 등) — 같은 되돌리기를 거친다.
+    company: clean(toBase("company", company)),
+    department: clean(toBase("department", department)),
+    jobTitle: clean(toBase("jobTitle", jobTitle)),
+    industry: clean(toBase("industry", industry)),
     agreeMarketing: Boolean(agreeMarketing),
     agreeThirdParty: Boolean(agreeThirdParty),
     agreePrivacy: true, // 위에서 === true 를 강제했다
@@ -260,6 +289,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     ...utmData,
     userAgent,
     registeredStatus: statusInfo.status,
+    // 어느 언어 폼에서 왔는가 — 값은 원문으로 되돌려 저장하므로 언어는 여기만 남는다.
+    locale: viewerLocale,
     shareCode,
     referredById: referrer?.id ?? null,
   });

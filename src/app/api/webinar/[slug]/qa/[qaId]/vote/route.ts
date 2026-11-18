@@ -13,7 +13,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
     request.headers.get("x-real-ip") ??
     "unknown";
-  const rl = await rateLimitAsync(`webinar-qa-vote:${slug}:${ip}`, { limit: 30, windowMs: 60_000 });
+  /**
+   * 질문 추천은 보드가 열리면 한꺼번에 몰린다.
+   *
+   * 한도를 30/분에서 1200/분으로 올린다. 사내망·VPN 뒤에서는 시청자 수백 명이
+   * **같은 출구 IP** 를 쓰므로 예전 값으로는 500명 규모 웨비나에서 정상 사용자가 막혔다.
+   * 중복 추천은 `@@unique([qaId, registrationId])` 가 막는다 — 한도는 폭주 방어용이다.
+   */
+  const rl = await rateLimitAsync(`webinar-qa-vote:${slug}:${ip}`, { limit: 1200, windowMs: 60_000 });
   if (!rl.allowed) {
     return NextResponse.json(
       { error: "요청이 너무 잦아요." },

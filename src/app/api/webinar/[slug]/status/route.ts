@@ -1,60 +1,40 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { resolveWebinarStatus } from "@/lib/webinar-status";
+import { getWebinarLiveSnapshot } from "@/lib/webinar-live-snapshot";
 
 // 경량 상태 전용 엔드포인트 — 라이브 전(사전등록·입장 대기) 폴링이 /info 전체(세션·테마·config)를
 // 30초마다 다시 받지 않도록, 상태 전환 판정에 필요한 값만 반환한다.
-export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
+export async function GET(_request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const webinar = await prisma.webinar.findUnique({
-    where: { slug },
-    select: { id: true, statusOverride: true, liveStartAt: true, liveEndAt: true, signupDeadline: true, components: true },
-  });
-  if (!webinar) return NextResponse.json({ error: "없는 웨비나예요" }, { status: 404, headers: { "Access-Control-Allow-Origin": "*" } });
-
-  const statusInfo = resolveWebinarStatus(webinar);
 
   /**
-   * 함께 기다리는 사람 수 — 대기 화면 밴드의 값.
+   * 값은 전부 **모든 방문자에게 같다** — 그래서 live-state 와 **같은 5초 스냅샷**에서 읽는다
+   * (lib/webinar-live-snapshot). 대기 중인 500명이 30초마다 이걸 부르면 초당 17요청이고,
+   * 예전에는 그때마다 웨비나 행 + COUNT 두 건을 따로 돌렸다 — 전부 같은 답이 나오는 쿼리였다.
    *
-   * 이 폴러에 얹은 이유: 대기 화면은 이미 이걸 30초마다 부른다. 수를 위해 새 폴러를 두면
-   * 대기 시청자당 요청이 배로 늘고, 이 프로젝트는 그 egress 를 여러 번 줄여 왔다.
-   *
-   * 라이브 중에는 계산하지 않는다 — 그때는 시청자 수(live-state 의 viewerCount)가 같은 자리를
-   * 맡고, 둘을 동시에 세면 "기다리는 사람" 과 "보고 있는 사람" 이 한 화면에서 경쟁한다.
-   *
-   * 창(5분)은 라이브 시청자 수와 같은 값이다 — 두 수가 같은 기준으로 움직여야 방송이 시작될 때
-   * 숫자가 튀지 않는다. isActive 를 보지 않는 이유: 대기 프레즌스(event: "wait")는 그 값을
-   * 건드리지 않는다(입장률·시청 시간을 오염시키지 않으려고).
+   * 라이브로 넘어가는 순간의 전환도 여기서 감지한다. 스냅샷이 5초까지 낡을 수 있으므로
+   * 대기 화면의 자동 전환이 최악 30초 + 5초 걸린다 — 폴 주기 안에서 흡수되는 지연이다.
    */
-  const PRESENCE_WINDOW_MS = 5 * 60_000;
-  const waitingCount = statusInfo.status === "live"
-    ? null
-    : await prisma.webinarRegistration.count({
-        where: {
-          webinarId: webinar.id,
-          presencePingAt: { gte: new Date(Date.now() - PRESENCE_WINDOW_MS) },
-        },
-      });
-
-  /**
-   * 사회적 증거용 **누적 사전등록자 수**. 위 waitingCount(지금 대기 중인 인원, 5분 프레즌스)와
-   * 다른 값이다 — 대기 화면의 "N명이 함께 기다려요" 는 등록을 망설이는 사람에게 보여 주는
-   * 숫자라, 지금 접속 중인 몇 명이 아니라 **여태 등록한 총원**이어야 설득력이 있다.
-   *
-   * 이 라우트에 얹는 이유: 라이브 전 폴러는 여기 하나뿐이다(30초). 새 엔드포인트를 만들면
-   * 폴러가 하나 더 생긴다 — 뷰어 폴링은 창구를 늘리지 않는다는 규칙(IA §10).
-   */
-  const registrantCount = await prisma.webinarRegistration.count({ where: { webinarId: webinar.id } });
+  const snap = await getWebinarLiveSnapshot(slug);
+  if (!snap.webinar || !snap.status) {
+    return NextResponse.json({ error: "없는 웨비나예요" }, { status: 404, headers: { "Access-Control-Allow-Origin": "*" } });
+  }
 
   return NextResponse.json(
     {
-      status: statusInfo.status,
-      entryOpen: statusInfo.entryOpen,
-      canRegister: statusInfo.canRegister,
+      status: snap.status.status,
+      entryOpen: snap.status.entryOpen,
+      canRegister: snap.status.canRegister,
       serverNow: new Date().toISOString(),
-      waitingCount,
-      registrantCount,
+      /**
+       * 지금 대기 중인 인원(5분 프레즌스)과 **누적 사전등록자 수**는 다른 값이다 —
+       * 대기 화면의 "N명이 함께 기다려요" 는 등록을 망설이는 사람에게 보여 주는 숫자라
+       * 지금 접속 중인 몇 명이 아니라 여태 등록한 총원이어야 설득력이 있다.
+       *
+       * 두 값이 같은 엔드포인트에 실리는 이유: 라이브 전 폴러는 이거 하나뿐이다(30초).
+       * 새 엔드포인트를 만들면 폴러가 하나 더 생긴다 — 뷰어 폴링은 창구를 늘리지 않는다(IA §10).
+       */
+      waitingCount: snap.waitingCount,
+      registrantCount: snap.registrantCount,
     },
     { headers: { "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" } },
   );

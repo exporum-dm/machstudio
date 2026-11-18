@@ -11,6 +11,7 @@ import { formatKstDateTime } from "@/lib/datetime";
 import ModalShell from "./ModalShell";
 import { dateTimeIn } from "@/lib/collect-checkin";
 import { formatCollectValue } from "@/lib/collect-columns";
+import { formLocaleLabel } from "@/lib/form-locale";
 
 const spring = { type: "spring", stiffness: 420, damping: 30 } as const;
 
@@ -39,6 +40,8 @@ interface CollectRecord {
   firstSeenAt: string | null;
   referrer: string | null;
   createdAt: string;
+  /** 어느 언어 폼에서 제출됐나(없으면 이 값이 없던 시절의 레코드 = 폼 기본 언어). */
+  locale: string | null;
   /** 현장 체크인 스캔 기록(최근 순) */
   attendance?: RecordAttendance | null;
   checkIns?: { scannedAt: string; method: string; staffLabel: string }[];
@@ -58,6 +61,8 @@ interface Props {
 export default function RecordDetailModal({ sourceId, recordId, fieldMappings, onClose, onChanged }: Props) {
   const confirm = useConfirm();
   const [record, setRecord] = useState<CollectRecord | null>(null);
+  /** 이 폼이 실제로 번역돼 있는 언어들 — 둘 이상일 때만 '작성 언어' 줄을 띄운다. */
+  const [formLocales, setFormLocales] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -72,6 +77,7 @@ export default function RecordDetailModal({ sourceId, recordId, fieldMappings, o
         const data = await res.json();
         if (!res.ok) { toast.error(data.error ?? "불러오기 실패"); onClose(); return; }
         setRecord(data.record);
+        setFormLocales(Array.isArray(data.formLocales) ? data.formLocales : []);
         setDraft({ ...(data.record.data ?? {}) });
         setDraftUtm({
           utmSource: data.record.utmSource ?? "",
@@ -206,6 +212,14 @@ export default function RecordDetailModal({ sourceId, recordId, fieldMappings, o
                   <div className="grid grid-cols-[120px_1fr] gap-3 items-start">
                     <div className="text-xs text-muted-foreground pt-2">등록번호</div>
                     <div className="text-sm py-2 break-words">{record.registrationNo}</div>
+                  </div>
+                )}
+                {/* 작성 언어 — 다국어 폼에서만. 국문 페이지와 영문 페이지의 등록이 한 명단에
+                    섞여 들어오므로, 어느 쪽에서 왔는지는 이 줄에만 남는다. */}
+                {formLocales.length > 1 && (
+                  <div className="grid grid-cols-[120px_1fr] gap-3 items-start">
+                    <div className="text-xs text-muted-foreground pt-2">작성 언어</div>
+                    <div className="text-sm py-2">{formLocaleLabel(record.locale || formLocales[0])}</div>
                   </div>
                 )}
                 {record.checkIns && record.checkIns.length > 0 && (
