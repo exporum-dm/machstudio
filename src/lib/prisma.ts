@@ -8,7 +8,14 @@ function createPrismaClient() {
   // 2로 줄이면 천장이 100 인스턴스로 5배. Promise.all 은 풀이 알아서 2개씩 큐잉하므로 코드 변경 불필요,
   // 대가는 폴 응답 수십 ms 증가뿐. DATABASE_URL 쿼리스트링(connection_limit)은 드라이버 어댑터에선
   // 무시되므로 여기가 유일한 조절 지점이다.
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL!, max: 2 });
+  const ca = process.env.DATABASE_CA_CERT_BASE64;
+  const adapter = new PrismaPg({
+    connectionString: process.env.DATABASE_URL!,
+    max: 2,
+    ...(ca && {
+      ssl: { ca: Buffer.from(ca, "base64").toString("utf8"), rejectUnauthorized: true },
+    }),
+  });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return new PrismaClient({ adapter } as any);
 }
