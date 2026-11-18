@@ -28,6 +28,11 @@ export interface MountLookupOptions {
   preview?: boolean;
   /** 스타일을 넣을 루트. 안 주면 문서(지금까지와 같다). */
   styleRoot?: Document | ShadowRoot;
+  /**
+   * 그릴 언어. 임베드는 호스트 페이지에서 감지한 값을 넘긴다(lib/form-locale).
+   * 안 주면 폼 언어 설정(config.defaultLocale)으로 떨어진다 — 지금까지와 같은 동작이다.
+   */
+  locale?: string;
 }
 
 export interface LookupHandle {
@@ -61,8 +66,8 @@ export function mountCollectLookup(opts: MountLookupOptions): LookupHandle {
   ensureFormStyles(opts.styleRoot);
   const { config, mount } = opts;
   const preview = opts.preview === true;
-  // 기본 문구 — "기본 정보 › 폼 언어"(config.defaultLocale)를 따른다(copy.ts)
-  const COPY = lookupCopy(config.defaultLocale);
+  // 기본 문구 — 호스트 페이지에서 감지한 언어가 먼저고, 없으면 "기본 정보 › 폼 언어"(copy.ts)
+  const COPY = lookupCopy(opts.locale || config.defaultLocale);
 
   const useEmail = config.lookup.fields.includes("email");
   const usePhone = config.lookup.fields.includes("phone");

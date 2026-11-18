@@ -2,7 +2,7 @@
 
 import { getPublicAppOrigin } from "@/lib/app-url";
 
-import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
 import { use } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, CheckCircle2 } from "lucide-react";
@@ -23,8 +23,10 @@ import {
   normalizeLivePageConfig,
   normalizeRegistrationForm,
   safeHttpUrl,
+  webinarFormTranslatedLocales,
   type WebinarRegistrationField,
 } from "@/lib/webinar-config";
+import { resolveLocaleFromRawSignals } from "@/lib/form-locale";
 import { MultiChoiceField, SingleChoiceField } from "@/components/webinar/choice-fields";
 import { readStatusRefresh } from "../status-refresh";
 import { buildUtmEnvelope, sendVisitBeacon } from "@/lib/attribution-client";
@@ -34,6 +36,19 @@ import { PUBLIC_REGISTRATION_FORM_CSS } from "@/lib/webinar-public-form-css";
 const spring = { type: "spring", stiffness: 420, damping: 30 } as const;
 const REGISTRATION_FOCUSABLE =
   'button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+
+/**
+ * 이 화면을 **어느 언어로 그릴지.**
+ *
+ * 임베드(호스트 사이트)와 달리 여기는 우리 페이지라 읽을 신호가 `?lang=` 뿐이다 —
+ * 국문 홈페이지의 버튼은 그냥 링크를, 영문 홈페이지의 버튼은 `?lang=en` 을 걸면 된다.
+ * (임베드 폼은 호스트 페이지의 `<html lang>`·경로까지 읽는다 — lib/form-locale.)
+ *
+ * 번역이 없는 언어를 고르면 문구마다 원문으로 폴백해 화면이 그대로다. 그래서 **번역이
+ * 들어 있는 언어로만** 좁힌다(webinarFormTranslatedLocales).
+ */
+const urlLangParam = () =>
+  typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("lang") ?? "";
 
 // 소유자 미리보기 진입 여부 — ?preview 파라미터. 이 tab 에선 폴링·ping·제출 등 모든 부작용을 정지시킨다.
 const isPreviewUrl = () => typeof window !== "undefined" && new URLSearchParams(window.location.search).has("preview");
@@ -139,13 +154,29 @@ type RegistrationField = WebinarRegistrationField;
 export default function LivePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
   const [webinar, setWebinar] = useState<WebinarInfo | null>(null);
+  /**
+   * 이 화면의 언어. `?lang=` 만 본다(urlLangParam 주석) — 그리고 **번역이 실제로 들어 있는
+   * 언어로만** 좁힌다. 등록 제출에도 같은 값을 실어 보내 서버가 선택지를 원문으로 되돌린다.
+   *
+   * 마운트 후에 읽는 이유: 렌더 중에 window 를 읽으면 서버/클라이언트 첫 렌더가 갈린다
+   * (이 파일의 embedded 상태가 같은 이유로 그렇게 한다).
+   */
+  const [langParam, setLangParam] = useState("");
+  const viewerLocale = useMemo(() => {
+    const base = normalizeRegistrationForm(webinar?.config ?? {});
+    return resolveLocaleFromRawSignals([langParam], webinarFormTranslatedLocales(base), base.defaultLocale);
+  }, [webinar, langParam]);
   const [isLoading, setIsLoading] = useState(true);
   const [view, setView] = useState<PageView>("signup");
   // ── 소유자 미리보기 — ?preview=<상태>. 4개 상태를 강제 렌더(부작용 차단). null = 일반 시청자 뷰.
   const [previewState, setPreviewState] = useState<null | "registration" | "entry" | "live" | "ended">(null);
   // 렌더 중 직접 window 를 읽으면 서버/클라이언트 첫 렌더가 갈린다 → 마운트 후 state 로.
+  // 언어(`?lang=`)도 같은 이유·같은 시점에 읽는다 — 이펙트를 따로 두지 않는다.
   const [embedded, setEmbedded] = useState(false);
-  useEffect(() => { setEmbedded(isEmbeddedPreview()); }, []);
+  useEffect(() => {
+    setEmbedded(isEmbeddedPreview());
+    setLangParam(urlLangParam());
+  }, []);
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null);
   const previewMode = previewState !== null;
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -767,7 +798,8 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // _ref: 추천 링크(`?ref=`)로 들어왔으면 그 코드를 함께 보내 추천인에 연결한다
-        body: JSON.stringify({ ...form, customFields, _utm: buildUtmEnvelope(), _ref: readShareCode(window.location.search) || undefined }),
+        // locale: 서버가 번역된 선택지를 원문 값으로 되돌려 저장한다(한 명단, 한 어휘).
+        body: JSON.stringify({ ...form, customFields, locale: viewerLocale, _utm: buildUtmEnvelope(), _ref: readShareCode(window.location.search) || undefined }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -957,7 +989,7 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
   const soft = (pct: number) => `color-mix(in srgb, ${text} ${pct}%, transparent)`;
   const font = theme.font ?? "Pretendard";
   const radius = theme.borderRadius ?? "16px";
-  const registrationForm = normalizeRegistrationForm(webinar.config ?? {});
+  const registrationForm = normalizeRegistrationForm(webinar.config ?? {}, { locale: viewerLocale });
   const visibleFields = registrationForm.fields;
   const completionCtaUrl = safeHttpUrl(registrationForm.successCta.url);
   const showCompletionCta =

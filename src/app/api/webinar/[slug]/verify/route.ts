@@ -22,7 +22,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     "unknown";
   // 웨비나는 정시에 트래픽이 몰린다. 사내망·모바일 CGNAT 처럼 IP 를 공유하는 정상 시청자가
   // 최악의 순간에 막히던 문제 → 성공 경로 한도를 크게 올린다(무한은 아니되 단체 입장을 막지 않게).
-  const rl = await rateLimitAsync(`verify:${slug}:${ip}`, { limit: 120, windowMs: 60_000 });
+  // 성공 경로 한도. 500명이 정시에 한 사무실에서 입장하면 첫 1분에 수백 건이 한 키로 몰린다 —
+  // 120/분은 그 순간을 못 버틴다(입장 자체가 막히는, 가장 비싼 실패다).
+  // 열거 방어는 이 값이 아니라 아래 `verify-miss` 버킷이 맡는다 — 성공 한도를 올려도 안 약해진다.
+  const rl = await rateLimitAsync(`verify:${slug}:${ip}`, { limit: 600, windowMs: 60_000 });
   if (!rl.allowed) {
     return NextResponse.json(
       { error: "요청이 너무 잦아요. 잠시 후 다시 시도해주세요." },

@@ -16,7 +16,7 @@ import { buildSessionNumbering, cleanSessionText, isPauseSession, isRealSession,
 import SurveyForm, { SURVEY_FORM_CSS, clearSurveyDraft } from "./SurveyForm";
 import { formatSurveyOpensAt, type SurveyAnswers, type SurveyQuestion } from "@/lib/webinar-survey";
 import { IMAGE_PRESETS, transformedImageUrl } from "@/lib/webinar-image";
-import { onAccentColor } from "@/lib/color";
+import { onAccentColor, readableTextOn } from "@/lib/color";
 
 const spring = { type: "spring", stiffness: 420, damping: 30 } as const;
 
@@ -141,11 +141,20 @@ export { onAccentColor } from "@/lib/color";
 
 export function buildStkCss(accent: string, text: string, surface: string, borderRadius?: string) {
   const rs = webinarRadiusScale(borderRadius);
+  /**
+   * 글자색은 **운영자가 고른 값을 그대로 쓰되, 배경 위에서 안 읽히면 뒤집는다**(readableTextOn).
+   *
+   * 테마 편집기는 글자색과 배경색을 따로 고르게 해 두었고, 그래서 흰 배경에 흰 글자·형광
+   * 배경에 흰 글자 같은 조합이 실제로 저장된다. 여기서 한 번 거르면 이 토큰을 쓰는 네 화면
+   * (대기·입장확인·시청·종료)과 설문 폼이 전부 같은 보호를 받는다 — 화면마다 따로 막지 않는다.
+   * 3:1 미만일 때만 개입하므로 의도적인 저대비 디자인은 건드리지 않는다.
+   */
+  const ink = readableTextOn(surface, text);
   return `
 .stk-live { --key: ${accent}; --on-key: ${onAccentColor(accent)}; --key-dim: color-mix(in srgb, ${accent} 12%, transparent); --key-border: color-mix(in srgb, ${accent} 36%, transparent);
-  --text:${text}; --muted:color-mix(in srgb, ${text} 62%, transparent); --sub:color-mix(in srgb, ${text} 42%, transparent);
-  --card:${surface}; --card-2:color-mix(in srgb, ${text} 5%, ${surface});
-  --line:color-mix(in srgb, ${text} 10%, transparent); --line-md:color-mix(in srgb, ${text} 17%, transparent); --r-scale:${rs}; --radius-sm:${12 * rs}px; --radius:${20 * rs}px; --radius-lg:${28 * rs}px;
+  --text:${ink}; --muted:color-mix(in srgb, ${ink} 62%, transparent); --sub:color-mix(in srgb, ${ink} 42%, transparent);
+  --card:${surface}; --card-2:color-mix(in srgb, ${ink} 5%, ${surface});
+  --line:color-mix(in srgb, ${ink} 10%, transparent); --line-md:color-mix(in srgb, ${ink} 17%, transparent); --r-scale:${rs}; --radius-sm:${12 * rs}px; --radius:${20 * rs}px; --radius-lg:${28 * rs}px;
   --card-shadow:0 1px 3px rgba(0,0,0,0.05), 0 14px 34px -16px rgba(0,0,0,0.22);
   --btn-shadow:0 1px 2px rgba(0,0,0,0.05), 0 2px 5px -2px rgba(0,0,0,0.13);
   --btn-shadow-hover:0 2px 5px -1px rgba(0,0,0,0.10), 0 10px 20px -6px rgba(0,0,0,0.22);

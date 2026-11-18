@@ -2,6 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 import RegistrationFormTab, { RegistrationFormPreview } from "../RegistrationFormTab";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -42,16 +43,18 @@ function renderEditor() {
   root = createRoot(host);
   act(() => {
     root?.render(
-      <RegistrationFormTab
-        webinar={{
-          id: "webinar-editor-test",
-          slug: "editor-test",
-          config: {},
-          liveStartAt: "2026-08-01T01:00:00.000Z",
-          signupDeadline: "2026-08-01T00:00:00.000Z",
-        }}
-        onSilentUpdate={vi.fn()}
-      />,
+      <ConfirmProvider>
+        <RegistrationFormTab
+          webinar={{
+            id: "webinar-editor-test",
+            slug: "editor-test",
+            config: {},
+            liveStartAt: "2026-08-01T01:00:00.000Z",
+            signupDeadline: "2026-08-01T00:00:00.000Z",
+          }}
+          onSilentUpdate={vi.fn()}
+        />
+      </ConfirmProvider>,
     );
   });
   return host;

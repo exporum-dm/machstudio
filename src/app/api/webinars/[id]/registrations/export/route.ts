@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/activity";
-import { normalizeRegistrationForm, registrantFieldLabels } from "@/lib/webinar-config";
+import { normalizeRegistrationForm, registrantFieldLabels, webinarFormTranslatedLocales } from "@/lib/webinar-config";
 import { assembleWebinarEngagement } from "@/lib/webinar-scoring";
 import { normalizeSurveyQuestions, type SurveyAnswers } from "@/lib/webinar-survey";
 import { buildRegistrantCsvTable, serializeCsv, type CsvQAItem } from "@/lib/webinar-registrant-csv";
@@ -37,6 +37,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       jobTitle: true, industry: true, agreeMarketing: true, agreeThirdParty: true, submittedAt: true, enteredAt: true,
       memo: true, utmSource: true, utmMedium: true, utmCampaign: true,
       firstUtmSource: true, firstUtmMedium: true, firstUtmCampaign: true, referrer: true,
+      locale: true,
     },
   });
 
@@ -118,8 +119,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   }
 
   // 커스텀 필드 컬럼 — 등록폼 정의 순서(시스템 필드 제외) 그대로 헤더에 편입
-  const customFieldDefs = normalizeRegistrationForm(webinar.config, { includeDisabled: true }).fields
-    .filter((f) => !f.system);
+  const registrationForm = normalizeRegistrationForm(webinar.config, { includeDisabled: true });
+  const customFieldDefs = registrationForm.fields.filter((f) => !f.system);
 
   const csv = serializeCsv(
     buildRegistrantCsvTable({
@@ -130,6 +131,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       answersByRegistrant: answersByReg,
       qaByRegistrant: qaByReg,
       engagementByRegistrant: scoreMap,
+      formLocales: webinarFormTranslatedLocales(registrationForm),
     }),
   );
 

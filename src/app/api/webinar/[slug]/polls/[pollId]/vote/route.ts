@@ -12,7 +12,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
     request.headers.get("x-real-ip") ??
     "unknown";
-  const rl = await rateLimitAsync(`webinar-poll-vote:${slug}:${ip}`, { limit: 20, windowMs: 60_000 });
+  /**
+   * 투표는 **공개되는 순간 전원이 동시에** 누른다 — 가장 터지기 쉬운 자리다.
+   *
+   * 한도를 20/분에서 1200/분으로 올린다. 사내망·VPN 뒤에서는 시청자 수백 명이
+   * **같은 출구 IP** 를 쓰므로 예전 값으로는 500명 규모 웨비나에서 정상 사용자가 막혔다.
+   * 중복 투표는 한도가 아니라 `@@unique([pollId, registrationId])` 가 막는다 — 한도는 폭주 방어용일 뿐이라 올려도 집계가 흔들리지 않는다.
+   */
+  const rl = await rateLimitAsync(`webinar-poll-vote:${slug}:${ip}`, { limit: 1200, windowMs: 60_000 });
   if (!rl.allowed) {
     return NextResponse.json(
       { error: "요청이 너무 잦아요. 잠시 후 다시 시도해주세요." },

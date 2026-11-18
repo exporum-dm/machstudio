@@ -7,7 +7,7 @@
  * 넣지 않는다. 자동저장 + 인접 실시간 미리보기가 같은 절의 요구다.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Copy, ExternalLink, Plus, RefreshCw, Search } from "lucide-react";
+import { Check, Copy, ExternalLink, Languages, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { EditableList, withRowKeys, ROW_KEY } from "@/components/ui/editable-list";
@@ -24,6 +24,9 @@ import { CollectFormRuntime } from "@/components/form-builder/CollectFormRuntime
 import { CollectFormSections } from "@/components/form-builder/CollectFormSections";
 import {
   DEFAULT_LOCALE,
+  collectFormLocales,
+  editableFormLocales,
+  localize,
   normalizeCollectForm,
   toLocalized,
   type CollectField,
@@ -31,6 +34,9 @@ import {
   type RegistrationStatus,
 } from "@/lib/collect-form-config";
 import { DomesticBuilderSettings } from "./DomesticBuilderSettings";
+import { collectTranslationEntries, dropFormLocale, retagFormLocale } from "@/lib/collect-form-i18n";
+import { TranslationTable } from "@/components/form-builder/TranslationTable";
+import { FORM_LOCALES, formLocaleLabel, guessLocaleOfTexts } from "@/lib/form-locale";
 import { getPublicAppOrigin } from "@/lib/app-url";
 
 /** "between" = 사전등록이 끝나고 현장등록 전 — 등록 시간을 켰을 때만 버튼이 보인다 */
@@ -68,6 +74,11 @@ export default function FormBuilderTab({
   // 저장된 값은 어떤 모양이든 올 수 있다 — 화면은 정규화된 것만 본다.
   const [config, setConfig] = useState<CollectFormConfig>(() => normalizeCollectForm(initialConfig));
   const [previewState, setPreviewState] = useState<PreviewState>("auto");
+  /**
+   * 지금 편집 중인 언어. 기본 언어면 **구조까지** 고치는 평소 빌더이고, 다른 언어면
+   * 문구만 채우는 번역 표다(구조를 언어별로 갈라지게 두면 등록 데이터가 두 벌이 된다).
+   */
+  const [editLocale, setEditLocale] = useState<string>(() => normalizeCollectForm(initialConfig).defaultLocale);
 
   const onSavedRef = useRef(onSaved);
   useEffect(() => {
@@ -126,9 +137,36 @@ export default function FormBuilderTab({
 
   const rows = useMemo(() => withRowKeys(config.fields), [config.fields]);
 
+  const locales = useMemo(() => editableFormLocales(config), [config]);
+  // 저장된 설정이 바뀌어(다른 창·언어 삭제) 지금 보던 언어가 사라지면 기본 언어로 돌아간다.
+  const activeLocale = locales.includes(editLocale) ? editLocale : config.defaultLocale;
+  const translating = activeLocale !== config.defaultLocale;
+
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
       <div className="space-y-3">
+        <FormLocaleBar
+          config={config}
+          locales={locales}
+          active={activeLocale}
+          onSelect={setEditLocale}
+          onChangeConfig={(next, nextLocale) => {
+            setConfig(next);
+            if (nextLocale) setEditLocale(nextLocale);
+          }}
+        />
+
+        {translating ? (
+          <TranslationTable
+            config={config}
+            entries={collectTranslationEntries(config, activeLocale)}
+            locale={activeLocale}
+            baseLocale={config.defaultLocale}
+            onChange={setConfig}
+            emptyHint="탭에서 항목·안내·동의를 먼저 채우면 여기에 그대로 나타나요."
+          />
+        ) : (
+        <>
         {config.builderVariant === "domestic" && <DomesticBuilderSettings config={config} patch={patch} sourceId={sourceId} />}
         <div className="flex items-center justify-between gap-2">
           <div>
@@ -210,6 +248,8 @@ export default function FormBuilderTab({
 
         {/* 항목 아래에 나머지 설정 — 순서가 곧 폼이 그려지는 순서다(개요 → 항목 → 안내 → 동의). */}
         <CollectFormSections config={config} patch={patch} workspaceId={workspaceId} />
+        </>
+        )}
       </div>
 
       {/* 미리보기는 임베드와 같은 모델·가시성 규칙을 읽는다 — 각자 그리면 반드시 갈라진다. */}
@@ -230,6 +270,7 @@ export default function FormBuilderTab({
           <CollectFormRuntime
             config={config}
             sourceId={sourceId}
+            locale={activeLocale}
             forceStatus={previewState === "auto" ? undefined : previewState === "between" ? "closed" : previewState}
             forcePhase={previewState === "between" ? "between" : undefined}
           />
@@ -398,3 +439,189 @@ function EmbedSnippetRow({ sourceId, lookupEnabled }: { sourceId: string; lookup
 }
 
 export { DEFAULT_LOCALE };
+
+/**
+ * 언어 막대 — 편집할 언어를 고르고, 언어를 더하고 지운다.
+ *
+ * ── 왜 폼 하나에 언어 여러 개인가 ─────────────────────────────────────
+ * 홈페이지를 언어별 페이지로 나눠 쓰면(국문 `/`, 영문 `/en/`) 폼도 둘로 만들고 싶어지는데,
+ * 그러면 **등록 데이터가 두 테이블로 갈라진다** — 명단·중복확인·CSV·현장 체크인이 전부
+ * 두 벌이 되고, 합치는 일은 사람이 손으로 하게 된다. 그래서 폼은 하나, 문구만 언어별이다.
+ * 방문자가 보는 언어는 임베드 런타임이 **호스트 페이지에서 읽어** 정한다(lib/form-locale).
+ *
+ * ── 삭제가 항상 보이는 자리에 있는 이유 ───────────────────────────────
+ * 언어를 더할 수 있으면 지울 수도 있어야 하고, 그 버튼이 hover 에만 있으면 터치 기기에서는
+ * 없는 것과 같다. 지금 고른 언어 바로 옆에 둔다(파괴적이므로 확인 단계는 거친다).
+ */
+function FormLocaleBar({
+  config,
+  locales,
+  active,
+  onSelect,
+  onChangeConfig,
+}: {
+  config: CollectFormConfig;
+  locales: string[];
+  active: string;
+  onSelect: (locale: string) => void;
+  onChangeConfig: (next: CollectFormConfig, nextLocale?: string) => void;
+}) {
+  const confirm = useConfirm();
+  const translated = useMemo(() => new Set(collectFormLocales(config)), [config]);
+  const addable = FORM_LOCALES.filter((l) => !locales.includes(l.code));
+
+  /**
+   * 기본 언어 표시와 **적혀 있는 글**이 어긋났는가.
+   *
+   * 수집 빌더의 기본 로케일이 오래 "en" 이었어서(첫 사용처가 LA 전시) 국문으로 만든 기존
+   * 폼은 전부 그 상태다. 그 상태에서는 "English" 가 기본 언어 자리를 차지해 **영어 번역을
+   * 추가할 수 없는데**, 운영자가 그 원인을 스스로 찾을 방법이 없다. 그래서 먼저 알려 준다.
+   */
+  const mismatch = useMemo(() => {
+    const texts = [
+      ...config.fields.filter((f) => f.enabled).map((f) => localize(f.label, config.defaultLocale)),
+      localize(config.consent.privacy.label, config.defaultLocale),
+      localize(config.submitLabel, config.defaultLocale),
+    ].filter(Boolean);
+    const guess = guessLocaleOfTexts(texts);
+    // 추정한 언어에 이미 번역이 있으면 어긋남이 아니다(그 언어는 제자리에 있다).
+    return guess && guess !== config.defaultLocale && !translated.has(guess) ? guess : null;
+  }, [config, translated]);
+
+  const removeActive = async () => {
+    const ok = await confirm({
+      title: `${formLocaleLabel(active)} 번역을 지울까요?`,
+      description:
+        "이 언어로 적어 둔 문구가 전부 사라져요. 지우고 나면 그 언어 페이지에서도 기본 언어 폼이 나갑니다.",
+      confirmLabel: "번역 삭제",
+      tone: "danger",
+    });
+    if (!ok) return;
+    onChangeConfig(dropFormLocale(config, active), config.defaultLocale);
+    toast.success(`${formLocaleLabel(active)} 번역을 지웠어요`);
+  };
+
+  const changeBase = async (next: string) => {
+    if (next === config.defaultLocale) return;
+    const ok = await confirm({
+      title: `기본 언어를 ${formLocaleLabel(next)}(으)로 바꿀까요?`,
+      description: `지금 ${formLocaleLabel(config.defaultLocale)}로 적혀 있는 글이 ${formLocaleLabel(next)} 칸으로 옮겨져요. 번역이 사라지지는 않지만, 어느 언어로 적었는지가 바뀝니다.`,
+      confirmLabel: "기본 언어 변경",
+    });
+    if (!ok) return;
+    onChangeConfig(retagFormLocale(config, config.defaultLocale, next), next);
+    toast.success(`기본 언어를 ${formLocaleLabel(next)}(으)로 바꿨어요`);
+  };
+
+  return (
+    <div className={`${R.surface} bg-card p-3 ${FINISH.s2}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <Languages className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+
+        {locales.map((code) => {
+          const isBase = code === config.defaultLocale;
+          const on = code === active;
+          return (
+            <button
+              key={code}
+              type="button"
+              onClick={() => onSelect(code)}
+              aria-pressed={on}
+              className={`rounded-lg px-2.5 py-1 text-xs transition-shadow ${on ? `bg-violet-500/12 ${FINISH.s2Key}` : "hover:bg-secondary"}`}
+            >
+              {formLocaleLabel(code)}
+              {isBase ? (
+                <span className="ml-1 text-[10px] text-muted-foreground">기본</span>
+              ) : (
+                // 번역을 한 글자도 안 적은 언어는 그렇게 보여야 한다 — 안 그러면 "만들어 뒀다"와
+                // "실제로 나간다"를 구분할 수 없다(방문자 화면은 글이 있을 때만 바뀐다).
+                !translated.has(code) && <span className="ml-1 text-[10px] text-amber-600">비어 있음</span>
+              )}
+            </button>
+          );
+        })}
+
+        {addable.length > 0 && (
+          <select
+            value=""
+            onChange={(e) => {
+              const code = e.target.value;
+              if (!code) return;
+              onChangeConfig({ ...config, locales: [...config.locales, code] }, code);
+            }}
+            aria-label="번역 언어 추가"
+            className="rounded-lg bg-secondary/60 px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <option value="">+ 언어 추가</option>
+            {addable.map((l) => (
+              <option key={l.code} value={l.code}>
+                {l.label}
+              </option>
+            ))}
+          </select>
+        )}
+
+        <div className="ml-auto flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            기본 언어
+            <select
+              value={config.defaultLocale}
+              onChange={(e) => void changeBase(e.target.value)}
+              className="rounded-lg bg-secondary/60 px-2 py-1 text-xs text-foreground"
+            >
+              {/**
+                * **전체 언어에서 고른다.** 예전엔 "이미 번역이 있는 언어" 로 좁혀 두었는데,
+                * 그 가드가 정확히 반대였다: 기본 언어 변경은 저장된 글을 그 칸으로 **옮기는**
+                * 것이라 목적지가 비어 있어야 안전하고, 반대로 목적지에 글이 있으면 두 언어가
+                * 겹쳐 버린다. 그래서 글이 **있는** 언어를 막는다.
+                *
+                * 그 가드 때문에 기존 폼(기본 언어가 en 인데 글은 한국어)에서 기본 언어를
+                * 정정할 수가 없었고, 정정이 안 되면 영어 번역도 추가할 수 없었다.
+                */}
+              {FORM_LOCALES.map((l) => {
+                const taken = l.code !== config.defaultLocale && translated.has(l.code);
+                return (
+                  <option key={l.code} value={l.code} disabled={taken}>
+                    {l.label}
+                    {taken ? " (번역 있음)" : ""}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+
+          {active !== config.defaultLocale && (
+            <button type="button" onClick={() => void removeActive()} className={btnCls("dangerQuiet")}>
+              <Trash2 className="h-3.5 w-3.5" />
+              {formLocaleLabel(active)} 삭제
+            </button>
+          )}
+        </div>
+      </div>
+
+      {mismatch && (
+        <p className="mt-2 rounded-lg bg-amber-500/8 px-2.5 py-2 text-[11px] leading-relaxed text-amber-700 dark:text-amber-400">
+          기본 언어가 <b>{formLocaleLabel(config.defaultLocale)}</b>로 되어 있는데, 적혀 있는 글은{" "}
+          <b>{formLocaleLabel(mismatch)}</b>로 보여요. 오른쪽 <b>기본 언어</b>를{" "}
+          {formLocaleLabel(mismatch)}로 바꾸면 글이 그 칸으로 옮겨지고, 그다음부터{" "}
+          {formLocaleLabel(config.defaultLocale)} 번역을 추가할 수 있어요.
+        </p>
+      )}
+
+      <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+        {active === config.defaultLocale ? (
+          <>
+            항목·안내·동의 <b className="text-foreground">구조는 여기서만</b> 바꿔요. 다른 언어 탭에서는 같은 구조에
+            문구만 채웁니다 — 그래야 어느 언어로 등록해도 한 명단에 쌓여요.
+          </>
+        ) : (
+          <>
+            영문 페이지(<code className="rounded bg-secondary px-1">/en/</code>)에 같은 스니펫을 붙이면 이 번역이
+            자동으로 나가요. 자동 판정이 틀리면 마운트 자리에{" "}
+            <code className="rounded bg-secondary px-1">data-mach-lang=&quot;{active}&quot;</code>를 붙이세요.
+          </>
+        )}
+      </p>
+    </div>
+  );
+}

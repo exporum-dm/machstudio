@@ -23,17 +23,17 @@ export const TOC_DEF = [
   { id: "lnd-sponsors", label: "Sponsors" },
 ] as const;
 
-// 키컬러 위 텍스트 — 브랜드 요청으로 흰색 기본(라이브 페이지의 밝은 버튼 인상과 통일).
-// 노랑·연회색처럼 아주 밝은 키컬러에서만 안전장치로 진한 글자(명도 0.78 이상).
-export function onPrimaryFor(accent: string): string {
-  let hex = accent.slice(1);
-  if (hex.length === 3) hex = hex.split("").map((c) => c + c).join("");
-  const r = parseInt(hex.slice(0, 2), 16);
-  const g = parseInt(hex.slice(2, 4), 16);
-  const b = parseInt(hex.slice(4, 6), 16);
-  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return lum >= 0.78 ? "#1a1a1f" : "#ffffff";
-}
+/**
+ * 키컬러 위 텍스트 — 브랜드 요청으로 흰색 기본(라이브 페이지의 밝은 버튼 인상과 통일).
+ *
+ * **계산은 `@/lib/color` 한 곳에 있다.** 여기엔 YIQ 0.78 임계값을 쓰는 네 번째 사본이
+ * 있었고, 그게 2026-11 사고의 자리다: YIQ 는 감마를 안 펴서 형광색을 과소평가한다 —
+ * 네온 그린·순초록·시안 키컬러가 전부 "밝지 않다"로 분류돼 흰 글자를 받았고,
+ * 상세페이지(랜딩)에서 글자가 배경에 녹았다. 정본은 흰 글자의 **실제 대비**를 잰다.
+ *
+ * 이름은 여기 그대로 둔다 — 랜딩 뷰들(view-hero·view-sections·mount)이 이 이름으로 가져간다.
+ */
+export { onAccentColor as onPrimaryFor } from "@/lib/color";
 
 /* parseSpeaker 는 webinar-sessions.ts 로 옮겼다 — 랜딩(타임테이블·상세 팝업)뿐 아니라
    대기·라이브 화면의 세션 순서도 같은 규칙으로 "이름 | 소속·직책" 을 그려야 한다.

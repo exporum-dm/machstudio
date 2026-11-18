@@ -16,7 +16,8 @@
  */
 import { mountCollectForm, type CollectFormHandle } from "@/lib/collect-form/mount";
 import { mountCollectLookup, type LookupHandle } from "@/lib/collect-form/lookup-mount";
-import { normalizeCollectForm } from "@/lib/collect-form-config";
+import { collectFormLocales, normalizeCollectForm } from "@/lib/collect-form-config";
+import { detectFormLocale } from "@/lib/form-locale";
 import {
   getFormTarget, isPreviewMode, unregisterOwnedFormTarget, type FormTargetRecord,
 } from "@/lib/collect-form/target-registry";
@@ -161,8 +162,23 @@ function render(inst: Instance): void {
    */
   const preview = record ? isPreviewMode(record.mode) : false;
   const styleRoot = record?.styleRoot;
+
+  /**
+   * **호스트 페이지의 언어에 맞춰 폼 문구를 고른다**(설계 §11).
+   *
+   * 홈페이지를 언어별 페이지로 나눠 쓰는 경우(국문 `/`, 영문 `/en/`), 같은 소스 하나를
+   * 두 페이지에 똑같이 붙이면 된다 — 문구만 그 페이지 언어로 바뀌고 **등록 데이터는 한
+   * 테이블에 쌓인다.** 언어별로 소스를 따로 만들면 명단·중복확인·CSV·체크인이 두 벌이 된다.
+   *
+   * 판정은 브라우저에서 한다. 번들은 CDN 에 소스 단위로 캐시되고 한 벌에 **모든 언어가
+   * 들어 있으므로**, 서버가 언어를 결정하면 캐시가 언어 수만큼 갈라지고 호스트 페이지의
+   * 주소를 서버가 알 수도 없다(스크립트 요청의 Referer 는 믿을 값이 아니다).
+   *
+   * 자동 판정이 틀리면 마운트 자리에 `data-mach-lang="en"` 을 달아 덮어쓴다.
+   */
+  const locale = detectFormLocale(mount, collectFormLocales(config), config.defaultLocale);
   inst.handle = view === "check"
-    ? mountCollectLookup({ mount, config, origin: inst.cfg.origin, sourceId: inst.cfg.sourceId, preview, styleRoot })
+    ? mountCollectLookup({ mount, config, origin: inst.cfg.origin, sourceId: inst.cfg.sourceId, preview, styleRoot, locale })
     : mountCollectForm({
         mount,
         config,
@@ -172,6 +188,7 @@ function render(inst: Instance): void {
         forceType: config.builderVariant === "domestic" ? mount.getAttribute("data-mach-form-type") ?? new URLSearchParams(window.location.search).get("type") ?? undefined : undefined,
         preview,
         styleRoot,
+        locale,
         // 예약이 자리를 함께 줬으면 전문 팝업이 거기로 간다. 안 줬으면 document.body.
         overlay: record?.overlay,
         /**
