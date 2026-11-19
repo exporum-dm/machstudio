@@ -119,3 +119,30 @@ describe("접수 상태 문구", () => {
     expect(build("ko").ctaNote).toBe("Applications open soon.");
   });
 });
+
+it("keeps translated rows paired after a move and after discarding blank draft rows", async () => {
+  const { remapNoticeRows, remapNoticeNestedRows } = await import("@/lib/notice/i18n");
+  const noticePage = normalizeNoticePageConfig({ noticePage: {
+    language: "ko",
+    faq: { enabled: true, items: [{ question: "first" }, {}, { question: "second", answer: "fallback" }] },
+    eligibility: { enabled: true, items: ["", "required"] },
+    apply: { enabled: true, items: [{ title: "step", items: ["", "bring this"] }] },
+    i18n: { ja: { sections: {
+      faq: { items: [{ question: "one" }, {}, { question: "two" }] },
+      eligibility: { items: [{}, { value: "required JA" }] },
+      apply: { items: [{ details: "\nbring this JA" }] },
+    } } },
+  } }, { keepEmptyRows: true });
+
+  noticePage.faq.items.reverse();
+  noticePage.i18n = remapNoticeRows(noticePage.i18n, "faq", [2, 1, 0]);
+  noticePage.apply.items[0].items.unshift("new");
+  noticePage.i18n = remapNoticeNestedRows(noticePage.i18n, "apply", 0, [-1, 0, 1]);
+
+  const result = normalizeNoticePageConfig({ noticePage }, { locale: "ja" });
+  expect(result.language).toBe("ja");
+  expect(result.faq.items).toEqual([{ question: "two", answer: "fallback" }, { question: "one", answer: "" }]);
+  expect(result.eligibility.items).toEqual(["required JA"]);
+  expect(result.apply.items[0].items).toEqual(["new", "bring this JA"]);
+  expect(normalizeNoticePageConfig({ noticePage }).faq.items[0].question).toBe("second");
+});

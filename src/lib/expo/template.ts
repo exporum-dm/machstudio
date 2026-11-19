@@ -94,7 +94,7 @@ function mapLinks(
       const l = obj(value);
       const next = map(str(l.href));
       if (next === null) flags.cleared = true;
-      out[key] = { label: str(l.label), href: next ?? "" };
+      out[key] = { label: str(l.label), href: next ?? "", ...(l.labelI18n ? { labelI18n: l.labelI18n } : {}) };
     } else if (slot.kind === "list" && Array.isArray(value) && slot.itemSlots) {
       out[key] = value.map((row) => mapLinks(slot.itemSlots!, obj(row), map, flags));
     } else {

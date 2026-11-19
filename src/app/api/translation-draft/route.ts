@@ -22,19 +22,31 @@ import { normalizeLocaleTag } from "@/lib/form-locale";
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => null)) ?? {};
 
-  const scope = body.scope === "webinar" || body.scope === "collect" ? body.scope : null;
+  const scope = body.scope;
   const resourceId = typeof body.resourceId === "string" ? body.resourceId : "";
-  if (!scope || !resourceId) {
+  if (!["webinar", "collect", "competition", "detail-page", "expo"].includes(scope) || !resourceId) {
     return NextResponse.json({ error: "어느 자원의 번역인지 알 수 없어요" }, { status: 400 });
   }
 
   // 자원 → 워크스페이스. 없는 자원은 "접근 권한 없음" 과 같이 다룬다(존재 여부를 알려 줄 이유가 없다).
-  const owner =
-    scope === "webinar"
-      ? await prisma.webinar.findUnique({ where: { id: resourceId }, select: { workspaceId: true } })
-      : await prisma.collectSource.findUnique({ where: { id: resourceId }, select: { workspaceId: true } });
+  const args = { where: { id: resourceId }, select: { workspaceId: true } } as const;
+  const owner = await (async () => {
+    switch (scope) {
+      case "webinar": return prisma.webinar.findUnique(args);
+      case "collect": return prisma.collectSource.findUnique(args);
+      case "competition": return prisma.competition.findUnique(args);
+      case "detail-page": return prisma.detailPage.findFirst({ ...args, where: { ...args.where, deletedAt: null } });
+      case "expo": {
+        const page = await prisma.expoPage.findFirst({
+          where: { id: resourceId, deletedAt: null, site: { deletedAt: null } },
+          select: { site: { select: { workspaceId: true } } },
+        });
+        return page?.site;
+      }
+    }
+  })();
 
   const access = await requireWorkspaceMember(owner?.workspaceId ?? null);
   if ("error" in access) {

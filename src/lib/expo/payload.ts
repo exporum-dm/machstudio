@@ -10,11 +10,11 @@
  * 내부 링크는 **같은 사이트의 살아 있는 페이지**이고 아임웹 주소가 있을 때만 풀린다 —
  * 그러지 않으면 빈 문자열이 되고, 그 자리는 이행 현황에서 "링크가 아직 안 걸렸다" 로 보인다.
  */
-import { localize, type Localized } from "@/lib/collect-form-config";
+import type { Localized } from "@/lib/collect-form-config";
 import { resolveCampaignStates } from "@/lib/expo/campaign";
 import { resolveDestinations } from "@/lib/expo/destination";
 import { sectionDef } from "@/lib/expo/registry";
-import { resolvePluginContent } from "@/lib/expo/plugin-content";
+import { resolveLocalizedText, resolvePluginContent } from "@/lib/expo/plugin-content";
 import type { ExpoPageConfigV2, ExpoSection, ExpoEventConfig, ResolvedCampaignState, ResolvedDestination, SlotDef } from "@/lib/expo/types";
 import type { PayloadSection } from "@/lib/expo/view-sections";
 
@@ -28,6 +28,7 @@ export interface LinkTarget {
 
 export interface ResolveContext {
   locale: string;
+  defaultLocale?: string;
   /** **같은 사이트의** 페이지들만 넣는다 — 남의 사이트 주소가 새는 경로를 원천 차단한다. */
   pages: LinkTarget[];
   /** Server time; never let the browser decide a campaign schedule. */
@@ -77,7 +78,7 @@ function resolveSlot(
     case "text":
     case "textarea":
       // 저장은 맵, 나가는 것은 **한 로케일의 문자열**이다.
-      return isLocalizedMap(value) ? localize(value, ctx.locale) : "";
+      return isLocalizedMap(value) ? resolveLocalizedText(value, ctx.locale, ctx.defaultLocale) : "";
 
     case "code":
     case "sourceRef":
@@ -85,10 +86,10 @@ function resolveSlot(
       return value;
 
     case "link": {
-      const l = value as { label?: string; href?: string };
+      const l = value as { label?: string; href?: string; labelI18n?: Localized };
       const { href, unresolved } = resolveHref(String(l.href ?? ""), ctx, byId);
       if (unresolved) issues.push({ sid, slot: def.key, code: "internal-link-unresolved" });
-      return { label: String(l.label ?? ""), href };
+      return { label: l.labelI18n?.[ctx.locale] || String(l.label ?? ""), href };
     }
 
     case "list": {
@@ -128,7 +129,7 @@ export function buildExpoPayload(config: ExpoPageConfigV2, ctx: ResolveContext):
       } catch {
         continue;
       }
-      const resolved = resolvePluginContent(publicContent, ctx.locale);
+      const resolved = resolvePluginContent(publicContent, ctx.locale, ctx.defaultLocale);
       if (resolved && typeof resolved === "object" && !Array.isArray(resolved)) {
         content = resolved as Record<string, unknown>;
       }

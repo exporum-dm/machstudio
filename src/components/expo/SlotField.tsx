@@ -210,7 +210,7 @@ function LinkField({
   const internal = href.startsWith("page:") ? href.slice("page:".length) : null;
 
   const write = (next: { label?: string; href?: string }) =>
-    onChange({ label: text, href, ...next });
+    onChange({ ...link, label: text, href, ...next });
 
   return (
     <div className="space-y-1.5">

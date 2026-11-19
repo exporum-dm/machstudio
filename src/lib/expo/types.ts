@@ -26,6 +26,7 @@ export interface MediaValue {
 /** 링크 한 칸. `href` 는 http(s) 절대주소이거나 `page:{pageId}` 내부 참조다. */
 export interface LinkValue {
   label: string;
+  labelI18n?: Localized;
   href: string;
 }
 
@@ -124,6 +125,7 @@ export interface ExpoEventConfig {
 
 export interface ExpoPageConfigV2 {
   schemaVersion: 2;
+  locales?: string[];
   preset?: string;
   settings?: {
     event?: ExpoEventConfig;

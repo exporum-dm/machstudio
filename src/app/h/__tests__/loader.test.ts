@@ -393,3 +393,19 @@ describe("캐시 검증자", () => {
     expect(res.headers.get("Content-Type")).toContain("application/javascript");
   });
 });
+
+it("serves one multilingual embed and resolves an explicit host signal with source-language fallback", async () => {
+  prismaMock.expoPage.findFirst.mockResolvedValue(page({ published: { sections: [{
+    sid: SID, type: "kv", variant: "column", enabled: true, embedEnabled: true, design: {},
+    content: { title: { ko: "Title KO", ja: "Title JA" }, subtitle: { en: "Subtitle EN", ko: "Subtitle KO" } },
+  }] } }));
+  const automatic = bootArgs(await (await get({ pageId: "pg1" })).text());
+  expect(automatic).toContain('"defaultLocale":"ko"');
+  expect(automatic).toContain('"translations":');
+  expect(automatic).toContain('"title":"Title JA"');
+
+  const explicit = bootArgs(await (await get({ pageId: "pg1", sid: SID }, req(`${CANONICAL}/h/pg1/${SID}?hl=%7C%7C%7Cjp%7Cko`))).text());
+  expect(explicit).toContain('"title":"Title JA"');
+  expect(explicit).toContain('"subtitle":"Subtitle KO"');
+  expect(explicit).not.toContain('"translations":');
+});

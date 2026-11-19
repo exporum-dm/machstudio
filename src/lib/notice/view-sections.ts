@@ -228,7 +228,7 @@ export function renderForm(m: NoticeModel): HTMLElement | null {
     "form",
     { kicker: f.kicker, title: f.title || m.t.sectionLabel.form, description: f.description },
     m.isPreview
-      ? h("div", { class: "nt-form-placeholder rv" }, "여기에 사전등록 폼이 들어가요 — 실제 페이지에서 보여요")
+      ? h("div", { class: "nt-form-placeholder rv" }, m.t.previewFormHint)
       : h("div", { class: "nt-form-slot rv", "data-mach-form": f.sourceId }),
   );
 }
@@ -401,7 +401,7 @@ export function renderCriteria(m: NoticeModel): HTMLElement | null {
     m,
     "criteria",
     {
-      kicker: c.kicker || (m.criteriaTotal > 0 ? `${m.criteriaTotal}점 만점 · ${m.criteriaItems.length}개 항목` : ""),
+      kicker: c.kicker || (m.criteriaTotal > 0 ? m.t.criteriaSummary(m.criteriaTotal, m.criteriaItems.length) : ""),
       title: c.title,
       description: c.description,
     },

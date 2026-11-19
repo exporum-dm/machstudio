@@ -28,6 +28,8 @@ import {
   renderTimeline,
   renderVideo,
 } from "./view-sections";
+import { detectFormLocale } from "@/lib/form-locale";
+import { applyNoticeLocale, noticeTranslatedLocales } from "./i18n";
 import { normalizeNoticePageConfig, type NoticeSectionKey } from "./config";
 import type { NoticeModel } from "./types";
 import type { NoticeCompetition } from "./types";
@@ -46,6 +48,7 @@ export interface MountNoticeOptions {
   /** Competition.config 원본 — 여기서 정규화한다(호출부마다 다르게 다루면 어긋난다). */
   config: unknown;
   embedded: boolean;
+  locale?: string;
   isPreview: boolean;
   /** 신청 버튼을 눌렀을 때. 미리보기면 호출부가 저장하지 않는 핸들러를 준다. */
   onApply: () => void;
@@ -149,12 +152,16 @@ export function mountNotice(opts: MountNoticeOptions): NoticeHandle {
   ensureStyles(doc);
   ensureFont(doc);
 
-  const np = normalizeNoticePageConfig(opts.config);
+  const base = normalizeNoticePageConfig(opts.config);
+  const locale = opts.locale ?? (embedded
+    ? detectFormLocale(opts.mount, noticeTranslatedLocales(base.language, base.i18n), base.language)
+    : base.language);
+  const np = applyNoticeLocale(base, base.i18n, locale);
   const m = buildNoticeModel(competition, np, { uid, embedded, isPreview });
 
   const root = h("div", {
     class: `lnd${embedded ? " embedded" : ""}`,
-    lang: "ko",
+    lang: np.language,
     style: {
       "--primary": m.accent,
       "--on-primary": m.onPrimary,

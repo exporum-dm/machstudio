@@ -8,6 +8,14 @@
  * 저장 위치는 Competition.config.noticePage 다. 예전 블록 빌더(config.notice)는 지우지 않는다
  * — 이미 만든 대회의 내용이 사라지면 안 된다.
  */
+import {
+  applyNoticeLocale,
+  remapNoticeRows,
+  remapNoticeNestedRows,
+  normalizeNoticeI18n,
+  normalizeNoticeLocales,
+  type NoticePageI18n,
+} from "./i18n";
 
 /**
  * **기본** 렌더 순서. 편집 UI 도 이 순서를 쓴다. 운영자가 순서를 바꾸면 np.order 가 이걸 덮는다.
@@ -159,6 +167,13 @@ export function isNoticeLanguage(value: unknown): value is NoticeLanguage {
 
 export interface NoticePageConfig {
   enabled: boolean;
+  /**
+   * **원문을 쓴 언어.** 시스템이 넣는 문구(목차·카운트다운 단위·상태 버튼)의 사전도 이 값으로
+   * 고른다(strings.ts) — 두 역할이 한 값인 게 맞다: "이 공고는 무슨 언어로 쓰였나" 하나다.
+   *
+   * 다른 언어는 `i18n` 덮개로 얹는다 — 언어마다 공고를 따로 만들면 운영자가 관리할 산출물이
+   * 언어 수만큼 늘고, 일정이 바뀔 때 한 곳을 놓치면 그 언어 페이지만 틀린 정보를 띄운다.
+   */
   language: NoticeLanguage;
   hero: NoticeHero;
   /**
@@ -197,6 +212,10 @@ export interface NoticePageConfig {
   countdown: { enabled: boolean; kicker: string; title: string; description: string; ctaLabel: string };
   faq: { enabled: boolean; kicker: string; title: string; items: NoticeFaqItem[] };
   sponsors: { enabled: boolean; kicker: string; title: string; items: NoticeSponsorItem[] };
+  /** 운영자가 **열어 둔** 번역 언어. 한 글자도 안 적은 언어도 남는다(탭이 안 사라지게). */
+  locales: string[];
+  /** 언어별 덮개. `normalizeNoticePageConfig(config, { locale })` 가 이미 적용해 내려 준다. */
+  i18n: NoticePageI18n;
 }
 
 /** 랜딩과 같은 기본 색 — 두 페이지가 같은 제품으로 보여야 한다. */
@@ -225,12 +244,32 @@ export interface NormalizeNoticeOptions {
    * 공개 렌더는 빈 행을 버리지만, 편집 중에 아직 안 쓴 행이 리마운트로 사라지면 안 된다.
    */
   keepEmptyRows?: boolean;
+  /**
+   * 이 언어로 **이미 덮어쓴** 공고를 받는다. 호출부는 번역의 존재를 몰라도 된다 —
+   * 모델 빌더·뷰·CSS 는 한 글자도 바뀌지 않는다(i18n.ts 의 applyNoticeLocale 머리말).
+   * 안 주면 원문 언어(= 지금까지와 같은 동작).
+   */
+  locale?: string;
 }
 
 export function normalizeNoticePageConfig(config: unknown, opts?: NormalizeNoticeOptions): NoticePageConfig {
   const keep = opts?.keepEmptyRows === true;
   const c = obj(config);
   const np = obj(c.noticePage);
+  let i18n = normalizeNoticeI18n(np.i18n);
+  function visibleRows<T>(key: NoticeSectionKey | "hero", rows: T[], hasContent: (row: T) => unknown): T[] {
+    if (keep) return rows;
+    const indices = rows.flatMap((row, index) => hasContent(row) ? [index] : []);
+    if (indices.length !== rows.length) i18n = remapNoticeRows(i18n, key, indices);
+    return indices.map((index) => rows[index]);
+  }
+
+  function visibleNestedRows<T>(key: "apply" | "selection", rowIndex: number, rows: T[], hasContent: (row: T) => string): T[] {
+    if (keep) return rows;
+    const indices = rows.flatMap((row, index) => hasContent(row).trim() ? [index] : []);
+    if (indices.length !== rows.length) i18n = remapNoticeNestedRows(i18n, key, rowIndex, indices);
+    return indices.map((index) => rows[index]);
+  }
 
   const rawBg = obj(np.sectionBg);
   const bgOf = (key: NoticeBgKey): NoticeSectionBg =>
@@ -274,9 +313,8 @@ export function normalizeNoticePageConfig(config: unknown, opts?: NormalizeNotic
     closedLabel: str(heroRaw.closedLabel),
     closedNote: str(heroRaw.closedNote),
     secondaryLabel: str(heroRaw.secondaryLabel),
-    facts: arr(heroRaw.facts)
-      .map((f) => ({ label: str(obj(f).label), value: str(obj(f).value) }))
-      .filter((f) => keep || f.value.trim()),
+    facts: visibleRows("hero", arr(heroRaw.facts)
+      .map((f) => ({ label: str(obj(f).label), value: str(obj(f).value) })), (f) => f.value.trim()),
   };
 
   const raw = (key: NoticeSectionKey) => obj(np[key]);
@@ -295,9 +333,12 @@ export function normalizeNoticePageConfig(config: unknown, opts?: NormalizeNotic
   }
   for (const item of NOTICE_SECTIONS) if (!order.includes(item.key)) order.push(item.key);
 
-  return {
+  // 원문 언어를 먼저 정한다 — 덮개 적용과 번역 목록이 이 값을 기준으로 삼는다.
+  const language: NoticeLanguage = isNoticeLanguage(np.language) ? np.language : "ko";
+
+  const result: NoticePageConfig = {
     enabled: bool(np.enabled, false),
-    language: isNoticeLanguage(np.language) ? np.language : "ko",
+    language,
     hero,
     colors: {
       lightBg: hex(obj(np.colors).lightBg, DEFAULT_NOTICE_COLORS.lightBg),
@@ -376,9 +417,8 @@ export function normalizeNoticePageConfig(config: unknown, opts?: NormalizeNotic
       enabled: on("snapshot"),
       kicker: str(raw("snapshot").kicker),
       title: str(raw("snapshot").title),
-      items: arr(raw("snapshot").items)
-        .map((i) => ({ label: str(obj(i).label), value: str(obj(i).value), note: str(obj(i).note) }))
-        .filter((i) => keep || i.value.trim()),
+      items: visibleRows("snapshot", arr(raw("snapshot").items)
+        .map((i) => ({ label: str(obj(i).label), value: str(obj(i).value), note: str(obj(i).note) })), (i) => i.value.trim()),
     },
 
     timeline: {
@@ -386,14 +426,13 @@ export function normalizeNoticePageConfig(config: unknown, opts?: NormalizeNotic
       kicker: str(raw("timeline").kicker),
       title: str(raw("timeline").title),
       description: str(raw("timeline").description),
-      items: arr(raw("timeline").items)
+      items: visibleRows("timeline", arr(raw("timeline").items)
         .map((i) => ({
           date: str(obj(i).date),
           title: str(obj(i).title),
           description: str(obj(i).description),
           emphasis: bool(obj(i).emphasis, false),
-        }))
-        .filter((i) => keep || i.title.trim()),
+        })), (i) => i.title.trim()),
     },
 
     apply: {
@@ -401,19 +440,18 @@ export function normalizeNoticePageConfig(config: unknown, opts?: NormalizeNotic
       kicker: str(raw("apply").kicker),
       title: str(raw("apply").title),
       description: str(raw("apply").description),
-      items: arr(raw("apply").items)
-        .map((i) => ({
+      items: visibleRows("apply", arr(raw("apply").items)
+        .map((i, index) => ({
           title: str(obj(i).title),
-          items: arr(obj(i).items).map(str).filter((v) => keep || v.trim()),
-        }))
-        .filter((i) => keep || i.title.trim()),
+          items: visibleNestedRows("apply", index, arr(obj(i).items).map(str), (line) => line),
+        })), (i) => i.title.trim()),
     },
 
     eligibility: {
       enabled: on("eligibility"),
       kicker: str(raw("eligibility").kicker),
       title: str(raw("eligibility").title),
-      items: arr(raw("eligibility").items).map(str).filter((v) => keep || v.trim()),
+      items: visibleRows("eligibility", arr(raw("eligibility").items).map(str), (v) => v.trim()),
     },
 
     selection: {
@@ -422,15 +460,13 @@ export function normalizeNoticePageConfig(config: unknown, opts?: NormalizeNotic
       title: str(raw("selection").title),
       footnote: str(raw("selection").footnote),
       source: raw("selection").source === "manual" ? "manual" : "auto",
-      rounds: arr(raw("selection").rounds)
-        .map((round) => ({
+      rounds: visibleRows("selection", arr(raw("selection").rounds)
+        .map((round, index) => ({
           title: str(obj(round).title),
           note: str(obj(round).note),
-          bars: arr(obj(round).bars)
-            .map((b) => ({ label: str(obj(b).label), percent: pct(obj(b).percent) }))
-            .filter((b) => keep || b.label.trim()),
-        }))
-        .filter((round) => keep || round.title.trim()),
+          bars: visibleNestedRows("selection", index, arr(obj(round).bars)
+            .map((b) => ({ label: str(obj(b).label), percent: pct(obj(b).percent) })), (bar) => bar.label),
+        })), (round) => round.title.trim()),
     },
 
     criteria: {
@@ -439,23 +475,21 @@ export function normalizeNoticePageConfig(config: unknown, opts?: NormalizeNotic
       title: str(raw("criteria").title),
       description: str(raw("criteria").description),
       source: raw("criteria").source === "manual" ? "manual" : "auto",
-      items: arr(raw("criteria").items)
-        .map((i) => ({ name: str(obj(i).name), description: str(obj(i).description), points: int(obj(i).points) }))
-        .filter((i) => keep || i.name.trim()),
+      items: visibleRows("criteria", arr(raw("criteria").items)
+        .map((i) => ({ name: str(obj(i).name), description: str(obj(i).description), points: int(obj(i).points) })), (i) => i.name.trim()),
     },
 
     prizes: {
       enabled: on("prizes"),
       kicker: str(raw("prizes").kicker),
       title: str(raw("prizes").title),
-      items: arr(raw("prizes").items)
+      items: visibleRows("prizes", arr(raw("prizes").items)
         .map((i) => ({
           rank: str(obj(i).rank),
           title: str(obj(i).title),
           description: str(obj(i).description),
           amount: str(obj(i).amount),
-        }))
-        .filter((i) => keep || i.title.trim()),
+        })), (i) => i.title.trim()),
     },
 
     countdown: {
@@ -470,25 +504,27 @@ export function normalizeNoticePageConfig(config: unknown, opts?: NormalizeNotic
       enabled: on("faq"),
       kicker: str(raw("faq").kicker),
       title: str(raw("faq").title),
-      items: arr(raw("faq").items)
-        .map((i) => ({ question: str(obj(i).question), answer: str(obj(i).answer) }))
-        .filter((i) => keep || i.question.trim()),
+      items: visibleRows("faq", arr(raw("faq").items)
+        .map((i) => ({ question: str(obj(i).question), answer: str(obj(i).answer) })), (i) => i.question.trim()),
     },
 
     sponsors: {
       enabled: on("sponsors"),
       kicker: str(raw("sponsors").kicker),
       title: str(raw("sponsors").title),
-      items: arr(raw("sponsors").items)
+      items: visibleRows("sponsors", arr(raw("sponsors").items)
         .map((i) => ({
           tier: str(obj(i).tier),
           name: str(obj(i).name),
           logoUrl: str(obj(i).logoUrl),
           url: str(obj(i).url),
-        }))
-        .filter((i) => keep || i.name.trim()),
+        })), (i) => i.name.trim()),
     },
+    locales: normalizeNoticeLocales(np.locales, language),
+    i18n,
   };
+
+  return opts?.locale ? applyNoticeLocale(result, i18n, opts.locale) : result;
 }
 
 /**

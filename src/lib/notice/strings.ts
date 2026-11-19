@@ -28,6 +28,8 @@ export interface NoticeStrings {
   /** 선발 방식 — 비율 막대 라벨 */
   barPublic: string;
   barJudge: string;
+  criteriaSummary: (total: number, count: number) => string;
+  previewFormHint: string;
   /** 카운트다운 단위 */
   cdDays: string;
   cdHours: string;
@@ -44,6 +46,8 @@ export interface NoticeStrings {
 }
 
 const KO: NoticeStrings = {
+  criteriaSummary: (total, count) => `${total}점 만점 · ${count}개 항목`,
+  previewFormHint: "공개 페이지에서 연결된 신청 폼이 이 자리에 표시돼요.",
   roundNamePrelim: "예선",
   roundNameFinal: "본선",
   roundNotePrelim: "본선 진출자를 정합니다",
@@ -78,6 +82,8 @@ const KO: NoticeStrings = {
 };
 
 const EN: NoticeStrings = {
+  criteriaSummary: (total, count) => `${total} points total · ${count} criteria`,
+  previewFormHint: "The linked form appears here on the published page.",
   roundNamePrelim: "Preliminary",
   roundNameFinal: "Finals",
   roundNotePrelim: "Decides who advances to the finals",
@@ -113,6 +119,8 @@ const EN: NoticeStrings = {
 
 
 const FR: NoticeStrings = {
+  criteriaSummary: (total, count) => `${total} points au total · ${count} critères`,
+  previewFormHint: "Le formulaire associé apparaît ici sur la page publiée.",
   roundNamePrelim: "Présélection",
   roundNameFinal: "Finale",
   roundNotePrelim: "Détermine qui accède à la finale",
@@ -147,6 +155,8 @@ const FR: NoticeStrings = {
 };
 
 const JA: NoticeStrings = {
+  criteriaSummary: (total, count) => `満点 ${total} 点 · 全 ${count} 項目`,
+  previewFormHint: "公開ページではここに申込フォームが表示されます。",
   roundNamePrelim: "予選",
   roundNameFinal: "本選",
   roundNotePrelim: "本選進出者を決めます",

@@ -102,6 +102,8 @@ export interface WebinarFormTranslation {
   marketingText?: string;
   privacyBody?: string;
   marketingBody?: string;
+  thirdPartyText?: string;
+  thirdPartyBody?: string;
   submitLabel?: string;
   successCtaLabel?: string;
 }
@@ -1249,6 +1251,8 @@ function normalizeFormI18n(raw: unknown): WebinarFormI18n {
       marketingText: str("marketingText"),
       privacyBody: str("privacyBody"),
       marketingBody: str("marketingBody"),
+      thirdPartyText: str("thirdPartyText"),
+      thirdPartyBody: str("thirdPartyBody"),
       submitLabel: str("submitLabel"),
       successCtaLabel: str("successCtaLabel"),
     };
@@ -1290,6 +1294,8 @@ export function applyWebinarFormLocale(
     marketingText: pick(tr.marketingText, form.marketingText),
     privacyBody: pick(tr.privacyBody, form.privacyBody),
     marketingBody: pick(tr.marketingBody, form.marketingBody),
+    thirdPartyText: pick(tr.thirdPartyText, form.thirdPartyText),
+    thirdPartyBody: pick(tr.thirdPartyBody, form.thirdPartyBody),
     submitLabel: pick(tr.submitLabel, form.submitLabel),
     successCta: { ...form.successCta, label: pick(tr.successCtaLabel, form.successCta.label) },
   };
@@ -1306,7 +1312,7 @@ export function webinarFormTranslatedLocales(form: WebinarRegistrationFormConfig
   for (const [locale, tr] of Object.entries(form.i18n)) {
     if (locale === form.defaultLocale || out.includes(locale)) continue;
     const hasText =
-      [tr.privacyText, tr.marketingText, tr.privacyBody, tr.marketingBody, tr.submitLabel, tr.successCtaLabel]
+      [tr.privacyText, tr.marketingText, tr.privacyBody, tr.marketingBody, tr.thirdPartyText, tr.thirdPartyBody, tr.submitLabel, tr.successCtaLabel]
         .some((v) => v && v.trim()) ||
       Object.values(tr.fields).some(
         (f) => (f.label && f.label.trim()) || (f.placeholder && f.placeholder.trim()) || (f.options ?? []).some((o) => o.trim()),

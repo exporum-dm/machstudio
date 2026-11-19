@@ -24,6 +24,7 @@ import { probeExpoSchema } from "@/lib/expo/schema-probe";
 import { getRequiredExpoPublicOrigin } from "@/lib/expo/origin";
 import { normalizeExpoPage, normalizeExpoTheme } from "@/lib/expo/config";
 import { normalizeHexColor } from "@/lib/color";
+import { normalizeLocaleTag } from "@/lib/form-locale";
 import { buildExpoPayload, collectInternalPageIds, collectSourceRefs } from "@/lib/expo/payload";
 import { expoCustomCodeDigest, previewSections } from "@/lib/expo/code-digest";
 import { campaignPreviewMode, forcedCampaignsForPreview } from "@/lib/expo/campaign-preview";
@@ -197,7 +198,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   });
 
   const resolved = buildExpoPayload({ ...config, sections: safe }, {
-    locale: site.defaultLocale || "ko",
+    locale: normalizeLocaleTag(url.searchParams.get("lang")) ?? (site.defaultLocale || "ko"),
+    defaultLocale: site.defaultLocale || "ko",
     pages: siblings,
     now: new Date(),
     ...(forcedCampaigns ? { forcedCampaigns } : {}),

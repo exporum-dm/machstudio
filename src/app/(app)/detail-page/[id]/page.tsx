@@ -193,6 +193,7 @@ function DetailPageEditor({
       rounds: null,
       status: null,
       fixedLanguageLabel: null,
+      resourceId: id,
       pageSettings: initial.settings,
       formSources,
       buildPreview,

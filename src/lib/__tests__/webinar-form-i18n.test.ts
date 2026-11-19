@@ -289,3 +289,23 @@ describe("어긋남 감지", () => {
     expect(webinarFormLocaleMismatch(base)).toBeNull();
   });
 });
+
+it("translates enabled third-party consent through the saved registration configuration", () => {
+  const base = form({
+    defaultLocale: "ko",
+    thirdPartyEnabled: true,
+    thirdPartyText: "Consent",
+    thirdPartyBody: "Consent details",
+  });
+  const entries = webinarTranslationEntries(base, "ja");
+  const label = entries.find(({ id }) => id === "top:thirdPartyText")!;
+  const body = entries.find(({ id }) => id === "top:thirdPartyBody")!;
+  const updated = form({ ...body.write(label.write(base, "Label JA"), "Body JA") });
+  expect(webinarFormTranslatedLocales(updated)).toContain("ja");
+  const localized = applyWebinarFormLocale(updated, "ja");
+  expect(localized.thirdPartyText).toBe("Label JA");
+  expect(localized.thirdPartyBody).toBe("Body JA");
+  expect(webinarTranslationEntries({ ...base, thirdPartyEnabled: false }, "ja")).not.toContainEqual(
+    expect.objectContaining({ id: "top:thirdPartyText" }),
+  );
+});
