@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { collectAllBriefs } from "@/lib/brief/collect";
 import { runReminders } from "@/lib/reminders";
+import { sweepAdConnections } from "@/lib/ad-connection-sweep";
 
 // 브리프 수집이 바깥 사이트 여러 곳을 읽으므로 기본 시간 제한보다 넉넉히.
 export const maxDuration = 60;
@@ -74,6 +75,19 @@ export async function GET(request: Request) {
     result.reminders = await runReminders();
   } catch (e) {
     result.reminders = { error: e instanceof Error ? e.message : String(e) };
+  }
+
+  /**
+   * 6) 광고 매체 연동 점검 — Meta 토큰 창을 앞으로 밀고, Google 갱신 토큰이 살아 있는지 본다.
+   *
+   * 야간 동기화는 보고 기간이 열린 폴더만 돌아서, 캠페인 사이의 공백 동안 토큰을 아무도
+   * 건드리지 않는다. Meta 장기 토큰은 60일이라 행사 두 번 사이에 조용히 죽었다
+   * (src/lib/ad-connection-sweep.ts 머리말).
+   */
+  try {
+    result.adConnections = await sweepAdConnections();
+  } catch (e) {
+    result.adConnections = { error: e instanceof Error ? e.message : String(e) };
   }
 
   return NextResponse.json({ ok: true, ...result });

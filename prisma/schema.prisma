@@ -347,7 +347,22 @@ model MetaAdConnection {
   currency             String?
   timezoneName         String?
   enabledMetrics       Json
+  /// "CONNECTED" | "EXPIRED"(토큰이 죽어 재연결 필요) | "PERMISSION"(광고 계정 접근 권한 없음).
+  /// **일시적 실패로는 바뀌지 않는다** — 속도 제한·Meta 일시 장애에 연결을 끊으면 운영자가
+  /// 멀쩡한 연결을 다시 맺는다(src/lib/ad-connection-health.ts 머리말).
   status               String    @default("CONNECTED")
+  /// Meta 가 알려 주는 토큰 종류. "SYSTEM_USER" 는 **만료가 없어** 연장을 시도하지 않는다.
+  tokenKind            String    @default("USER")
+  /// 토큰 만료 시각(debug_token 의 expires_at). null = 만료 없음 또는 아직 모름.
+  /// 만료 25일 전부터 매일 연장을 시도해 창을 앞으로 민다(src/lib/meta-token.ts).
+  tokenExpiresAt       DateTime?
+  /// Meta 의 **데이터 접근** 만료(90일). 토큰 연장으로는 늘어나지 않고 재로그인이 필요해
+  /// 화면이 미리 예고한다.
+  dataAccessExpiresAt  DateTime?
+  /// 마지막으로 토큰 상태를 Meta 에 물어본 시각.
+  tokenCheckedAt       DateTime?
+  /// 마지막으로 만료가 실제로 뒤로 밀린 시각(연장 성공).
+  tokenRefreshedAt     DateTime?
   lastSyncedAt         DateTime?
   lastSyncError        String?
   createdAt            DateTime  @default(now())
@@ -368,6 +383,8 @@ model GoogleAdConnection {
   encryptedRefreshToken String
   googleUserId          String?
   email                 String?
+  /// Meta 와 같은 규칙 — "CONNECTED" | "EXPIRED" | "PERMISSION". invalid_grant 만이
+  /// 확실한 끊김이고, 나머지 실패로는 상태를 건드리지 않는다.
   status                String    @default("CONNECTED")
   lastSyncedAt          DateTime?
   lastSyncError         String?

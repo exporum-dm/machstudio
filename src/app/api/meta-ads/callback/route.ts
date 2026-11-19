@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getPublicAppOrigin } from "@/lib/app-url";
 import { DEFAULT_META_METRICS, encryptMetaToken, metaGraph, verifyMetaState } from "@/lib/meta-ads";
+import { debugMetaToken } from "@/lib/meta-token";
 
 type State = { workspaceId: string; projectId: string; folderId?: string; userId: string; issuedAt: number };
 
@@ -38,10 +39,22 @@ export async function GET(request: Request) {
     const longLived = await longLivedResponse.json() as { access_token?: string };
     const accessToken = longLivedResponse.ok && longLived.access_token ? longLived.access_token : token.access_token;
     const me = await metaGraph<{ id: string }>("me", accessToken, { fields: "id" });
+    /**
+     * 토큰 수명을 **Meta 에 물어서** 적어 둔다 — 교환 응답의 expires_in 은 빠지는 경우가 있고,
+     * 데이터 접근 만료(90일)는 거기에 아예 없다. 이 값이 있어야 만료 전에 연장·예고할 수 있다.
+     * 못 읽어도 연결 자체는 성공시킨다(첫 자동 점검이 채운다).
+     */
+    const info = await debugMetaToken(accessToken).catch(() => null);
+    const lifecycle = {
+      tokenKind: info?.tokenKind ?? "USER",
+      tokenExpiresAt: info?.expiresAt ?? null,
+      dataAccessExpiresAt: info?.dataAccessExpiresAt ?? null,
+      tokenCheckedAt: info ? new Date() : null,
+    };
     await prisma.metaAdConnection.upsert({
       where: { projectId: state.projectId },
-      create: { workspaceId: state.workspaceId, projectId: state.projectId, encryptedAccessToken: encryptMetaToken(accessToken), metaUserId: me.id, connectedById: user.id, enabledMetrics: DEFAULT_META_METRICS },
-      update: { encryptedAccessToken: encryptMetaToken(accessToken), metaUserId: me.id, connectedById: user.id, status: "CONNECTED", lastSyncError: null },
+      create: { workspaceId: state.workspaceId, projectId: state.projectId, encryptedAccessToken: encryptMetaToken(accessToken), metaUserId: me.id, connectedById: user.id, enabledMetrics: DEFAULT_META_METRICS, ...lifecycle },
+      update: { encryptedAccessToken: encryptMetaToken(accessToken), metaUserId: me.id, connectedById: user.id, status: "CONNECTED", lastSyncError: null, tokenRefreshedAt: new Date(), ...lifecycle },
     });
     return done("connected");
   } catch (error) {
