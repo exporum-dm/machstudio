@@ -64,6 +64,7 @@ export const ACTIVITY_LABELS: Record<string, string> = {
   "analytics.share_disabled": "광고 성과 공유 비활성화",
   "analytics.share_token_rotated": "광고 성과 공유 토큰 회전",
   "analytics.share_range_changed": "광고 성과 공유 기간 변경",
+  "analytics.meta_system_token_set": "Meta 만료 없는 토큰 등록",
   "analytics.share_password_set": "광고 성과 공유 비밀번호 설정",
   "analytics.share_password_removed": "광고 성과 공유 비밀번호 해제",
   "summary.share_enabled": "요약 대시보드 공유 활성화",

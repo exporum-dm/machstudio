@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, PlugZap, RefreshCw, Trash2 } from "lucide-react";
+import { CheckCircle2, Loader2, PlugZap, RefreshCw, ShieldCheck, Trash2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { AD_DETAIL_METRIC_COLUMNS, type AdDetailMetricColumn } from "@/lib/meta-result-metrics";
@@ -10,7 +10,30 @@ import type { MediaAccount } from "@/lib/ad-campaign-scope";
 import { AccountCampaignSelector } from "./AccountCampaignSelector";
 type MetaAccount = { id: string; name: string; currency?: string; timezone_name?: string };
 type GoogleAccount = { id: string; name: string; currency?: string; timezone?: string };
-type GoogleMeta = { lastSyncedAt: string | null; lastSyncError: string | null; accountsError: string | null };
+type GoogleMeta = { lastSyncedAt: string | null; lastSyncError: string | null; accountsError: string | null; health: ConnHealth | null };
+/** 서버가 계산해 주는 연결 건강 상태 — 화면은 판단하지 않고 그리기만 한다(src/lib/ad-connection-health.ts). */
+type ConnHealth = { level: "ok" | "warn" | "broken"; headline: string; hint: string; daysLeft: number | null };
+type MetaMeta = { health: ConnHealth | null; accountsError: string | null; lastSyncError: string | null; tokenKind: string | null };
+
+/**
+ * 연결 상태 배지. **"연결됨" 과 "끊김" 사이에 "경고" 가 있는 게 핵심이다** —
+ * 토큰 만료가 다가오는 건 아직 고장이 아니지만, 고장 나기 전에 알아야 하는 일이다.
+ */
+function HealthBadge({ health }: { health: ConnHealth }) {
+  const tone =
+    health.level === "broken"
+      ? "bg-red-500/10 text-red-600"
+      : health.level === "warn"
+        ? "bg-amber-500/15 text-amber-700"
+        : "bg-emerald-500/10 text-emerald-700";
+  const Icon = health.level === "ok" ? CheckCircle2 : TriangleAlert;
+  return (
+    <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${tone}`}>
+      <Icon className="h-3.5 w-3.5" />
+      {health.headline}
+    </span>
+  );
+}
 
 // DB에는 UTC로 저장되지만 이 앱의 날짜는 KST 달력일 기준 — naive slice(0,10)은 자정 부근에 하루 밀린다.
 function kstDateOnly(value: string) {
@@ -50,7 +73,11 @@ export function FolderConnectionsPanel({
   const [selectedId, setSelectedId] = useState("");
   const [googleAvailable, setGoogleAvailable] = useState<GoogleAccount[]>([]);
   const [googleConnected, setGoogleConnected] = useState<boolean | null>(null);
-  const [googleMeta, setGoogleMeta] = useState<GoogleMeta>({ lastSyncedAt: null, lastSyncError: null, accountsError: null });
+  const [googleMeta, setGoogleMeta] = useState<GoogleMeta>({ lastSyncedAt: null, lastSyncError: null, accountsError: null, health: null });
+  const [metaMeta, setMetaMeta] = useState<MetaMeta>({ health: null, accountsError: null, lastSyncError: null, tokenKind: null });
+  const [systemTokenOpen, setSystemTokenOpen] = useState(false);
+  const [systemToken, setSystemToken] = useState("");
+  const [savingSystemToken, setSavingSystemToken] = useState(false);
   const [googleSelectedId, setGoogleSelectedId] = useState("");
   const [googleSyncing, setGoogleSyncing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -68,12 +95,21 @@ export function FolderConnectionsPanel({
     const [response, googleResponse] = await Promise.all([fetch(`/api/ad-performance/folders/${folderId}/meta-accounts`, { cache: "no-store" }), fetch(`/api/ad-performance/folders/${folderId}/google-accounts`, { cache: "no-store" })]);
     const [data, googleData] = await Promise.all([response.json().catch(() => null), googleResponse.json().catch(() => null)]);
     if (!response.ok) toast.error(data?.error || "Meta 광고 계정을 불러오지 못했습니다.");
-    else { setAvailable(data.accounts ?? []); setConnected(data.connected === true); }
+    else {
+      setAvailable(data.accounts ?? []);
+      setConnected(data.connected === true);
+      setMetaMeta({
+        health: data.health ?? null,
+        accountsError: data.accountsError ?? null,
+        lastSyncError: data.lastSyncError ?? null,
+        tokenKind: data.tokenKind ?? null,
+      });
+    }
     if (!googleResponse.ok) toast.error(googleData?.error || "Google Ads 계정을 불러오지 못했습니다.");
     else {
       setGoogleAvailable(googleData.accounts ?? []);
       setGoogleConnected(googleData.connected === true);
-      setGoogleMeta({ lastSyncedAt: googleData.lastSyncedAt ?? null, lastSyncError: googleData.lastSyncError ?? null, accountsError: googleData.accountsError ?? null });
+      setGoogleMeta({ lastSyncedAt: googleData.lastSyncedAt ?? null, lastSyncError: googleData.lastSyncError ?? null, accountsError: googleData.accountsError ?? null, health: googleData.health ?? null });
     }
     setLoading(false);
   }, [folderId]);
@@ -179,6 +215,28 @@ export function FolderConnectionsPanel({
     }
   }
 
+  async function saveSystemToken() {
+    if (!systemToken.trim() || savingSystemToken) return;
+    setSavingSystemToken(true);
+    try {
+      const response = await fetch("/api/meta-ads/system-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderId, token: systemToken.trim() }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || "토큰을 등록하지 못했습니다.");
+      setSystemToken("");
+      setSystemTokenOpen(false);
+      toast.success(data?.neverExpires ? "만료 없는 토큰으로 연결했어요 — 이제 풀리지 않습니다." : "토큰을 등록했어요.");
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "토큰을 등록하지 못했습니다.");
+    } finally {
+      setSavingSystemToken(false);
+    }
+  }
+
   async function resyncMetaResults() {
     if (savingDashboard || !accounts.some((account) => account.platform === "META")) return;
     setSavingDashboard(true);
@@ -214,17 +272,61 @@ export function FolderConnectionsPanel({
     </section>
     <div><h2 className="font-semibold">매체 계정 연결</h2><p className="mt-1 text-xs text-muted-foreground">OAuth로 연결된 광고 계정 중 이 폴더에서 비교할 계정을 선택합니다.</p></div>
     <div className="grid gap-3 lg:grid-cols-2">{accounts.map(item => <div key={`${item.platform}-${item.accountId}`} className="relative rounded-2xl bg-card p-4 shadow-sm"><span className="text-[10px] font-semibold text-violet-500">{item.platform}</span><p className="mt-2 pr-8 text-sm font-medium">{item.accountName}</p><p className="mt-1 font-mono text-[11px] text-muted-foreground">{item.accountId}</p><button type="button" aria-label={`${item.accountName} 삭제`} disabled={saving} onClick={() => remove(item)} className="absolute right-3 top-3 rounded-lg p-2 text-muted-foreground transition hover:bg-red-500/10 hover:text-red-500 disabled:opacity-40"><Trash2 className="h-4 w-4" /></button>{["META", "GOOGLE"].includes(item.platform) && <AccountCampaignSelector folderId={folderId} account={item} onChange={onChange} />}</div>)}</div>
-    <section className="max-w-2xl rounded-2xl bg-secondary/35 p-5"><div className="flex items-start gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-blue-600/10 text-blue-600"><PlugZap className="h-4 w-4" /></span><div><h3 className="text-sm font-semibold">Meta 광고 계정 추가</h3><p className="mt-1 text-xs text-muted-foreground">Meta는 한 번 연결하면 내가 접근하는 모든 워크스페이스에서 사용할 수 있습니다.</p></div></div>{loading ? <div className="mt-4 flex h-10 items-center"><Loader2 className="h-4 w-4 animate-spin" /></div> : !connected ? <a href={`/api/meta-ads/connect?folderId=${encodeURIComponent(folderId)}`} className="mt-4 inline-flex h-10 items-center justify-center rounded-xl bg-blue-600 px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700">Meta 계정 연결</a> : <div className="mt-4 flex flex-col gap-2 sm:flex-row"><select value={selectedId} onChange={event => setSelectedId(event.target.value)} className="h-10 min-w-0 flex-1 rounded-xl bg-background px-3 text-sm shadow-sm outline-none focus:ring-2 focus:ring-violet-400"><option value="">광고 계정을 선택해주세요</option>{selectable.map(item => <option key={item.id} value={item.id}>{item.name} · {item.id}{item.currency ? ` · ${item.currency}` : ""}</option>)}</select><button type="button" disabled={!selectedId || saving} onClick={add} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-violet-500 px-4 text-xs font-medium text-white shadow-sm disabled:opacity-40">{saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}계정 추가</button></div>}</section>
+    <section className="max-w-2xl rounded-2xl bg-secondary/35 p-5"><div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-blue-600/10 text-blue-600"><PlugZap className="h-4 w-4" /></span><div><h3 className="text-sm font-semibold">Meta 광고 계정 추가</h3><p className="mt-1 text-xs text-muted-foreground">Meta는 한 번 연결하면 내가 접근하는 모든 워크스페이스에서 사용할 수 있습니다.</p></div></div>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          {connected && metaMeta.health && <HealthBadge health={metaMeta.health} />}
+          {connected && <a href={`/api/meta-ads/connect?folderId=${encodeURIComponent(folderId)}`} className={`inline-flex h-8 items-center rounded-xl px-3 text-xs font-medium transition ${metaMeta.health?.level === "ok" ? "border border-border text-muted-foreground hover:bg-secondary hover:text-foreground" : "bg-blue-600 text-white shadow-sm hover:bg-blue-700"}`}>다시 연결</a>}
+        </div>
+      </div>{loading ? <div className="mt-4 flex h-10 items-center"><Loader2 className="h-4 w-4 animate-spin" /></div> : !connected ? <a href={`/api/meta-ads/connect?folderId=${encodeURIComponent(folderId)}`} className="mt-4 inline-flex h-10 items-center justify-center rounded-xl bg-blue-600 px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700">Meta 계정 연결</a> : <div className="mt-4 flex flex-col gap-2 sm:flex-row"><select value={selectedId} onChange={event => setSelectedId(event.target.value)} className="h-10 min-w-0 flex-1 rounded-xl bg-background px-3 text-sm shadow-sm outline-none focus:ring-2 focus:ring-violet-400"><option value="">광고 계정을 선택해주세요</option>{selectable.map(item => <option key={item.id} value={item.id}>{item.name} · {item.id}{item.currency ? ` · ${item.currency}` : ""}</option>)}</select><button type="button" disabled={!selectedId || saving} onClick={add} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-violet-500 px-4 text-xs font-medium text-white shadow-sm disabled:opacity-40">{saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}계정 추가</button></div>}
+      {connected && metaMeta.health?.hint && (
+        <p className={`mt-2 text-xs ${metaMeta.health.level === "broken" ? "text-red-600" : "text-amber-700"}`}>{metaMeta.health.hint}</p>
+      )}
+      {/* 이번 조회가 실패한 이유 — 연결이 끊긴 것과 **다른 사건**이라 따로 보여 준다.
+          속도 제한처럼 저절로 낫는 실패도 여기에 뜬다(배지는 "연결됨"으로 남는다). */}
+      {connected && metaMeta.accountsError && (
+        <p className="mt-1.5 whitespace-pre-wrap break-all text-xs text-amber-600">계정 목록 조회 오류: {metaMeta.accountsError}</p>
+      )}
+      {connected && metaMeta.tokenKind !== "SYSTEM_USER" && (
+        <div className="mt-3 border-t border-border/60 pt-3">
+          <button type="button" onClick={() => setSystemTokenOpen((open) => !open)} className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground transition hover:text-foreground">
+            <ShieldCheck className="h-3.5 w-3.5" />만료 없는 토큰으로 바꾸기
+          </button>
+          {systemTokenOpen && (
+            <div className="mt-2.5 space-y-2">
+              <p className="text-[11px] leading-5 text-muted-foreground">
+                로그인으로 만든 토큰은 60일마다 자동 연장되지만, Meta 의 <b>데이터 접근 기간(90일)</b>은 연장되지 않아
+                가끔 다시 로그인해야 합니다. 비즈니스 관리자 → <b>시스템 사용자</b>에서 우리 앱을 선택해 발급한 토큰
+                (ads_read 권한)을 붙여 넣으면 <b>만료가 없어집니다</b>.
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  type="password"
+                  value={systemToken}
+                  onChange={(event) => setSystemToken(event.target.value)}
+                  placeholder="EAAG... (시스템 사용자 토큰)"
+                  className="h-10 min-w-0 flex-1 rounded-xl bg-background px-3 font-mono text-xs shadow-sm outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button type="button" onClick={() => void saveSystemToken()} disabled={!systemToken.trim() || savingSystemToken} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-semibold text-white shadow-sm disabled:opacity-40">
+                  {savingSystemToken && <Loader2 className="h-3.5 w-3.5 animate-spin" />}확인하고 등록
+                </button>
+              </div>
+              <p className="text-[11px] text-muted-foreground">붙여 넣으면 저장 전에 Meta 에 유효성·권한을 확인합니다.</p>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
     <section className="max-w-2xl rounded-2xl bg-secondary/35 p-5"><h3 className="text-sm font-semibold">다른 매체 계정 추가</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">Google Ads와 TikTok Ads도 같은 폴더에 포함할 수 있습니다. API OAuth 연결 전에는 폴더의 데이터 추가에서 해당 매체 보고서를 가져와 비교할 수 있습니다.</p><div className="mt-4 grid gap-2 sm:grid-cols-[150px_1fr_1fr_auto]"><select value={manual.platform} onChange={event => setManual(current => ({ ...current, platform: event.target.value }))} className="h-10 rounded-xl bg-background px-3 text-sm shadow-sm outline-none focus:ring-2 focus:ring-violet-400"><option value="GOOGLE">Google Ads</option><option value="TIKTOK">TikTok Ads</option><option value="LINKEDIN">LinkedIn Ads</option></select><input value={manual.accountName} onChange={event => setManual(current => ({ ...current, accountName: event.target.value }))} placeholder="계정 이름" className="h-10 min-w-0 rounded-xl bg-background px-3 text-sm shadow-sm outline-none focus:ring-2 focus:ring-violet-400" /><input value={manual.accountId} onChange={event => setManual(current => ({ ...current, accountId: event.target.value }))} placeholder="광고 계정 ID" className="h-10 min-w-0 rounded-xl bg-background px-3 text-sm shadow-sm outline-none focus:ring-2 focus:ring-violet-400" /><button type="button" disabled={saving || !manual.accountName.trim() || !manual.accountId.trim()} onClick={addOtherMedia} className="h-10 rounded-xl bg-violet-500 px-4 text-xs font-medium text-white shadow-sm disabled:opacity-40">계정 추가</button></div></section>
     <section className="max-w-2xl rounded-2xl bg-secondary/35 p-5">
-      <div className="flex items-start justify-between gap-3"><div className="flex items-start gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-amber-500/15 font-bold text-amber-600">G</span><div><h3 className="text-sm font-semibold">Google Ads 계정 추가</h3><p className="mt-1 text-xs text-muted-foreground">Google 로그인 한 번으로 관리자 계정의 광고 계정을 선택합니다.</p></div></div><div className="flex shrink-0 items-center gap-2">{googleConnected && accounts.some(item => item.platform === "GOOGLE") && <button type="button" onClick={() => void syncGoogle()} disabled={googleSyncing} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-amber-500 px-3 text-xs font-semibold text-white shadow-sm disabled:opacity-40"><RefreshCw className={`h-3.5 w-3.5 ${googleSyncing ? "animate-spin" : ""}`} />Google 동기화</button>}{googleConnected && <a href={`/api/google-ads/connect?folderId=${encodeURIComponent(folderId)}`} className="inline-flex h-9 items-center rounded-xl border border-border px-3 text-xs font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground">다시 연결</a>}</div></div>
+      <div className="flex items-start justify-between gap-3"><div className="flex items-start gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-amber-500/15 font-bold text-amber-600">G</span><div><h3 className="text-sm font-semibold">Google Ads 계정 추가</h3><p className="mt-1 text-xs text-muted-foreground">Google 로그인 한 번으로 관리자 계정의 광고 계정을 선택합니다.</p></div></div><div className="flex shrink-0 items-center gap-2">{googleConnected && googleMeta.health && <HealthBadge health={googleMeta.health} />}{googleConnected && accounts.some(item => item.platform === "GOOGLE") && <button type="button" onClick={() => void syncGoogle()} disabled={googleSyncing} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-amber-500 px-3 text-xs font-semibold text-white shadow-sm disabled:opacity-40"><RefreshCw className={`h-3.5 w-3.5 ${googleSyncing ? "animate-spin" : ""}`} />Google 동기화</button>}{googleConnected && <a href={`/api/google-ads/connect?folderId=${encodeURIComponent(folderId)}`} className="inline-flex h-9 items-center rounded-xl border border-border px-3 text-xs font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground">다시 연결</a>}</div></div>
       {loading ? <div className="mt-4 flex h-10 items-center"><Loader2 className="h-4 w-4 animate-spin" /></div> : !googleConnected ? <a href={`/api/google-ads/connect?folderId=${encodeURIComponent(folderId)}`} className="mt-4 inline-flex h-10 items-center justify-center rounded-xl bg-amber-500 px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-amber-600">Google 계정 연결</a> : <div className="mt-4 flex flex-col gap-2 sm:flex-row"><select value={googleSelectedId} onChange={event => setGoogleSelectedId(event.target.value)} className="h-10 min-w-0 flex-1 rounded-xl bg-background px-3 text-sm shadow-sm outline-none focus:ring-2 focus:ring-amber-400"><option value="">광고 계정을 선택해주세요</option>{googleSelectable.map(item => <option key={item.id} value={item.id}>{item.name} · {item.id}{item.currency ? ` · ${item.currency}` : ""}</option>)}</select><button type="button" disabled={!googleSelectedId || saving} onClick={addGoogle} className="h-10 rounded-xl bg-amber-500 px-4 text-xs font-semibold text-white shadow-sm disabled:opacity-40">계정 추가</button></div>}
       {googleConnected && googleMeta.lastSyncedAt && <p className="mt-2 text-[11px] text-muted-foreground">마지막 동기화 {new Date(googleMeta.lastSyncedAt).toLocaleString("ko-KR")}</p>}
+      {googleConnected && googleMeta.health?.hint && (
+        <p className={`mt-1.5 text-xs ${googleMeta.health.level === "broken" ? "text-red-600" : "text-amber-700"}`}>{googleMeta.health.hint}</p>
+      )}
       {googleConnected && googleMeta.lastSyncError && (
-        <p className="mt-1.5 whitespace-pre-wrap break-all text-xs text-amber-600">
-          동기화 오류: {googleMeta.lastSyncError}
-          {googleMeta.lastSyncError.includes("invalid_grant") && " — Google 쪽에서 연결이 끊겼어요. 위 \"다시 연결\"을 눌러 Google 로그인을 다시 해주세요."}
-        </p>
+        <p className="mt-1.5 whitespace-pre-wrap break-all text-xs text-amber-600">동기화 오류: {googleMeta.lastSyncError}</p>
       )}
       {googleConnected && googleMeta.accountsError && <p className="mt-1.5 whitespace-pre-wrap break-all text-xs text-amber-600">계정 목록 조회 오류: {googleMeta.accountsError}</p>}
     </section>

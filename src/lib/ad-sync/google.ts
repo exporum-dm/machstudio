@@ -8,6 +8,7 @@ import {
   googleCustomerId,
 } from "@/lib/google-ads";
 import { AdSyncError, kstDateOnly, type AdSyncFolder } from "@/lib/ad-sync/shared";
+import { classifyGoogleError, statusForErrorKind } from "@/lib/ad-connection-health";
 
 type Account = { platform: string; accountId: string; accountName?: string; campaignIds?: string[] };
 type AssetRef = { asset?: string };
@@ -285,9 +286,15 @@ export async function syncGoogleFolder(folder: AdSyncFolder, userId: string) {
       error instanceof Error
         ? error.message
         : "Google Ads 동기화에 실패했습니다.";
+    /**
+     * **일시적 실패에는 상태를 건드리지 않는다.** 전에는 어떤 실패든 status 를 "ERROR" 로
+     * 내려서, 속도 제한 한 번에 운영자가 멀쩡한 연결을 끊고 다시 맺었다.
+     * invalid_grant 만이 확실한 끊김이다(ad-connection-health.ts).
+     */
+    const status = statusForErrorKind(classifyGoogleError(message));
     await prisma.googleAdConnection.update({
       where: { id: connection.id },
-      data: { status: "ERROR", lastSyncError: message },
+      data: { lastSyncError: message.slice(0, 500), ...(status ? { status } : {}) },
     });
     throw new AdSyncError(message, 502);
   }
