@@ -30,6 +30,13 @@ export interface BuildLandingModelOptions {
   isPreview: boolean;
   /** 임베드는 호스트 도메인이 달라 상대경로가 깨진다 → 등록 링크를 절대 URL 로 만들 오리진. */
   origin?: string;
+  /**
+   * 그릴 언어. **이 모델 빌더가 랜딩의 유일한 렌더 진입점**이라, 여기서 한 번 넘기면
+   * 뷰·CSS·마운트는 한 글자도 안 바뀐 채 그 언어로 그려진다(덮개 방식 —
+   * `webinar-config.ts` 의 `applyLandingLocale` 머리말).
+   * 안 주면 원문 언어(= 지금까지와 같은 동작).
+   */
+  locale?: string;
 }
 
 /**
@@ -79,8 +86,8 @@ function buildLiveUrl(slug: string, origin: string | undefined, view: "signup" |
 }
 
 export function buildLandingModel(webinar: LandingWebinar, opts: BuildLandingModelOptions): LandingModel {
-  const { uid, embedded, isPreview, origin } = opts;
-  const lp = normalizeLandingPageConfig(webinar.config);
+  const { uid, embedded, isPreview, origin, locale } = opts;
+  const lp = normalizeLandingPageConfig(webinar.config, locale ? { locale } : undefined);
   const sectionId = (base: string) => `${uid}-${base}`;
 
   const accentRaw = String(webinar.theme?.accentColor ?? "");

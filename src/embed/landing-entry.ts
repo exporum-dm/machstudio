@@ -12,6 +12,8 @@
  */
 
 import { mountLanding, type LandingHandle } from "@/lib/landing/mount";
+import { landingTranslatedLocales, normalizeLandingPageConfig } from "@/lib/webinar-config";
+import { detectFormLocale } from "@/lib/form-locale";
 import type { LandingWebinar } from "@/lib/landing/types";
 import { sendVisitBeacon } from "@/lib/attribution-client";
 
@@ -186,12 +188,25 @@ function render(inst: Instance): void {
   inst.handle?.destroy();
   inst.cleanupHero?.();
 
+  /**
+   * **호스트 페이지의 언어에 맞춰 상세페이지를 그린다**(설계 §11).
+   *
+   * 같은 스니펫을 국문 페이지와 영문 페이지에 똑같이 붙이면 된다 — 상세페이지를 언어마다
+   * 따로 만들면 운영자가 관리할 산출물이 언어 수만큼 늘어나고, 고칠 때마다 전부를 고쳐야 한다.
+   *
+   * 판정은 브라우저에서 한다. 스크립트에 config 원본이 실려 오므로 **모든 언어가 번들 안에
+   * 있고**, 서버가 언어를 고르면 CDN 캐시가 언어 수만큼 갈라진다(등록 폼과 같은 이유).
+   * 자동 판정이 틀리면 마운트 자리에 data-mach-lang="ja" 를 달아 덮어쓴다.
+   */
+  const landingBase = normalizeLandingPageConfig(webinar.config);
+  const locale = detectFormLocale(mount, landingTranslatedLocales(landingBase), landingBase.defaultLocale);
   const handle = mountLanding({
     mount,
     webinar,
     embedded: true,
     isPreview: false, // 호스트 URL 쿼리는 신뢰하지 않는다 — 비공개 랜딩이 새면 안 된다
     origin: inst.cfg.origin,
+    locale,
   });
   inst.handle = handle;
 

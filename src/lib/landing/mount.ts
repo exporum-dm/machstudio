@@ -48,6 +48,8 @@ export interface MountLandingOptions {
   origin?: string;
   /** 레거시 iframe 임베드 경로에서만 true — 히어로 높이를 --lnd-vh 로 잡는다. */
   legacyIframe?: boolean;
+  /** 그릴 언어. 임베드는 호스트 페이지에서 감지한 값을 넘긴다(lib/form-locale). */
+  locale?: string;
 }
 
 export interface LandingHandle {
@@ -97,7 +99,7 @@ export function mountLanding(opts: MountLandingOptions): LandingHandle {
   ensureStyles();
   ensureFont();
 
-  const m = buildLandingModel(webinar, { uid, embedded, isPreview, origin: opts.origin });
+  const m = buildLandingModel(webinar, { uid, embedded, isPreview, origin: opts.origin, locale: opts.locale });
 
   // 장식 링을 안 그리는 대신(첫 화면 교체 방지) 이미지가 최대한 빨리 오게 한다.
   // preload 는 렌더와 **똑같은 URL** 이어야 한다 — 파라미터가 다르면 브라우저가 별개 리소스로

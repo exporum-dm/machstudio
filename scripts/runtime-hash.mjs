@@ -67,6 +67,8 @@ export function landingSourceFiles(root) {
     // 색 계산 공용 계약 — 중복 세 벌을 여기로 모았다(W1 Task 20).
     join(root, "src/lib/color.ts"),
     join(root, "src/lib/webinar-radius.ts"),
+    // 호스트 페이지의 언어를 읽어 상세페이지를 그 언어로 그린다 — 판정은 한 곳에 있어야 한다.
+    join(root, "src/lib/form-locale.ts"),
   ]).sort();
 }
 

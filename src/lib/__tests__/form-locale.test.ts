@@ -25,17 +25,27 @@ describe("normalizeLocaleTag", () => {
   it("지역 꼬리표를 떼고 2글자로 좁힌다", () => {
     expect(normalizeLocaleTag("en-US")).toBe("en");
     expect(normalizeLocaleTag("ko-KR")).toBe("ko");
-    expect(normalizeLocaleTag("zh-Hant-TW")).toBe("zh");
+    expect(normalizeLocaleTag("fr-CA")).toBe("fr");
     expect(normalizeLocaleTag("  KO  ")).toBe("ko");
     expect(normalizeLocaleTag("ja_JP")).toBe("ja");
   });
 
-  /** 다국어 플러그인·운영자가 실제로 적는 비표준 약어들. */
+  /** 다국어 플러그인·운영자가 실제로 적는 비표준 약어들. `jp.` 는 우리 전시 사이트의 서브도메인이다. */
   it("흔한 약어를 받아 준다", () => {
     expect(normalizeLocaleTag("kr")).toBe("ko");
     expect(normalizeLocaleTag("jp")).toBe("ja");
-    expect(normalizeLocaleTag("cn")).toBe("zh");
-    expect(normalizeLocaleTag("tw")).toBe("zh");
+    expect(normalizeLocaleTag("us")).toBe("en");
+  });
+
+  /**
+   * **지원 목록(FORM_LOCALES) 밖이면 null 이다.** 지원 언어는 시스템 문구 사전과 같은 범위로
+   * 묶여 있어서(ko·ja·en·fr), 사전이 없는 언어를 통과시키면 라벨만 번역되고 버튼·검증 문구가
+   * 영어로 남은 화면이 나간다. 별칭도 함께 죽는다 — 가리키는 곳이 목록 밖이면 쓸 수 없다.
+   */
+  it("지원 목록 밖 언어는 null", () => {
+    for (const outside of ["zh", "zh-Hant-TW", "cn", "tw", "es", "vi", "vn", "de"]) {
+      expect(normalizeLocaleTag(outside)).toBeNull();
+    }
   });
 
   /** 모르는 언어를 **추측하지 않는다** — 추측이 틀리면 폼이 통째로 딴 언어가 된다. */
@@ -65,7 +75,7 @@ describe("localeFromSearch", () => {
   it("lang · hl · locale · language 를 모두 본다", () => {
     expect(localeFromSearch("?lang=en")).toBe("en");
     expect(localeFromSearch("hl=ja")).toBe("ja");
-    expect(localeFromSearch("?a=1&locale=zh-CN")).toBe("zh");
+    expect(localeFromSearch("?a=1&locale=fr-FR")).toBe("fr");
     expect(localeFromSearch("?language=kr")).toBe("ko");
   });
 
@@ -81,10 +91,16 @@ describe("hostLocaleCandidates — 우선순위", () => {
    * `<html lang>` 이 맨 뒤인 이유: 가장 흔하지만 **제일 자주 틀려 있다**(템플릿 기본값 ko 를
    * 그대로 둔 채 영문 페이지를 만든 사이트가 많다). 운영자가 직접 적은 값이 항상 이긴다.
    */
-  it("data-mach-lang → 쿼리 → 경로 → html lang", () => {
+  it("data-mach-lang → 쿼리 → 경로 → 호스트명 → html lang", () => {
     expect(
-      hostLocaleCandidates({ explicit: "ja", search: "?lang=en", pathname: "/zh/x", documentLang: "ko" }),
-    ).toEqual(["ja", "en", "zh", "ko"]);
+      hostLocaleCandidates({
+        explicit: "ja",
+        search: "?lang=en",
+        pathname: "/fr/x",
+        hostname: "ko.example.com",
+        documentLang: "en",
+      }),
+    ).toEqual(["ja", "en", "fr", "ko"]);
   });
 
   it("없는 신호는 건너뛰고 중복은 한 번만", () => {
@@ -166,7 +182,7 @@ describe("localeFromHostname — 언어별 서브도메인", () => {
     expect(localeFromHostname("en.japan.k-expo.org")).toBe("en");
     expect(localeFromHostname("jp.japan.k-expo.org")).toBe("ja");
     expect(localeFromHostname("KO.example.com")).toBe("ko");
-    expect(localeFromHostname("zh-cn.example.com")).toBe("zh");
+    expect(localeFromHostname("fr-ca.example.com")).toBe("fr");
   });
 
   /** 언어가 아닌 라벨은 모양 검사와 아는 언어 목록에서 두 번 걸러진다. */

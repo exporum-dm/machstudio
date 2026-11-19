@@ -12,6 +12,8 @@
 import { use, useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { mountLanding } from "@/lib/landing/mount";
+import { landingTranslatedLocales, normalizeLandingPageConfig } from "@/lib/webinar-config";
+import { resolveLocaleFromRawSignals } from "@/lib/form-locale";
 import type { LandingWebinar } from "@/lib/landing/types";
 import { sendVisitBeacon } from "@/lib/attribution-client";
 
@@ -132,6 +134,21 @@ export default function WebinarLandingPage({ params }: { params: Promise<{ slug:
     const host = hostRef.current;
     if (!host || !webinar) return;
     const embedded = window.self !== window.top;
+    /**
+     * 이 화면은 **우리가 직접 서빙**하므로 읽을 신호가 ?lang= 뿐이다 — 국문 홈페이지의
+     * 버튼은 그냥 링크를, 영문 홈페이지의 버튼은 ?lang=en 을 걸면 된다.
+     * (호스트 사이트에 **임베드**된 상세페이지는 그 페이지의 경로·서브도메인·html lang 까지
+     *  읽는다 — embed/landing-entry.ts.)
+     *
+     * 번역이 들어 있는 언어로만 좁힌다. 빈 언어를 고르면 칸마다 원문으로 폴백해
+     * 화면이 그대로인데, 그러면 "?lang 을 붙였는데 안 바뀐다" 로 보인다.
+     */
+    const landingBase = normalizeLandingPageConfig(webinar.config);
+    const locale = resolveLocaleFromRawSignals(
+      [new URLSearchParams(window.location.search).get("lang")],
+      landingTranslatedLocales(landingBase),
+      landingBase.defaultLocale,
+    );
     const handle = mountLanding({
       mount: host,
       webinar,
@@ -139,6 +156,7 @@ export default function WebinarLandingPage({ params }: { params: Promise<{ slug:
       isPreview: previewAllowed && new URLSearchParams(window.location.search).has("preview"),
       origin: window.location.origin,
       legacyIframe: embedded,
+      locale,
     });
     return () => handle.destroy();
   }, [webinar, previewAllowed]);

@@ -4,7 +4,7 @@
 // 모든 값은 config.landingPage 한 곳에 저장되고 공개 페이지(/webinar/[slug]/landing)가 그대로 렌더한다.
 // 섹션은 "토글 ON + 실제 내용 있음"일 때만 공개 페이지에 노출된다(빈 껍데기 방지 — 읽기에서 걸러짐).
 
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, useMemo } from "react";
 import { formatKst } from "@/lib/datetime";
 import { ExternalLink, Clapperboard, Ban, Loader2, UploadCloud, Link2, Image as ImageIcon, ImagePlus } from "lucide-react";
 import { toast } from "sonner";
@@ -27,6 +27,14 @@ import {
   type LandingSponsorItem,
 } from "@/lib/webinar-config";
 import { LANDING_IMAGE_ACCEPT, LANDING_VIDEO_ACCEPT, validateLandingMedia } from "@/lib/webinar-landing-media";
+import { dropLandingLocale, landingTranslationEntries, retagLandingLocale } from "@/lib/webinar-landing-i18n";
+import { TranslationTable } from "@/components/form-builder/TranslationTable";
+import { FORM_LOCALES, formLocaleLabel, guessLocaleOfTexts } from "@/lib/form-locale";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { btnCls, R } from "@/components/ui/primitives";
+import { Languages, Trash2 } from "lucide-react";
+import type { LandingPageConfig, LandingPageI18n } from "@/lib/webinar-config";
+import { landingEditableLocales, landingTranslatedLocales } from "@/lib/webinar-config";
 import { SESSION_LOGO_ACCEPT, SESSION_LOGO_MAX_LABEL, validateSessionLogo } from "@/lib/webinar-speaker-photo";
 import { FINISH, FIELD_CLS, JumpLink, Segmented, UrlField } from "@/components/ui/primitives";
 import { EditableList, ROW_KEY, withRowKeys, stripRowKeys, type WithRowKey } from "@/components/ui/editable-list";
@@ -49,6 +57,14 @@ interface Webinar {
 type HeroMediaType = "none" | "image" | "video";
 
 interface EditorState {
+  /**
+   * ── 언어 ──
+   * 저장은 `config.landingPage` 를 **통째로 교체**하므로(toConfigPayload) 이 세 값을
+   * 상태에 들고 payload 에 다시 실어야 한다. 안 그러면 저장할 때마다 번역이 지워진다.
+   */
+  defaultLocale: string;
+  locales: string[];
+  i18n: LandingPageI18n;
   enabled: boolean;
   heroMediaType: HeroMediaType;
   heroMediaUrl: string;
@@ -84,6 +100,9 @@ function toEditorState(config: Record<string, unknown>): EditorState {
   // 아직 제목을 안 쓴 행이 리마운트 때 사라지고, 다음 자동저장이 그 배열을 덮어써 DB 에서도 없어진다.
   const lp = normalizeLandingPageConfig(config, { keepEmptyRows: true });
   return {
+    defaultLocale: lp.defaultLocale,
+    locales: lp.locales,
+    i18n: lp.i18n,
     enabled: lp.enabled,
     heroMediaType: lp.heroMedia ? lp.heroMedia.type : "none",
     heroMediaUrl: lp.heroMedia?.url ?? "",
@@ -135,6 +154,10 @@ function toConfigPayload(s: EditorState) {
     join: { ...s.join, steps: stripRowKeys(s.join.steps) },
     faq: { ...s.faq, items: stripRowKeys(s.faq.items) },
     sponsors: { ...s.sponsors, items: stripRowKeys(s.sponsors.items) },
+    // 언어 값은 반드시 같이 보낸다 — 이 payload 가 landingPage 를 통째로 교체한다.
+    defaultLocale: s.defaultLocale,
+    locales: s.locales,
+    i18n: s.i18n,
   };
 }
 
@@ -341,6 +364,30 @@ export default function LandingPageTab({
     }
   };
 
+  /**
+   * 지금 편집 중인 언어. 기본 언어면 **구조까지** 고치는 평소 편집기이고, 다른 언어면
+   * 문구만 채우는 번역 표다 — 구조를 언어별로 갈라지게 두면 같은 상세페이지가 언어마다
+   * 다른 모양이 되고, "하나를 만들어 여러 언어에 쓴다" 는 전제가 깨진다.
+   */
+  const [editLocale, setEditLocale] = useState<string>(() => toEditorState(webinar.config).defaultLocale);
+
+  /**
+   * 번역 표가 읽는 **지금 화면의 랜딩**. 상태가 칸마다 쪼개져 있어 한 덩어리로 다시 모은다 —
+   * 번역 칸의 원문은 저장된 값이 아니라 **지금 편집 중인 값**이어야 한다(제목을 고치면
+   * 번역 표의 원문도 즉시 따라와야 한다).
+   */
+  const landingForI18n: LandingPageConfig = normalizeLandingPageConfig(
+    { landingPage: toConfigPayload(state) },
+    { keepEmptyRows: true },
+  );
+  const editableLocales = landingEditableLocales(landingForI18n);
+  const activeLocale = editableLocales.includes(editLocale) ? editLocale : landingForI18n.defaultLocale;
+  const translating = activeLocale !== landingForI18n.defaultLocale;
+
+  /** 번역 표가 돌려준 랜딩에서 **언어 관련 부분만** 상태로 되받는다(구조는 번역 모드에서 안 바뀐다). */
+  const applyLandingI18n = (next: LandingPageConfig) =>
+    setState((prev) => ({ ...prev, i18n: next.i18n, locales: next.locales, defaultLocale: next.defaultLocale }));
+
   const { state: saveState, retry } = useAutosave(state, async (value) => {
     const res = await fetch(`/api/webinars/${webinar.id}`, {
       method: "PATCH",
@@ -413,6 +460,28 @@ export default function LandingPageTab({
             </div>
           </div>
 
+          <LandingLocaleBar
+            lp={landingForI18n}
+            locales={editableLocales}
+            active={activeLocale}
+            onSelect={setEditLocale}
+            onChange={(next, nextLocale) => {
+              applyLandingI18n(next);
+              if (nextLocale) setEditLocale(nextLocale);
+            }}
+          />
+
+          {translating ? (
+            <TranslationTable
+              config={landingForI18n}
+              entries={landingTranslationEntries(landingForI18n, activeLocale)}
+              locale={activeLocale}
+              baseLocale={landingForI18n.defaultLocale}
+              onChange={applyLandingI18n}
+              emptyHint="탭에서 히어로·소개·FAQ 를 먼저 채우면 여기에 그대로 나타나요."
+            />
+          ) : (
+          <>
           {/* 배경 — 섹션 단위 모드 + 두 모드의 배경 키컬러.
               전체에 영향하는 값이라 히어로보다 위에 둔다(원인이 결과보다 먼저 온다). */}
           <SectionCard
@@ -995,8 +1064,180 @@ export default function LandingPageTab({
               공개 페이지에서는 어느 배경에서든 흰 판 위에 같은 크기로 올라갑니다.
             </p>
           </SectionCard>
+          </>
+          )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * 언어 막대 — 편집할 언어를 고르고, 언어를 더하고 지운다.
+ *
+ * ── 왜 상세페이지 하나에 언어 여러 개인가 ─────────────────────────────
+ * 홈페이지를 언어별로 나눠 쓰면(국문 `/`, 영문 `en.`) 상세페이지도 둘로 만들고 싶어지는데,
+ * 그러면 **운영자가 관리할 산출물이 언어 수만큼 늘어난다** — 일정이 바뀌면 전부를 고쳐야 하고,
+ * 한 곳을 놓치면 그 언어 페이지만 틀린 정보를 띄운다. 그래서 하나로 두고 문구만 언어별이다.
+ * 방문자가 보는 언어는 **붙인 페이지**가 정한다(임베드가 호스트 언어를 감지한다).
+ *
+ * 삭제가 항상 보이는 자리에 있는 이유: 더할 수 있으면 지울 수도 있어야 하고, hover 에만
+ * 있으면 터치 기기에서는 없는 것과 같다. 파괴적이므로 확인 단계는 거친다.
+ */
+function LandingLocaleBar({
+  lp,
+  locales,
+  active,
+  onSelect,
+  onChange,
+}: {
+  lp: LandingPageConfig;
+  locales: string[];
+  active: string;
+  onSelect: (locale: string) => void;
+  onChange: (next: LandingPageConfig, nextLocale?: string) => void;
+}) {
+  const confirm = useConfirm();
+  const translated = useMemo(() => new Set(landingTranslatedLocales(lp)), [lp]);
+  const addable = FORM_LOCALES.filter((l) => !locales.includes(l.code));
+
+  /**
+   * 원문 언어 표시가 **적혀 있는 글**과 어긋났는가. 영문 전용 행사를 만든 경우 표시가
+   * 틀리고, 그러면 영어가 원문 자리를 차지해 영어 번역을 추가할 수 없다 — 운영자가 그
+   * 원인을 스스로 찾을 방법이 없어 먼저 알려 준다.
+   */
+  const mismatch = useMemo(() => {
+    const texts = [lp.brand, ...lp.titleLines, lp.subtitle, lp.intro.title, lp.ctaLabel].filter(Boolean);
+    const guess = guessLocaleOfTexts(texts);
+    return guess && guess !== lp.defaultLocale && !lp.i18n[guess] ? guess : null;
+  }, [lp]);
+
+  const removeActive = async () => {
+    const ok = await confirm({
+      title: formLocaleLabel(active) + " 번역을 지울까요?",
+      description:
+        "이 언어로 적어 둔 문구가 전부 사라져요. 지우고 나면 그 언어 페이지에서도 원문 상세페이지가 나갑니다.",
+      confirmLabel: "번역 삭제",
+      tone: "danger",
+    });
+    if (!ok) return;
+    onChange(dropLandingLocale(lp, active), lp.defaultLocale);
+    toast.success(formLocaleLabel(active) + " 번역을 지웠어요");
+  };
+
+  const changeBase = async (next: string) => {
+    if (next === lp.defaultLocale) return;
+    const ok = await confirm({
+      title: "원문 언어를 " + formLocaleLabel(next) + "(으)로 바꿀까요?",
+      description:
+        "적어 둔 글은 그대로 남고, \"이 문구는 " + formLocaleLabel(next) + "로 쓰였다\" 는 표시만 바뀌어요. 그다음부터 " +
+        formLocaleLabel(lp.defaultLocale) + " 번역을 추가할 수 있어요.",
+      confirmLabel: "원문 언어 변경",
+    });
+    if (!ok) return;
+    onChange(retagLandingLocale(lp, next), next);
+    toast.success("원문 언어를 " + formLocaleLabel(next) + "(으)로 바꿨어요");
+  };
+
+  return (
+    <div className={`${R.surface} bg-card p-3 ${FINISH.s1}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <Languages className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+
+        {locales.map((code) => {
+          const isBase = code === lp.defaultLocale;
+          const on = code === active;
+          return (
+            <button
+              key={code}
+              type="button"
+              onClick={() => onSelect(code)}
+              aria-pressed={on}
+              className={`rounded-lg px-2.5 py-1 text-xs transition-shadow ${on ? `bg-violet-500/12 ${FINISH.s2Key}` : "hover:bg-secondary"}`}
+            >
+              {formLocaleLabel(code)}
+              {isBase ? (
+                <span className="ml-1 text-[10px] text-muted-foreground">원문</span>
+              ) : (
+                // 한 글자도 안 적은 언어는 그렇게 보여야 한다 — 방문자 화면은 글이 있을 때만 바뀐다.
+                !translated.has(code) && <span className="ml-1 text-[10px] text-amber-600">비어 있음</span>
+              )}
+            </button>
+          );
+        })}
+
+        {addable.length > 0 && (
+          <select
+            value=""
+            onChange={(e) => {
+              const code = e.target.value;
+              if (!code) return;
+              onChange({ ...lp, locales: [...lp.locales, code] }, code);
+            }}
+            aria-label="번역 언어 추가"
+            className="rounded-lg bg-secondary/60 px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <option value="">+ 언어 추가</option>
+            {addable.map((l) => (
+              <option key={l.code} value={l.code}>
+                {l.label}
+              </option>
+            ))}
+          </select>
+        )}
+
+        <div className="ml-auto flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            원문 언어
+            <select
+              value={lp.defaultLocale}
+              onChange={(e) => void changeBase(e.target.value)}
+              className="rounded-lg bg-secondary/60 px-2 py-1 text-xs text-foreground"
+            >
+              {/* 번역이 이미 들어 있는 언어는 막는다 — 원문과 덮개가 같은 언어로 겹치면
+                  어느 쪽이 보일지 알 수 없다. */}
+              {FORM_LOCALES.map((l) => {
+                const taken = l.code !== lp.defaultLocale && translated.has(l.code);
+                return (
+                  <option key={l.code} value={l.code} disabled={taken}>
+                    {l.label}
+                    {taken ? " (번역 있음)" : ""}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+
+          {active !== lp.defaultLocale && (
+            <button type="button" onClick={() => void removeActive()} className={btnCls("dangerQuiet")}>
+              <Trash2 className="h-3.5 w-3.5" />
+              {formLocaleLabel(active)} 삭제
+            </button>
+          )}
+        </div>
+      </div>
+
+      {mismatch && (
+        <p className="mt-2 rounded-lg bg-amber-500/8 px-2.5 py-2 text-[11px] leading-relaxed text-amber-700 dark:text-amber-400">
+          원문 언어가 <b>{formLocaleLabel(lp.defaultLocale)}</b>로 되어 있는데, 적혀 있는 글은{" "}
+          <b>{formLocaleLabel(mismatch)}</b>로 보여요. 오른쪽 <b>원문 언어</b>를 {formLocaleLabel(mismatch)}로 바꾸면{" "}
+          {formLocaleLabel(lp.defaultLocale)} 번역을 추가할 수 있어요.
+        </p>
+      )}
+
+      <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+        {active === lp.defaultLocale ? (
+          <>
+            섹션·항목 <b className="text-foreground">구조는 여기서만</b> 바꿔요. 다른 언어 탭에서는 같은 구조에 문구만
+            채웁니다 — 상세페이지를 언어마다 따로 만들지 않아도 돼요.
+          </>
+        ) : (
+          <>
+            영문·일문 페이지에 <b className="text-foreground">같은 임베드 코드</b>를 붙이면 이 번역이 자동으로 나가요.
+            링크로 열 때는 <code className="rounded bg-secondary px-1">?lang={active}</code>를 붙이세요.
+          </>
+        )}
+      </p>
     </div>
   );
 }
