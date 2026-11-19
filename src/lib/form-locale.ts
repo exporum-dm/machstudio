@@ -20,27 +20,39 @@
  * 임베드 번들에 그대로 들어간다. DOM 은 호출부가 읽어서 **문자열로** 넘긴다.
  */
 
-/** 폼 문구를 번역해 둘 수 있는 언어. 여기 없는 태그는 저장은 되되 고르는 UI 에 안 나온다. */
+/**
+ * 고를 수 있는 번역 언어.
+ *
+ * **시스템 문구 사전(`collect-form/copy.ts` 의 `CopyLang`)과 같은 범위로 묶어 둔다.**
+ * 사전이 없는 언어를 고를 수 있으면 운영자는 라벨을 다 번역한 뒤에도 버튼·검증 문구가
+ * 영어로 남은 화면을 보게 되고, 그걸 고칠 자리가 어디에도 없다. 언어를 늘릴 때는
+ * 두 곳을 **같이** 늘린다.
+ *
+ * 여기 없는 태그도 **저장된 번역은 그대로 살아 있다** — `editableFormLocales` 가 저장된
+ * 언어와 이 목록의 합집합을 탭으로 보여주므로, 목록에서 빠진 언어의 글이 사라지지 않는다.
+ */
 export const FORM_LOCALES = [
   { code: "ko", label: "한국어", englishLabel: "Korean" },
-  { code: "en", label: "English", englishLabel: "English" },
   { code: "ja", label: "日本語", englishLabel: "Japanese" },
-  { code: "zh", label: "中文", englishLabel: "Chinese" },
-  { code: "es", label: "Español", englishLabel: "Spanish" },
-  { code: "vi", label: "Tiếng Việt", englishLabel: "Vietnamese" },
+  { code: "en", label: "English", englishLabel: "English" },
+  { code: "fr", label: "Français", englishLabel: "French" },
 ] as const;
 
 export type FormLocaleCode = typeof FORM_LOCALES[number]["code"];
 
 const KNOWN = new Set<string>(FORM_LOCALES.map((l) => l.code));
 
-/** 사람이 적는 비표준 약어. 아임웹·워드프레스 다국어 설정에서 실제로 쓰이는 값들이다. */
+/**
+ * 사람이 적는 비표준 약어. 아임웹·워드프레스 다국어 설정에서 실제로 쓰이는 값들이다.
+ * 우리 전시 사이트의 일본어 서브도메인이 `jp.` 라서 그 별칭이 특히 중요하다.
+ *
+ * **지원하지 않는 언어의 별칭은 두지 않는다** — 별칭이 가리키는 곳이 `FORM_LOCALES` 밖이면
+ * 판정은 통과하는데 고를 수 있는 언어가 아니어서, 신호를 읽은 쪽과 쓰는 쪽이 어긋난다.
+ */
 const ALIASES: Record<string, string> = {
   kr: "ko", "ko-kr": "ko",
   jp: "ja", "ja-jp": "ja",
-  cn: "zh", tw: "zh", hk: "zh",
   us: "en", uk: "en", gb: "en",
-  vn: "vi",
 };
 
 /** 주어진 코드의 표시 이름. 모르는 코드는 코드 그대로 보여 준다(지어내지 않는다). */
@@ -57,11 +69,14 @@ export function normalizeLocaleTag(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   const trimmed = raw.trim().toLowerCase().replace(/_/g, "-");
   if (!trimmed) return null;
+  const known = (v: string | undefined) => (v && KNOWN.has(v) ? v : null);
   if (KNOWN.has(trimmed)) return trimmed;
-  if (ALIASES[trimmed]) return ALIASES[trimmed];
+  const aliased = known(ALIASES[trimmed]);
+  if (aliased) return aliased;
+  // "fr-CA" · "en-US" 처럼 지역이 붙은 값은 앞 조각으로 좁힌다.
   const base = trimmed.split("-")[0];
   if (KNOWN.has(base)) return base;
-  return ALIASES[base] ?? null;
+  return known(ALIASES[base]);
 }
 
 /**

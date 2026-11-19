@@ -2,6 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
+import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 import LandingPageTab from "../LandingPageTab";
 
 /**
@@ -26,10 +27,15 @@ function render() {
   root = createRoot(host);
   act(() => {
     root?.render(
-      <LandingPageTab
-        webinar={{ id: "w1", slug: "s1", name: "테스트", description: null, config: {}, liveStartAt: "2026-08-11T05:00:00.000Z" }}
-        onSilentUpdate={() => {}}
-      />,
+      // 언어 막대의 "번역 삭제"·"원문 언어 변경" 이 확인 단계를 거치므로 이 탭은
+      // ConfirmProvider 안에서 돈다(실제로도 (app)/layout.tsx 가 감싼다 —
+      // 테스트만 맨몸으로 렌더하면 거기서만 터진다).
+      <ConfirmProvider>
+        <LandingPageTab
+          webinar={{ id: "w1", slug: "s1", name: "테스트", description: null, config: {}, liveStartAt: "2026-08-11T05:00:00.000Z" }}
+          onSilentUpdate={() => {}}
+        />
+      </ConfirmProvider>,
     );
   });
   return host;

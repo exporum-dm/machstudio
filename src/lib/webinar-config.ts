@@ -471,6 +471,44 @@ const BG_FOLLOWS_FAQ: ReadonlySet<string> = new Set(["highlights", "sponsors"]);
 /** 6자리 hex 만 통과 — 공개 페이지 CSS 에 그대로 들어가는 값이라 문자열을 믿지 않는다. */
 const LANDING_HEX = /^#[0-9a-fA-F]{6}$/;
 
+/**
+ * 랜딩(상세페이지) 한 언어의 **덮어쓸 문구만** 담는다 — 구조는 담지 않는다.
+ *
+ * 웨비나 등록 폼과 같은 덮개 방식이다(`WebinarFormTranslation` 머리말). 여기서 특히 중요한
+ * 이유: 랜딩 문구는 50~100칸이고 읽는 쪽이 모델 빌더·뷰 세 개·CSS 까지 퍼져 있다. 타입을
+ * 로케일 맵으로 바꾸면 그 전부를 고쳐야 하고, 그건 공개 화면을 한꺼번에 흔드는 변경이다.
+ * 덮개면 `normalizeLandingPageConfig(config, { locale })` **한 곳**에서 적용되고 읽는 쪽은
+ * 한 글자도 바뀌지 않는다.
+ *
+ * **번역하지 않는 값은 아예 없다**: 아이콘·색·URL·숫자·토글은 언어와 무관하다.
+ * 스폰서는 `tier`(주최·후원 같은 분류)만 번역한다 — 회사 이름은 고유명사다.
+ *
+ * 배열은 **인덱스로 짝짓는다.** 기본 언어에서 행 순서를 바꾸거나 지우면 덮개 배열도 같이
+ * 옮겨야 한다(편집기가 `reorderLandingTranslations` 로 처리한다).
+ */
+export interface LandingTranslationItem {
+  title?: string;
+  description?: string;
+}
+
+export interface LandingPageTranslation {
+  brand?: string;
+  titleLines?: string[];
+  subtitle?: string;
+  venue?: string;
+  ctaLabel?: string;
+  intro?: { title?: string; body?: string; titleMobile?: string; bodyMobile?: string };
+  audience?: { title?: string; items?: LandingTranslationItem[] };
+  programs?: { items?: LandingTranslationItem[] };
+  highlights?: { title?: string; items?: LandingTranslationItem[] };
+  join?: { steps?: LandingTranslationItem[]; note?: string };
+  faq?: { items?: Array<{ category?: string; question?: string; answer?: string }> };
+  sponsors?: { title?: string; items?: Array<{ tier?: string }> };
+}
+
+/** 로케일 → 번역. 기본 언어는 여기 없다(기본 언어는 덮개가 아니라 원문이다). */
+export type LandingPageI18n = Record<string, LandingPageTranslation>;
+
 export interface LandingPageConfig {
   enabled: boolean;
   heroMedia: LandingHeroMedia;
@@ -538,6 +576,15 @@ export interface LandingPageConfig {
    * 행사마다 부르는 말이 다르다) 비우면 DEFAULT_LANDING_SPONSORS_TITLE 이 나간다.
    */
   sponsors: { enabled: boolean; title: string; items: LandingSponsorItem[] };
+  /**
+   * 원문을 쓴 언어. 기본값 "ko" — 랜딩 문구는 처음부터 한국어로 쓰여 왔다.
+   * 영문 전용 행사에서는 편집기에서 정정한다(등록 폼과 같은 방식).
+   */
+  defaultLocale: string;
+  /** 운영자가 **열어 둔** 번역 언어. 한 글자도 안 적은 언어도 남는다(탭이 안 사라지게). */
+  locales: string[];
+  /** 언어별 덮개. `normalizeLandingPageConfig(config, { locale })` 가 이미 적용해 내려 준다. */
+  i18n: LandingPageI18n;
 }
 
 /** 이런 분들께 추천합니다 — 머리글 기본 문구. 어드민이 비우면 이 값이 나간다. */
@@ -612,7 +659,15 @@ export function safeHttpUrl(value: unknown): string {
 
 export function normalizeLandingPageConfig(
   config: unknown,
-  opts?: { keepEmptyRows?: boolean },
+  opts?: {
+    keepEmptyRows?: boolean;
+    /**
+     * 이 언어로 **이미 덮어쓴** 랜딩을 받는다. 호출부는 번역의 존재를 몰라도 된다.
+     * 렌더 진입점(`lib/landing/build-model`)이 이걸 넘기면 모든 방문자 경로가 덮인다 —
+     * 뷰·CSS·모델은 한 글자도 바뀌지 않는다.
+     */
+    locale?: string;
+  },
 ): LandingPageConfig {
   const c = config && typeof config === "object" && !Array.isArray(config) ? (config as Record<string, unknown>) : {};
   const lp = c.landingPage && typeof c.landingPage === "object" && !Array.isArray(c.landingPage)
@@ -656,7 +711,7 @@ export function normalizeLandingPageConfig(
   const faq = obj(lp.faq);
   const sponsors = obj(lp.sponsors);
 
-  return {
+  const result: LandingPageConfig = {
     enabled: bool(lp.enabled, false),
     heroMedia,
     brand: str(lp.brand),
@@ -760,7 +815,218 @@ export function normalizeLandingPageConfig(
         (r) => r.name.trim() !== "",
       ),
     },
+    defaultLocale: str(lp.defaultLocale).trim().toLowerCase() || "ko",
+    locales: normalizeLandingLocaleList(lp.locales, str(lp.defaultLocale) || "ko"),
+    i18n: normalizeLandingI18n(lp.i18n),
   };
+
+  return opts?.locale ? applyLandingLocale(result, opts.locale) : result;
+}
+
+/** 열어 둔 번역 언어 목록 정리 — 문자열만, 중복 제거, 기본 언어 제외. */
+function normalizeLandingLocaleList(raw: unknown, base: string): string[] {
+  if (!Array.isArray(raw)) return [];
+  const baseKey = (base || "ko").trim().toLowerCase();
+  const out: string[] = [];
+  for (const item of raw) {
+    const v = typeof item === "string" ? item.trim().toLowerCase() : "";
+    if (!v || v === baseKey || out.includes(v)) continue;
+    out.push(v);
+  }
+  return out;
+}
+
+/**
+ * 저장된 덮개를 모양만 맞춰 읽는다 — JSONB 라 무엇이든 들어올 수 있다.
+ *
+ * **배열 길이를 원문에 맞추지 않는다.** 짝은 적용 시점에 인덱스로 맞추고, 남는 번역은
+ * 조용히 무시된다 — 여기서 자르면 원문 행을 잠깐 지웠다 되살리는 편집 중에 번역이 날아간다.
+ */
+function normalizeLandingI18n(raw: unknown): LandingPageI18n {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const o = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+  const opt = (v: unknown) => {
+    const t = typeof v === "string" ? v : "";
+    return t.trim() ? t : undefined;
+  };
+  const items = (v: unknown): LandingTranslationItem[] | undefined =>
+    Array.isArray(v) ? v.map((r) => ({ title: opt(o(r).title), description: opt(o(r).description) })) : undefined;
+
+  const out: LandingPageI18n = {};
+  for (const [locale, value] of Object.entries(raw as Record<string, unknown>)) {
+    const key = locale.trim().toLowerCase();
+    if (!key) continue;
+    const v = o(value);
+    const intro = o(v.intro);
+    const audience = o(v.audience);
+    const highlights = o(v.highlights);
+    const join = o(v.join);
+    const faq = o(v.faq);
+    const sponsors = o(v.sponsors);
+    out[key] = {
+      brand: opt(v.brand),
+      titleLines: Array.isArray(v.titleLines) ? v.titleLines.map((x) => (typeof x === "string" ? x : "")) : undefined,
+      subtitle: opt(v.subtitle),
+      venue: opt(v.venue),
+      ctaLabel: opt(v.ctaLabel),
+      intro: {
+        title: opt(intro.title),
+        body: opt(intro.body),
+        titleMobile: opt(intro.titleMobile),
+        bodyMobile: opt(intro.bodyMobile),
+      },
+      audience: { title: opt(audience.title), items: items(audience.items) },
+      programs: { items: items(o(v.programs).items) },
+      highlights: { title: opt(highlights.title), items: items(highlights.items) },
+      join: { steps: items(join.steps), note: opt(join.note) },
+      faq: {
+        items: Array.isArray(faq.items)
+          ? faq.items.map((r) => ({
+              category: opt(o(r).category),
+              question: opt(o(r).question),
+              answer: opt(o(r).answer),
+            }))
+          : undefined,
+      },
+      sponsors: {
+        title: opt(sponsors.title),
+        items: Array.isArray(sponsors.items) ? sponsors.items.map((r) => ({ tier: opt(o(r).tier) })) : undefined,
+      },
+    };
+  }
+  return out;
+}
+
+/** 비어 있지 않은 번역만 고른다 — 빈 문자열은 "번역 안 함" 과 같다. */
+function pickLanding(translated: string | undefined, base: string): string {
+  return translated && translated.trim() ? translated : base;
+}
+
+/**
+ * 덮개를 씌운 랜딩. **번역이 없는 칸은 원문 그대로** 남는다 — 섞이는 것이 비는 것보다 낫다
+ * (빈 제목은 방문자에게 "고장" 으로 보인다).
+ *
+ * 배열은 **원문 길이를 따른다.** 번역이 모자라면 그 칸만 원문이고, 남으면 무시된다 —
+ * 항목 개수가 언어마다 다르면 같은 페이지가 언어별로 다른 구조가 된다.
+ */
+export function applyLandingLocale(lp: LandingPageConfig, locale: string): LandingPageConfig {
+  const tr = lp.i18n[locale];
+  if (!locale || locale === lp.defaultLocale || !tr) return lp;
+
+  const mergeItems = <T extends { title: string; description: string }>(
+    rows: T[],
+    t: LandingTranslationItem[] | undefined,
+  ): T[] =>
+    rows.map((row, i) => ({
+      ...row,
+      title: pickLanding(t?.[i]?.title, row.title),
+      description: pickLanding(t?.[i]?.description, row.description),
+    }));
+
+  return {
+    ...lp,
+    brand: pickLanding(tr.brand, lp.brand),
+    /**
+     * 줄 나눔은 언어마다 달라야 한다 — 한국어로 두 줄인 제목이 영어로는 세 줄이 되기도 한다.
+     * 그래서 여기만 **줄 배열을 통째로** 바꾼다(인덱스 짝짓기를 하지 않는 유일한 자리).
+     */
+    titleLines: tr.titleLines && tr.titleLines.some((l) => l.trim()) ? tr.titleLines : lp.titleLines,
+    subtitle: pickLanding(tr.subtitle, lp.subtitle),
+    venue: pickLanding(tr.venue, lp.venue),
+    ctaLabel: pickLanding(tr.ctaLabel, lp.ctaLabel),
+    intro: {
+      ...lp.intro,
+      title: pickLanding(tr.intro?.title, lp.intro.title),
+      body: pickLanding(tr.intro?.body, lp.intro.body),
+      titleMobile: pickLanding(tr.intro?.titleMobile, lp.intro.titleMobile),
+      bodyMobile: pickLanding(tr.intro?.bodyMobile, lp.intro.bodyMobile),
+    },
+    audience: {
+      ...lp.audience,
+      title: pickLanding(tr.audience?.title, lp.audience.title),
+      items: mergeItems(lp.audience.items, tr.audience?.items),
+    },
+    programs: { ...lp.programs, items: mergeItems(lp.programs.items, tr.programs?.items) },
+    highlights: {
+      ...lp.highlights,
+      title: pickLanding(tr.highlights?.title, lp.highlights.title),
+      items: mergeItems(lp.highlights.items, tr.highlights?.items),
+    },
+    join: {
+      ...lp.join,
+      steps: mergeItems(lp.join.steps, tr.join?.steps),
+      note: pickLanding(tr.join?.note, lp.join.note),
+    },
+    faq: {
+      ...lp.faq,
+      items: lp.faq.items.map((row, i) => ({
+        ...row,
+        category: pickLanding(tr.faq?.items?.[i]?.category, row.category),
+        question: pickLanding(tr.faq?.items?.[i]?.question, row.question),
+        answer: pickLanding(tr.faq?.items?.[i]?.answer, row.answer),
+      })),
+    },
+    sponsors: {
+      ...lp.sponsors,
+      title: pickLanding(tr.sponsors?.title, lp.sponsors.title),
+      // 회사 이름·로고·링크는 언어와 무관하다 — 분류(tier)만 바뀐다.
+      items: lp.sponsors.items.map((row, i) => ({
+        ...row,
+        tier: pickLanding(tr.sponsors?.items?.[i]?.tier, row.tier),
+      })),
+    },
+  };
+}
+
+/** 덮개에 글이 한 자라도 있나. 깊이가 얕아 재귀 없이 본다. */
+function landingTranslationHasText(tr: LandingPageTranslation): boolean {
+  const some = (...vals: Array<string | undefined>) => vals.some((v) => v && v.trim());
+  const someItems = (rows: LandingTranslationItem[] | undefined) =>
+    (rows ?? []).some((r) => some(r.title, r.description));
+  return (
+    some(
+      tr.brand,
+      tr.subtitle,
+      tr.venue,
+      tr.ctaLabel,
+      tr.join?.note,
+      tr.audience?.title,
+      tr.highlights?.title,
+      tr.sponsors?.title,
+    ) ||
+    (tr.titleLines ?? []).some((l) => l.trim() !== "") ||
+    some(tr.intro?.title, tr.intro?.body, tr.intro?.titleMobile, tr.intro?.bodyMobile) ||
+    someItems(tr.audience?.items) ||
+    someItems(tr.programs?.items) ||
+    someItems(tr.highlights?.items) ||
+    someItems(tr.join?.steps) ||
+    (tr.faq?.items ?? []).some((r) => some(r.category, r.question, r.answer)) ||
+    (tr.sponsors?.items ?? []).some((r) => some(r.tier))
+  );
+}
+
+/**
+ * **실제로 번역이 들어 있는** 언어들. 기본 언어가 맨 앞.
+ *
+ * 방문자 화면은 글이 있을 때만 바뀐다 — 빈 언어로 그리면 칸마다 원문으로 폴백해
+ * "바꿨는데 안 바뀐다" 가 되고, 운영자는 원인을 못 찾는다.
+ */
+export function landingTranslatedLocales(lp: LandingPageConfig): string[] {
+  const out = [lp.defaultLocale];
+  for (const [locale, tr] of Object.entries(lp.i18n)) {
+    if (locale === lp.defaultLocale || out.includes(locale)) continue;
+    if (landingTranslationHasText(tr)) out.push(locale);
+  }
+  return out;
+}
+
+/** 편집 화면 탭 — 열어 둔 언어 ∪ 글이 있는 언어. 기본 언어가 맨 앞. */
+export function landingEditableLocales(lp: LandingPageConfig): string[] {
+  const out = [lp.defaultLocale];
+  for (const l of [...lp.locales, ...landingTranslatedLocales(lp)]) {
+    if (l && l !== lp.defaultLocale && !out.includes(l)) out.push(l);
+  }
+  return out;
 }
 
 export const DEFAULT_REGISTRATION_FIELDS: WebinarRegistrationField[] = [
