@@ -1718,6 +1718,7 @@ export default function AdPerformanceDashboard({
           onClose={() => setShareOpen(false)}
           projectId={currentProject.id}
           projectName={currentProject.name}
+          currentRange={range}
         />
       )}
     </motion.div>

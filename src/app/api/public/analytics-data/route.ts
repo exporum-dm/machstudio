@@ -6,6 +6,7 @@ import { rateLimit } from "@/lib/ratelimit";
 import { dashboardCache } from "@/lib/cache";
 import { createHash } from "node:crypto";
 import { verifySharePassword } from "@/lib/share-password";
+import { parseShareRange, shareRangeDays, shareRangeLabel, shareRangeWindow } from "@/lib/share-range";
 import type { Prisma } from "@/generated/prisma";
 
 function clientIp(request: Request) {
@@ -75,6 +76,7 @@ export async function POST(request: Request) {
       workspaceId: true,
       analyticsShareEnabled: true,
       analyticsSharePasswordHash: true,
+      analyticsShareRange: true,
       deletedAt: true,
     },
   });
@@ -92,10 +94,17 @@ export async function POST(request: Request) {
     }
   }
 
-  // 고정: 최근 30일
-  const now = new Date();
-  const fromD = new Date(now.getTime() - 30 * 86400_000);
-  const toD = now;
+  /**
+   * 기간은 **운영자가 저장해 둔 것**을 쓴다. 공개 화면이 보낸 값을 받지 않는 이유는
+   * 링크를 받은 사람이 주소만 고쳐 열어 주지 않은 구간을 볼 수 있기 때문이다.
+   *
+   * 경계가 KST 달력일로 떨어지는 덕에 아래 캐시 키도 **하루 동안 같아진다** —
+   * 전에는 `now` 가 그대로 키에 들어가 매 요청이 캐시를 빗나갔다.
+   */
+  const shareRange = parseShareRange(project.analyticsShareRange);
+  const rangeWindow = shareRangeWindow(shareRange);
+  const fromD = rangeWindow.from;
+  const toD = rangeWindow.to;
 
   const campaignScope = projectAdCampaignScope(await prisma.adPerformanceFolder.findMany({ where: { projectId: project.id, workspaceId: project.workspaceId }, select: { id: true, mediaAccounts: true } }));
   const cacheKey = "pub-analytics:" + createHash("sha1")
@@ -211,7 +220,11 @@ export async function POST(request: Request) {
       dateGranularity: "day" as const,
       period: null as string | null,
     },
-    rangeDays: 30,
+    rangeDays: shareRangeDays(shareRange),
+    rangeKind: shareRange.kind,
+    rangeLabel: shareRangeLabel(shareRange),
+    rangeFrom: rangeWindow.fromDate,
+    rangeTo: rangeWindow.toDate,
   };
 
   dashboardCache.set(cacheKey, payload);
