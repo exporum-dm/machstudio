@@ -479,6 +479,7 @@ export default function LandingPageTab({
               baseLocale={landingForI18n.defaultLocale}
               onChange={applyLandingI18n}
               emptyHint="탭에서 히어로·소개·FAQ 를 먼저 채우면 여기에 그대로 나타나요."
+              draft={{ scope: "webinar", resourceId: webinar.id, subject: "웨비나 상세페이지(랜딩)" }}
             />
           ) : (
           <>
