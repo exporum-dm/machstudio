@@ -9,6 +9,7 @@
  *
  * 그래서 여기서는 **어느 칸이 왜 안 되는지**를 구조화해서 돌려준다.
  */
+import { FORM_LOCALES } from "@/lib/form-locale";
 import { EXPO_LIMITS, sectionDef } from "@/lib/expo/registry";
 import { isSid, normalizeCampaigns, normalizeDestinations } from "@/lib/expo/config";
 import { isSafePublicUrl } from "@/lib/expo/destination";
@@ -102,6 +103,10 @@ function validateV2Settings(src: Record<string, unknown>, errors: FieldError[]):
   }
   if (src.preset !== undefined && (typeof src.preset !== "string" || bytes(src.preset) > 128)) {
     errors.push({ path: "preset", code: typeof src.preset === "string" ? "too-long" : "invalid-shape", message: "프리셋 이름이 올바르지 않아요" });
+  }
+  if (src.locales !== undefined && (!Array.isArray(src.locales) || src.locales.length > FORM_LOCALES.length
+    || src.locales.some((locale) => !FORM_LOCALES.some(({ code }) => code === locale)))) {
+    errors.push({ path: "locales", code: "invalid-shape", message: "지원하는 번역 언어를 선택해 주세요." });
   }
   if (src.settings === undefined) return;
   if (!src.settings || typeof src.settings !== "object" || Array.isArray(src.settings)) {
@@ -233,6 +238,9 @@ function validateSlot(def: SlotDef, value: unknown, path: string, errors: FieldE
         path: `${path}.label`, code: "too-long",
         message: `${def.label} 이름은 ${EXPO_LIMITS.textChars}자까지 넣을 수 있어요 (지금 ${l.label.length}자)`,
       });
+    }
+    if (longestText(l.labelI18n).chars > EXPO_LIMITS.textChars) {
+      errors.push({ path: `${path}.labelI18n`, code: "too-long", message: `${def.label} 번역은 ${EXPO_LIMITS.textChars}자까지 넣을 수 있어요` });
     }
     // 내부 링크(`page:{id}`)의 상한 — 정규화의 마지막 남은 조용한 자르기다(config.ts).
     if (typeof l.href === "string" && l.href.startsWith("page:") && l.href.length > 200) {

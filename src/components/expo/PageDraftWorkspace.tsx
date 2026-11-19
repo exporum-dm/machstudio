@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConfirmProvider } from "@/components/ui/confirm-dialog";
-import { Field, FIELD_CLS, FINISH, R } from "@/components/ui/primitives";
+import { Field, FIELD_CLS, FINISH, R, btnCls } from "@/components/ui/primitives";
+import { FORM_LOCALES, formLocaleLabel } from "@/lib/form-locale";
+import { expoContentLocales, expoTranslationEntries } from "@/lib/expo/i18n";
+import { TranslationTable } from "@/components/form-builder/TranslationTable";
 import { ExpoPublishPanel } from "@/components/expo/ExpoPublishPanel";
 import { ExpoSectionTree, expoSectionTitle } from "@/components/expo/ExpoSectionTree";
 import { SelectedSectionEditor } from "@/components/expo/SectionEditor";
@@ -26,7 +29,7 @@ export interface PageDraftWorkspaceProps {
   /** 초안 상태가 필요한 페이지 탐색기는 렌더 함수로 받는다. */
   leftTop?: ReactNode | ((state: ExpoPageDraftState) => ReactNode);
   leftBottom?: ReactNode;
-  renderPreview?: (state: ExpoPageDraftState) => ReactNode;
+  renderPreview?: (state: ExpoPageDraftState, locale: string) => ReactNode;
   onSaved?: () => void;
 }
 
@@ -191,6 +194,10 @@ export function PageDraftWorkspace({
   const setSelectedSid = state.setSelectedSid;
   const previousSaveState = useRef(state.saveState);
   const editorRootRef = useRef<HTMLElement | null>(null);
+  const [editLocale, setEditLocale] = useState<string | null>(null);
+  const activeLocale = permissions.canEdit ? editLocale ?? locale : locale;
+  const translating = activeLocale !== locale;
+  const locales = [...new Set([...expoContentLocales(state.config.sections, locale), ...(state.config.locales ?? [])])];
   const [exportIssues, setExportIssues] = useState<FieldIssue[]>([]);
   const focusSequence = useRef(0);
   const [exportFocus, setExportFocus] = useState<{ issue: FieldIssue; sequence: number } | null>(null);
@@ -306,7 +313,7 @@ export function PageDraftWorkspace({
           selectedSid={state.selectedSid}
           onSelect={state.setSelectedSid}
           onChange={(sections) => state.updateConfig((current) => ({ ...current, sections }))}
-          canEdit={permissions.canEdit}
+          canEdit={permissions.canEdit && !translating}
           issues={allIssues}
         />
         {leftBottom}
@@ -336,6 +343,45 @@ export function PageDraftWorkspace({
           </div>
         ) : null}
 
+        {permissions.canEdit && (
+          <section className="flex flex-wrap items-center gap-2" aria-label="편집 언어">
+            {locales.map((code) => (
+              <button key={code} type="button" aria-pressed={activeLocale === code}
+                className={btnCls(activeLocale === code ? "key" : "quiet", "text-xs")}
+                onClick={() => setEditLocale(code === locale ? null : code)}>
+                {formLocaleLabel(code)}{code === locale ? " · 원문" : ""}
+              </button>
+            ))}
+            {FORM_LOCALES.some(({ code }) => !locales.includes(code)) && (
+              <select value="" aria-label="번역 언어 추가" className={FIELD_CLS}
+                onChange={(event) => {
+                  const code = event.target.value;
+                  if (!code) return;
+                  state.updateConfig((current) => ({ ...current, locales: [...(current.locales ?? []), code] }));
+                  setEditLocale(code);
+                }}>
+                <option value="">언어 추가</option>
+                {FORM_LOCALES.filter(({ code }) => !locales.includes(code)).map(({ code, label }) => (
+                  <option key={code} value={code}>{label}</option>
+                ))}
+              </select>
+            )}
+          </section>
+        )}
+        {translating ? (
+          selected ? (
+            <TranslationTable
+              key={`${selected.sid}:${activeLocale}`}
+              config={selected}
+              entries={expoTranslationEntries(selected, locale, activeLocale)}
+              locale={activeLocale}
+              baseLocale={locale}
+              onChange={replaceSection}
+              emptyHint="원문에서 구획 문구를 먼저 작성해 주세요."
+              draft={{ scope: "expo", resourceId: pageId, subject: "홈페이지" }}
+            />
+          ) : <p className="text-sm text-muted-foreground">번역할 구획을 선택해 주세요.</p>
+        ) : <>
         <section className="grid gap-3 sm:grid-cols-2" aria-label="페이지 설정">
           <label className="block">
             <span className="text-sm font-medium">페이지 제목</span>
@@ -397,10 +443,11 @@ export function PageDraftWorkspace({
         ) : (
           <p className="py-8 text-sm text-muted-foreground">왼쪽에서 구획을 골라 주세요.</p>
         )}
+        </>}
       </main>
 
       <div className="space-y-3">
-        {renderPreview?.(state) ?? (
+        {renderPreview?.(state, activeLocale) ?? (
           <LocalDraftPreview
             sections={state.config.sections}
             selectedSid={state.selectedSid}

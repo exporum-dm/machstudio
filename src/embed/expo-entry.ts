@@ -20,9 +20,13 @@
  * 홈페이지는 **여섯 번째 생성물**이다. 두 숫자가 다른 것은 착오가 아니다.
  */
 import { EXPO_PAGE_MOUNT_ATTR, EXPO_SECTION_MOUNT_ATTR } from "@/lib/expo/snippet";
+import { detectFormLocale } from "@/lib/form-locale";
 import { mountExpo, type ExpoMountHandle, type ExpoRuntimePayload } from "@/lib/expo/mount";
 
-export type ExpoBootConfig = ExpoRuntimePayload;
+export type ExpoBootConfig = ExpoRuntimePayload & {
+  defaultLocale?: string;
+  translations?: Record<string, ExpoRuntimePayload["sections"]>;
+};
 
 interface Instance {
   handle: ExpoMountHandle | null;
@@ -167,7 +171,12 @@ function render(instance: Instance, script: HTMLScriptElement | null): void {
     instance.warningTimer = null;
   }
   const previousHandle = instance.handle;
-  const nextHandle = mountExpo({ container, payload: instance.payload });
+  const { translations, defaultLocale, ...payload } = instance.payload;
+  if (translations && defaultLocale) {
+    const locale = detectFormLocale(container, [defaultLocale, ...Object.keys(translations)], defaultLocale);
+    payload.sections = translations[locale] ?? payload.sections;
+  }
+  const nextHandle = mountExpo({ container, payload });
   if (!nextHandle) {
     warn("마운트하지 못했습니다: " + instanceKey(instance.payload));
     return;

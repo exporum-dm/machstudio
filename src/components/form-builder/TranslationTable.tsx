@@ -15,7 +15,7 @@
  * 수집 빌더와 웨비나 등록 폼이 **같은 컴포넌트**를 쓴다 — 저장 구조는 다르지만 편집
  * 경험까지 두 벌이면 한쪽에만 들어가는 개선이 생긴다(`lib/translation-entry` 머리말).
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { FIELD_CLS, FINISH, R, btnCls } from "@/components/ui/primitives";
@@ -43,8 +43,14 @@ export function TranslationTable<TConfig>({
    * 번역 초안을 부를 자원. 안 주면 버튼이 안 나온다 — 자원을 모르면 서버가 소속을 검증할 수
    * 없고, 그 검증이 우리 모델 키를 지키는 유일한 선이다(api/translation-draft 머리말).
    */
-  draft?: { scope: "webinar" | "collect"; resourceId: string; subject: string };
+  draft?: { scope: "webinar" | "collect" | "competition" | "detail-page" | "expo"; resourceId: string; subject: string };
 }) {
+  const latest = useRef({ config, entries, locale, baseLocale, onChange });
+  const request = useRef<AbortController | null>(null);
+  useEffect(() => {
+    latest.current = { config, entries, locale, baseLocale, onChange };
+  }, [config, entries, locale, baseLocale, onChange]);
+  useEffect(() => () => request.current?.abort(), []);
   const { done, total } = translationProgress(entries);
   const [drafting, setDrafting] = useState(false);
   /**
@@ -69,10 +75,13 @@ export function TranslationTable<TConfig>({
       toast.info("빈 칸이 없어요 — 채울 곳이 없습니다");
       return;
     }
+    const controller = new AbortController();
+    request.current = controller;
     setDrafting(true);
     try {
       const res = await fetch("/api/translation-draft", {
         method: "POST",
+        signal: controller.signal,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           scope: draft.scope,
@@ -93,23 +102,28 @@ export function TranslationTable<TConfig>({
         toast.error("번역 초안이 비어 있어요 — 잠시 후 다시 시도해 주세요");
         return;
       }
-      let next = config;
+      const current = latest.current;
+      if (controller.signal.aborted || current.locale !== locale || current.baseLocale !== baseLocale) return;
+      const original = new Map(blanks.map((entry) => [entry.id, entry.base]));
+      let next = current.config;
       const filled: string[] = [];
-      for (const entry of blanks) {
+      for (const entry of current.entries) {
+        if (entry.value.trim() || original.get(entry.id) !== entry.base) continue;
         const text = byId.get(entry.id);
         if (!text) continue;
         next = entry.write(next, text);
         filled.push(entry.id);
       }
+      if (filled.length === 0) return;
       setDraftedIds((prev) => new Set([...prev, ...filled]));
-      onChange(next);
+      current.onChange(next);
       // 몇 칸이 남았는지 함께 알린다 — 모델이 일부를 빼먹어도 운영자가 바로 안다.
       const left = blanks.length - filled.length;
       toast.success(left ? `${filled.length}칸을 채웠어요 — ${left}칸은 남았습니다` : `${filled.length}칸을 채웠어요`);
     } catch {
-      toast.error("번역 초안을 받지 못했어요");
+      if (!controller.signal.aborted) toast.error("번역 초안을 받지 못했어요");
     } finally {
-      setDrafting(false);
+      if (!controller.signal.aborted) setDrafting(false);
     }
   };
 
@@ -138,7 +152,7 @@ export function TranslationTable<TConfig>({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
           원문 옆에 <b className="text-foreground">{formLocaleLabel(locale)}</b> 문구를 적어요. 비워 두면 그 칸만{" "}
           {formLocaleLabel(baseLocale)}로 나갑니다.
@@ -245,6 +259,7 @@ function TranslationRow<TConfig>({
         </div>
         {entry.multiline ? (
           <textarea
+            aria-label={entry.context}
             value={entry.value}
             onChange={(e) => set(e.target.value)}
             rows={Math.min(8, Math.max(3, entry.base.split("\n").length))}
@@ -253,6 +268,7 @@ function TranslationRow<TConfig>({
           />
         ) : (
           <input
+            aria-label={entry.context}
             value={entry.value}
             onChange={(e) => set(e.target.value)}
             placeholder={entry.base}

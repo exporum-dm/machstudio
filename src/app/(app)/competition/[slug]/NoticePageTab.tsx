@@ -6,6 +6,8 @@ import { ImagePlus, Loader2, Moon, Sun, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { FIELD_CLS, FINISH, R, btnCls } from "@/components/ui/primitives";
 import { BRAND_PRESETS, ColorField } from "@/components/ui/ColorField";
+import { TranslationTable } from "@/components/form-builder/TranslationTable";
+import { noticeEditableLocales, noticeTranslationEntries, remapNoticeNestedRows, remapNoticeRows } from "@/lib/notice/i18n";
 import { Switch } from "@/components/ui/switch";
 import {
   NOTICE_LANGUAGES,
@@ -49,6 +51,7 @@ export interface NoticeEditorHost {
   status: { phase: CompetitionPhase; canApply: boolean } | null;
   /** 대회 언어(읽기 전용 표시). 상세페이지는 null — 이 화면에서 고른다. */
   fixedLanguageLabel: string | null;
+  resourceId?: string;
   /** 상세페이지 전용 값. 대회는 null. */
   pageSettings: DetailPageSettings | null;
   /** 신청 폼 섹션에 고를 수 있는 사전등록(빌더형) 폼. 대회는 null — 그 섹션 자체가 안 보인다. */
@@ -111,6 +114,7 @@ export default function NoticePageTab({ competition, rounds, patch }: Props) {
   const status = resolveCompetitionStatus({ ...competition, rounds });
   const host: NoticeEditorHost = {
     kind: "competition",
+    resourceId: competition.id,
     config: competition.config as unknown as Record<string, unknown>,
     // 키컬러가 비어 있는 예전 대회가 있다. 렌더러 기본값(보라)을 채워 넣어야 색 칸이
     // "지금 실제로 나가는 색"을 보여 준다 — 빈 칸이면 무슨 색인지 알 수 없다.
@@ -161,27 +165,43 @@ export function NoticeEditor({ host }: { host: NoticeEditorHost }) {
    * 키컬러는 config 가 아니라 **theme** 에 있다(대회는 신청 폼·투표·결과가 함께 쓴다).
    * 저장 전에도 미리보기가 따라와야 하므로 여기서 편집 중인 값을 들고 있다가 함께 저장한다.
    */
+  const [editLocale, setEditLocale] = useState<string | null>(null);
+  const activeLocale = editLocale ?? np.language;
+  const locales = noticeEditableLocales(np.language, np.locales, np.i18n);
+  const translation = { np, i18n: np.i18n, locales: np.locales };
   const [theme, setTheme] = useState<Record<string, string>>(() => host.theme);
   const [pageSettings, setPageSettings] = useState<DetailPageSettings | null>(() => host.pageSettings);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const revision = useRef(0);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const update = (patchNp: Partial<NoticePageConfig>) => {
     setNp((prev) => ({ ...prev, ...patchNp }));
+    revision.current += 1;
     setDirty(true);
+  };
+  const reorder = (key: NoticeSectionKey | "hero", rows: unknown[], nextRows: unknown[]) => {
+    const indices = mapRowIndices(rows, nextRows);
+    update({ i18n: remapNoticeRows(np.i18n, key, indices) });
   };
   const updateTheme = (patchTheme: Record<string, string>) => {
     setTheme((prev) => ({ ...prev, ...patchTheme }));
+    revision.current += 1;
     setDirty(true);
   };
   const updatePage = (patchSettings: Partial<DetailPageSettings>) => {
     setPageSettings((prev) => (prev ? { ...prev, ...patchSettings } : prev));
+    revision.current += 1;
     setDirty(true);
   };
   const section = <K extends NoticeSectionKey>(key: K, patchSection: Partial<NoticePageConfig[K]>) =>
     update({ [key]: { ...np[key], ...patchSection } } as Partial<NoticePageConfig>);
+  const changeRows = <K extends NoticeSectionKey>(key: K, field: keyof NoticePageConfig[K], rows: unknown[], next: unknown[]) => {
+    section(key, { [field]: next } as Partial<NoticePageConfig[K]>);
+    reorder(key, rows, next);
+  };
   /** 배경을 빼면 키 자체를 지운다 — 빈 값이 남으면 "켰는데 안 보이는" 상태가 생긴다. */
   const setSectionMedia = (key: NoticeBgKey, value: BackgroundValue | null) => {
     const next = { ...np.sectionMedia };
@@ -229,9 +249,10 @@ export function NoticeEditor({ host }: { host: NoticeEditorHost }) {
 
   const save = async () => {
     setSaving(true);
+    const savedRevision = revision.current;
     try {
       const ok = await host.save({ config: nextConfig(), theme });
-      if (ok) setDirty(false);
+      if (ok && revision.current === savedRevision) setDirty(false);
     } finally {
       setSaving(false);
     }
@@ -269,6 +290,46 @@ export function NoticeEditor({ host }: { host: NoticeEditorHost }) {
       {/* min-w-0 — 그리드 항목은 기본이 min-width:auto 라 안쪽 내용이 칸보다 넓으면
           줄어들지 않고 그대로 삐져나간다(모바일에서 가로 스크롤이 생긴 원인). */}
       <div className="min-w-0 space-y-3">
+        <section aria-label="편집 언어" className="flex flex-wrap items-center gap-2">
+          {locales.map((locale) => (
+            <button key={locale} type="button" aria-pressed={activeLocale === locale}
+              className={btnCls(activeLocale === locale ? "key" : "quiet", "text-xs")}
+              onClick={() => setEditLocale(locale === np.language ? null : locale)}>
+              {NOTICE_LANGUAGES.find(({ value }) => value === locale)?.label ?? locale}
+              {locale === np.language ? " · 원문" : ""}
+            </button>
+          ))}
+          {NOTICE_LANGUAGES.some(({ value }) => !locales.includes(value)) && (
+            <select aria-label="번역 언어 추가" className={FIELD_CLS} value=""
+              onChange={(event) => {
+                const locale = event.target.value;
+                if (!locale) return;
+                update({ locales: [...np.locales, locale] });
+                setEditLocale(locale);
+              }}>
+              <option value="">언어 추가</option>
+              {NOTICE_LANGUAGES.filter(({ value }) => !locales.includes(value)).map(({ value, label }) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          )}
+        </section>
+        {activeLocale !== np.language ? (
+          <TranslationTable
+            key={activeLocale}
+            config={translation}
+            entries={noticeTranslationEntries(translation, activeLocale)}
+            locale={activeLocale}
+            baseLocale={np.language}
+            onChange={(next) => update({ i18n: next.i18n })}
+            emptyHint="원문에서 제목이나 본문을 작성하면 번역할 문구가 여기에 표시돼요."
+            draft={host.resourceId ? {
+              scope: isPage ? "detail-page" : "competition",
+              resourceId: host.resourceId,
+              subject: isPage ? "상세페이지" : "대회 공고",
+            } : undefined}
+          />
+        ) : <>
         {/* ── 공개 · 색 ────────────────────────────────────────── */}
         <section className={`bg-background p-5 ${R.panel} ${FINISH.s1}`}>
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -392,7 +453,10 @@ export function NoticeEditor({ host }: { host: NoticeEditorHost }) {
                 {NOTICE_LANGUAGES.map((l) => (
                   <button
                     key={l.value}
-                    onClick={() => update({ language: l.value })}
+                    onClick={() => {
+                      update({ language: l.value });
+                      setEditLocale(null);
+                    }}
                     className={`px-2.5 py-1.5 text-[11px] font-medium transition-colors ${R.control} ${
                       np.language === l.value ? "bg-foreground text-background" : "bg-secondary text-muted-foreground hover:text-foreground"
                     }`}
@@ -400,7 +464,7 @@ export function NoticeEditor({ host }: { host: NoticeEditorHost }) {
                     {l.label}
                   </button>
                 ))}
-                <span className="text-[11px] text-muted-foreground">직접 쓴 글은 그대로, 자동 문구(카운트다운 등)만 바뀌어요</span>
+                <span className="text-[11px] text-muted-foreground">원문을 작성한 언어를 선택하세요.</span>
               </>
             )}
           </div>
@@ -618,8 +682,16 @@ export function NoticeEditor({ host }: { host: NoticeEditorHost }) {
               <span className="text-xs font-medium text-muted-foreground">하단 팩트 — 결선일·장소·정원 같은 것</span>
               {np.hero.facts.map((fact, index) => (
                 <Row key={index} index={index} count={np.hero.facts.length}
-                  onMove={(from, to) => update({ hero: { ...np.hero, facts: moveItem(np.hero.facts, from, to) } })}
-                  onRemove={(i) => update({ hero: { ...np.hero, facts: np.hero.facts.filter((_, x) => x !== i) } })}>
+                  onMove={(from, to) => {
+                    const facts = moveItem(np.hero.facts, from, to);
+                    update({ hero: { ...np.hero, facts } });
+                    reorder("hero", np.hero.facts, facts);
+                  }}
+                  onRemove={(i) => {
+                    const facts = np.hero.facts.filter((_, x) => x !== i);
+                    update({ hero: { ...np.hero, facts } });
+                    reorder("hero", np.hero.facts, facts);
+                  }}>
                   <div className="grid gap-1.5 sm:grid-cols-[120px_1fr]">
                     <input value={fact.label} placeholder="라벨" className={`${FIELD_CLS} h-8`}
                       onChange={(e) => { const facts = [...np.hero.facts]; facts[index] = { ...fact, label: e.target.value }; update({ hero: { ...np.hero, facts } }); }} />
@@ -663,6 +735,9 @@ export function NoticeEditor({ host }: { host: NoticeEditorHost }) {
             />
             <SectionBody
               sectionKey={key}
+              remapEligibility={(indices) => update({ i18n: remapNoticeRows(np.i18n, "eligibility", indices) })}
+              changeRows={changeRows}
+              changeNestedRows={(key, index, indices) => update({ i18n: remapNoticeNestedRows(np.i18n, key, index, indices) })}
               np={np}
               section={section}
               rounds={rounds}
@@ -674,6 +749,7 @@ export function NoticeEditor({ host }: { host: NoticeEditorHost }) {
           );
         })}
 
+        </>}
         <div className="flex items-center justify-end gap-3">
           {dirty && <span className="text-[11px] text-muted-foreground">저장하지 않은 변경이 있어요</span>}
           <motion.button whileTap={{ scale: 0.96 }} onClick={save} disabled={saving || !dirty}
@@ -684,10 +760,28 @@ export function NoticeEditor({ host }: { host: NoticeEditorHost }) {
       </div>
 
       <div className="min-w-0 xl:sticky xl:top-6 xl:self-start">
-        <NoticePreviewPane competition={previewCompetition} config={previewConfig} />
+        <NoticePreviewPane competition={previewCompetition} config={previewConfig} locale={activeLocale} />
       </div>
     </div>
   );
+}
+
+function mapRowIndices(previous: unknown[], next: unknown[]): number[] {
+  const remaining = new Set(previous.keys());
+  return next.map((row) => {
+    const index = [...remaining].find((i) => previous[i] === row);
+    if (index === undefined) return -1;
+    remaining.delete(index);
+    return index;
+  });
+}
+
+function mapEditedLines(previous: string[], next: string[]): number[] {
+  const indices = mapRowIndices(previous, next);
+  if (previous.length !== next.length || indices.every((index) => index >= 0)) return indices;
+  const used = new Set(indices);
+  const remaining = [...previous.keys()].filter((index) => !used.has(index));
+  return indices.map((index) => index >= 0 ? index : remaining.shift() ?? -1);
 }
 
 /** ISO → datetime-local 입력값(브라우저 현지 시각). */
@@ -700,6 +794,9 @@ function toLocalInputValue(iso: string): string {
 /** 섹션별 본문 편집. 스위치 하나에 몰아 두면 카드 쪽이 읽기 어려워져 분리했다. */
 function SectionBody({
   sectionKey,
+  changeRows,
+  changeNestedRows,
+  remapEligibility,
   np,
   section,
   rounds: hostRounds,
@@ -708,6 +805,9 @@ function SectionBody({
   formSources,
 }: {
   sectionKey: NoticeSectionKey;
+  remapEligibility: (indices: number[]) => void;
+  changeNestedRows: (key: "apply" | "selection", index: number, indices: number[]) => void;
+  changeRows: <K extends NoticeSectionKey>(key: K, field: keyof NoticePageConfig[K], rows: unknown[], next: unknown[]) => void;
   np: NoticePageConfig;
   section: <K extends NoticeSectionKey>(key: K, patch: Partial<NoticePageConfig[K]>) => void;
   /** null = 상세페이지 — 라운드가 없으니 선발 방식·심사 기준은 직접 입력만 연다. */
@@ -900,8 +1000,8 @@ function SectionBody({
         {head("snapshot", false)}
         {items.map((item, index) => (
           <Row key={index} index={index} count={items.length}
-            onMove={(from, to) => section("snapshot", { items: moveItem(items, from, to) })}
-            onRemove={(i) => section("snapshot", { items: items.filter((_, x) => x !== i) })}>
+            onMove={(from, to) => changeRows("snapshot", "items", items, moveItem(items, from, to))}
+            onRemove={(i) => changeRows("snapshot", "items", items, items.filter((_, x) => x !== i))}>
             <div className="grid gap-1.5 sm:grid-cols-[130px_1fr]">
               <input value={item.label} placeholder="라벨" className={`${FIELD_CLS} h-8`}
                 onChange={(e) => { const next = [...items]; next[index] = { ...item, label: e.target.value }; section("snapshot", { items: next }); }} />
@@ -924,8 +1024,8 @@ function SectionBody({
         {head("timeline")}
         {items.map((item, index) => (
           <Row key={index} index={index} count={items.length}
-            onMove={(from, to) => section("timeline", { items: moveItem(items, from, to) })}
-            onRemove={(i) => section("timeline", { items: items.filter((_, x) => x !== i) })}>
+            onMove={(from, to) => changeRows("timeline", "items", items, moveItem(items, from, to))}
+            onRemove={(i) => changeRows("timeline", "items", items, items.filter((_, x) => x !== i))}>
             <div className="grid gap-1.5 sm:grid-cols-[140px_1fr]">
               <input value={item.date} placeholder="날짜" className={`${FIELD_CLS} h-8`}
                 onChange={(e) => { const next = [...items]; next[index] = { ...item, date: e.target.value }; section("timeline", { items: next }); }} />
@@ -953,13 +1053,19 @@ function SectionBody({
         {head("apply")}
         {items.map((item, index) => (
           <Row key={index} index={index} count={items.length}
-            onMove={(from, to) => section("apply", { items: moveItem(items, from, to) })}
-            onRemove={(i) => section("apply", { items: items.filter((_, x) => x !== i) })}>
+            onMove={(from, to) => changeRows("apply", "items", items, moveItem(items, from, to))}
+            onRemove={(i) => changeRows("apply", "items", items, items.filter((_, x) => x !== i))}>
             <input value={item.title} placeholder="카드 제목" className={`${FIELD_CLS} h-8`}
               onChange={(e) => { const next = [...items]; next[index] = { ...item, title: e.target.value }; section("apply", { items: next }); }} />
             <textarea value={item.items.join("\n")} rows={3} placeholder="준비물 — 한 줄에 하나"
               className={`${FIELD_CLS} h-auto py-2 text-xs`}
-              onChange={(e) => { const next = [...items]; next[index] = { ...item, items: e.target.value.split("\n") }; section("apply", { items: next }); }} />
+              onChange={(e) => {
+                const lines = e.target.value.split("\n");
+                const next = [...items];
+                next[index] = { ...item, items: lines };
+                section("apply", { items: next });
+                changeNestedRows("apply", index, mapEditedLines(item.items, lines));
+              }} />
           </Row>
         ))}
         <AddRow label="카드 추가" onClick={() => section("apply", { items: [...items, { title: "", items: [""] }] })} />
@@ -973,7 +1079,11 @@ function SectionBody({
         {head("eligibility", false)}
         <textarea value={np.eligibility.items.join("\n")} rows={6} placeholder="자격 요건 — 한 줄에 하나"
           className={`${FIELD_CLS} h-auto py-2`}
-          onChange={(e) => section("eligibility", { items: e.target.value.split("\n") })} />
+          onChange={(e) => {
+            const lines = e.target.value.split("\n");
+            section("eligibility", { items: lines });
+            remapEligibility(mapEditedLines(np.eligibility.items, lines));
+          }} />
       </>
     );
   }
@@ -1004,8 +1114,8 @@ function SectionBody({
             />}
             {s.rounds.map((round, index) => (
               <Row key={index} index={index} count={s.rounds.length}
-                onMove={(from, to) => section("selection", { rounds: moveItem(s.rounds, from, to) })}
-                onRemove={(i) => section("selection", { rounds: s.rounds.filter((_, n) => n !== i) })}>
+                onMove={(from, to) => changeRows("selection", "rounds", s.rounds, moveItem(s.rounds, from, to))}
+                onRemove={(i) => changeRows("selection", "rounds", s.rounds, s.rounds.filter((_, n) => n !== i))}>
                 <input value={round.title} placeholder="라운드 이름 (예: Preliminary)"
                   className={`${FIELD_CLS} h-8`}
                   onChange={(e) => section("selection", { rounds: patchAt(s.rounds, index, { title: e.target.value }) })} />
@@ -1030,9 +1140,11 @@ function SectionBody({
                     </div>
                     <span className="w-3 shrink-0 text-[11px] text-muted-foreground">%</span>
                     <button aria-label="비율 삭제" className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-red-500"
-                      onClick={() => section("selection", {
-                        rounds: patchAt(s.rounds, index, { bars: round.bars.filter((_, n) => n !== barIndex) }),
-                      })}>
+                      onClick={() => {
+                        const bars = round.bars.filter((_, n) => n !== barIndex);
+                        section("selection", { rounds: patchAt(s.rounds, index, { bars }) });
+                        changeNestedRows("selection", index, mapRowIndices(round.bars, bars));
+                      }}>
                       <Trash2 className="h-3 w-3" />
                     </button>
                   </div>
@@ -1075,8 +1187,8 @@ function SectionBody({
             />}
             {c.items.map((item, index) => (
               <Row key={index} index={index} count={c.items.length}
-                onMove={(from, to) => section("criteria", { items: moveItem(c.items, from, to) })}
-                onRemove={(i) => section("criteria", { items: c.items.filter((_, n) => n !== i) })}>
+                onMove={(from, to) => changeRows("criteria", "items", c.items, moveItem(c.items, from, to))}
+                onRemove={(i) => changeRows("criteria", "items", c.items, c.items.filter((_, n) => n !== i))}>
                 <div className="flex items-start gap-1.5">
                   <div className="min-w-0 flex-1">
                     <input value={item.name} placeholder="제목 (예: Creativity)" className={`${FIELD_CLS} h-8`}
@@ -1107,8 +1219,8 @@ function SectionBody({
         {head("prizes", false)}
         {items.map((item, index) => (
           <Row key={index} index={index} count={items.length}
-            onMove={(from, to) => section("prizes", { items: moveItem(items, from, to) })}
-            onRemove={(i) => section("prizes", { items: items.filter((_, x) => x !== i) })}>
+            onMove={(from, to) => changeRows("prizes", "items", items, moveItem(items, from, to))}
+            onRemove={(i) => changeRows("prizes", "items", items, items.filter((_, x) => x !== i))}>
             <div className="grid gap-1.5 sm:grid-cols-[110px_1fr_100px]">
               <input value={item.rank} placeholder="등수" className={`${FIELD_CLS} h-8`}
                 onChange={(e) => { const next = [...items]; next[index] = { ...item, rank: e.target.value }; section("prizes", { items: next }); }} />
@@ -1161,8 +1273,8 @@ function SectionBody({
         {head("faq", false)}
         {items.map((item, index) => (
           <Row key={index} index={index} count={items.length}
-            onMove={(from, to) => section("faq", { items: moveItem(items, from, to) })}
-            onRemove={(i) => section("faq", { items: items.filter((_, x) => x !== i) })}>
+            onMove={(from, to) => changeRows("faq", "items", items, moveItem(items, from, to))}
+            onRemove={(i) => changeRows("faq", "items", items, items.filter((_, x) => x !== i))}>
             <input value={item.question} placeholder="질문" className={`${FIELD_CLS} h-8`}
               onChange={(e) => { const next = [...items]; next[index] = { ...item, question: e.target.value }; section("faq", { items: next }); }} />
             <textarea value={item.answer} rows={2} placeholder="답변" className={`${FIELD_CLS} h-auto py-2 text-xs`}
@@ -1180,8 +1292,8 @@ function SectionBody({
       {head("sponsors", false)}
       {items.map((item, index) => (
         <Row key={index} index={index} count={items.length}
-          onMove={(from, to) => section("sponsors", { items: moveItem(items, from, to) })}
-          onRemove={(i) => section("sponsors", { items: items.filter((_, x) => x !== i) })}>
+          onMove={(from, to) => changeRows("sponsors", "items", items, moveItem(items, from, to))}
+          onRemove={(i) => changeRows("sponsors", "items", items, items.filter((_, x) => x !== i))}>
           <div className="grid gap-1.5 sm:grid-cols-[100px_1fr]">
             <input value={item.tier} placeholder="구분" className={`${FIELD_CLS} h-8`}
               onChange={(e) => { const next = [...items]; next[index] = { ...item, tier: e.target.value }; section("sponsors", { items: next }); }} />

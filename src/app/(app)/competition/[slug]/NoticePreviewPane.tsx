@@ -20,9 +20,11 @@ import type { NoticeCompetition } from "@/lib/notice/types";
 export default function NoticePreviewPane({
   competition,
   config,
+  locale,
 }: {
   competition: NoticeCompetition;
   config: unknown;
+  locale?: string;
 }) {
   const onMount = useCallback(
     (doc: Document) => {
@@ -30,6 +32,7 @@ export default function NoticePreviewPane({
         mount: doc.body,
         competition,
         config,
+        locale,
         embedded: false,
         isPreview: true,
         // 미리보기에서 신청을 눌러도 아무 일도 없어야 한다 — 여기서 참가작이 생기면 안 된다.
@@ -39,7 +42,7 @@ export default function NoticePreviewPane({
       });
       return () => handle.destroy();
     },
-    [competition, config],
+    [competition, config, locale],
   );
 
   return <PreviewFrame title="미리보기" onMount={onMount} note="편집 중인 내용이 저장 전에도 바로 보여요" />;

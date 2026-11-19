@@ -353,7 +353,7 @@ function EditorBody({ siteId, siteName, permissions, release, previewOrigin }: E
             /> : null}
             {permissions.canEdit ? <ExpoTemplateSave siteId={siteId} siteName={site.name} /> : null}
           </>}
-          renderPreview={(draft) => {
+          renderPreview={(draft, locale) => {
             const page = draft.page;
             const info: PageStatus | null = page ? {
               pageId: page.id,
@@ -369,6 +369,7 @@ function EditorBody({ siteId, siteName, permissions, release, previewOrigin }: E
             return <PreviewPane
               key={selected.id}
               previewToken={site.previewToken}
+              locale={locale}
               pageId={selected.id}
               release={release}
               info={info}
@@ -432,9 +433,10 @@ function Shell({
  * 순간 허가가 저절로 낡는다(`code-digest.ts`). 허가는 저장하지 않는다.
  */
 function PreviewPane({
-  previewToken, pageId, release, info, theme, previewOrigin, onSelectSection,
+  previewToken, pageId, release, info, theme, previewOrigin, onSelectSection, locale,
 }: {
   previewToken: string | null;
+  locale: string;
   pageId: string | null;
   release: ExpoRelease;
   info: PageStatus | null;
@@ -490,7 +492,7 @@ function PreviewPane({
      * 먼저 그려 봐야 발행 여부도 지문도 모르는 채로 한 번 부르고 곧바로 다시 부른다.
      */
     if (!previewToken || !pageId || !own) return null;
-    const query = new URLSearchParams({ page: pageId });
+    const query = new URLSearchParams({ page: pageId, lang: locale });
     if (wantPublished) query.set("published", "1");
     if (campaignMode !== "current") query.set("campaignState", campaignMode);
     if (codeApproved) {
@@ -513,7 +515,7 @@ function PreviewPane({
     }
     query.set("channel", channel);
     return `/hp/${encodeURIComponent(previewToken)}?${query.toString()}`;
-  }, [previewToken, pageId, own, wantPublished, campaignMode, codeApproved, digest, channel, initialTheme]);
+  }, [previewToken, pageId, own, wantPublished, campaignMode, codeApproved, digest, channel, initialTheme, locale]);
 
   if (!src) {
     return (

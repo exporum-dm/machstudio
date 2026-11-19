@@ -9,21 +9,27 @@ const LOCALE_KEY = /^[a-z]{2}(-[A-Z]{2})?$/;
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-function isLocalized(value: Record<string, unknown>): value is Localized {
+export function isLocalized(value: unknown): value is Localized {
+  if (!isRecord(value)) return false;
   const entries = Object.entries(value);
   return entries.length > 0
     && entries.every(([key, item]) => LOCALE_KEY.test(key) && typeof item === "string");
 }
 
+export function resolveLocalizedText(value: Localized, locale: string, fallback?: string): string {
+  const own = (code: string) => Object.hasOwn(value, code) ? value[code] : undefined;
+  return own(locale) || (fallback && own(fallback)) || localize(value, locale);
+}
+
 /** 로케일 맵만 문자열로 고르고 배열·미디어·crop·design 등 나머지 JSON 모양은 보존한다. */
-export function resolvePluginContent(value: unknown, locale: string): unknown {
-  if (Array.isArray(value)) return value.map((item) => resolvePluginContent(item, locale));
+export function resolvePluginContent(value: unknown, locale: string, fallback?: string): unknown {
+  if (Array.isArray(value)) return value.map((item) => resolvePluginContent(item, locale, fallback));
   if (!isRecord(value)) return value;
-  if (isLocalized(value)) return localize(value, locale);
+  if (isLocalized(value)) return resolveLocalizedText(value, locale, fallback);
 
   const out: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) {
-    const resolved = resolvePluginContent(item, locale);
+    const resolved = resolvePluginContent(item, locale, fallback);
     if (resolved !== undefined && typeof resolved !== "function" && typeof resolved !== "symbol") {
       out[key] = resolved;
     }

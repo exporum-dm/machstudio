@@ -127,6 +127,7 @@ export function formSourceHash(root) {
 export function expoSourceFiles(root) {
   return ([
     join(root, "src/embed/expo-entry.ts"),
+    join(root, "src/lib/form-locale.ts"),
     // 런타임 경로
     join(root, "src/lib/expo/mount.ts"),
     join(root, "src/lib/expo/shadow.ts"),
@@ -262,6 +263,8 @@ export function competitionSourceFiles(root) {
     join(root, "src/lib/landing/overlay.ts"),
     join(root, "src/lib/notice/build-model.ts"),
     join(root, "src/lib/notice/config.ts"),
+    join(root, "src/lib/notice/i18n.ts"),
+    join(root, "src/lib/form-locale.ts"),
     join(root, "src/lib/notice/css.ts"),
     join(root, "src/lib/notice/media-focus.ts"),
     join(root, "src/lib/notice/mount.ts"),
@@ -299,6 +302,8 @@ export function detailPageSourceFiles(root) {
     join(root, "src/lib/landing/overlay.ts"),
     join(root, "src/lib/notice/build-model.ts"),
     join(root, "src/lib/notice/config.ts"),
+    join(root, "src/lib/notice/i18n.ts"),
+    join(root, "src/lib/form-locale.ts"),
     join(root, "src/lib/notice/css.ts"),
     join(root, "src/lib/notice/media-focus.ts"),
     join(root, "src/lib/notice/mount.ts"),

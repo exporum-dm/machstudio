@@ -15,6 +15,7 @@
  * 이 함수의 자르기는 **이미 저장된** 값에 대한 방어다. 새로 들어오는 쓰기는 라우트가
  * 구조화된 오류로 **거절**해야 한다 — 운영자가 입력한 것을 말없이 잘라 저장하면 안 된다.
  */
+import { FORM_LOCALES } from "@/lib/form-locale";
 import { toLocalized, type Localized } from "@/lib/collect-form-config";
 import { safeHttpUrl } from "@/lib/webinar-config";
 import { normalizeHexColor } from "@/lib/color";
@@ -118,7 +119,8 @@ function normalizeSlot(def: SlotDef, raw: unknown): unknown {
       const href = rawHref.startsWith("page:") ? rawHref.slice(0, 200) : safeHttpUrl(rawHref);
       const label = str(l.label).slice(0, EXPO_LIMITS.textChars);
       if (!label && !href) return undefined;
-      return { label, href };
+      const labelI18n = normalizeLocalizedText(l.labelI18n, EXPO_LIMITS.textChars);
+      return { label, href, ...(labelI18n ? { labelI18n } : {}) };
     }
 
     case "sourceRef": {
@@ -314,8 +316,12 @@ export function normalizeExpoPage(raw: unknown): ExpoPageConfigV2 {
   const preset = typeof src.preset === "string" && src.preset.trim()
     ? clampBytes(src.preset.trim(), 128)
     : undefined;
+  const locales = FORM_LOCALES.map(({ code }) => code).filter((code) =>
+    Array.isArray(src.locales) && src.locales.includes(code),
+  );
   return {
     schemaVersion: 2,
+    ...(locales.length ? { locales } : {}),
     ...(preset ? { preset } : {}),
     ...(Object.keys(settings).length ? { settings } : {}),
     sections: [...pinned, ...rest],

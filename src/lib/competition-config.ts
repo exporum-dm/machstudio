@@ -331,6 +331,7 @@ export function normalizeCompetitionConfig(
     : DEFAULT_COMPETITION_FIELDS;
 
   const notice = normalizeNoticePageConfig(source, { keepEmptyRows: options.includeDisabled });
+  if (isNoticeLanguage(source.language)) notice.language = source.language;
 
   const legalRaw = (source.legal && typeof source.legal === "object" ? source.legal : {}) as Record<string, unknown>;
   const thirdPartiesRaw = Array.isArray(legalRaw.thirdParties) ? legalRaw.thirdParties : [];

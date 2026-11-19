@@ -146,6 +146,9 @@ export function webinarTranslationEntries(
     ...(form.privacyBodyMode === "text" ? [["privacyBody", "동의", "개인정보 동의 전문", true] as TopSlot] : []),
     ["marketingText", "동의", "마케팅 동의 문구", false],
     ...(form.marketingBodyMode === "text" ? [["marketingBody", "동의", "마케팅 동의 전문", true] as TopSlot] : []),
+    ...(form.thirdPartyEnabled ? [["thirdPartyText", "동의", "제3자 제공 동의 문구", false] as TopSlot] : []),
+    ...(form.thirdPartyEnabled && form.thirdPartyBodyMode === "text"
+      ? [["thirdPartyBody", "동의", "제3자 제공 동의 전문", true] as TopSlot] : []),
     ["submitLabel", "버튼", "제출 버튼", false],
     ...(form.successCta.enabled ? [["successCtaLabel", "버튼", "완료 화면 추가 버튼", false] as TopSlot] : []),
   ];

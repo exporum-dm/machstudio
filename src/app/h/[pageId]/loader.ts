@@ -30,6 +30,8 @@ import { getExpoCapabilities, isExpoPublicEmbedReleaseEnabled } from "@/lib/expo
 import { probeExpoSchema } from "@/lib/expo/schema-probe";
 import { getRequiredExpoPublicOrigin } from "@/lib/expo/origin";
 import { normalizeExpoTheme } from "@/lib/expo/config";
+import { normalizeLocaleTag, parseLocaleSignalParam, resolveLocaleFromRawSignals } from "@/lib/form-locale";
+import { expoContentLocales } from "@/lib/expo/i18n";
 import { hasContent } from "@/lib/expo/model";
 import { buildExpoPayload, collectInternalPageIds, collectSourceRefs } from "@/lib/expo/payload";
 import { normalizeExpoPage } from "@/lib/expo/config";
@@ -142,7 +144,8 @@ export async function serveExpoRuntime(req: Request, target: LoaderTarget): Prom
   }
 
   const theme = normalizeExpoTheme(row.site.theme);
-  const locale = row.site.defaultLocale || "ko";
+  const defaultLocale = row.site.defaultLocale || "ko";
+  const search = new URL(req.url).searchParams;
 
   /**
    * 무엇을 그릴지 고른다.
@@ -165,6 +168,7 @@ export async function serveExpoRuntime(req: Request, target: LoaderTarget): Prom
     connectionOnly = true;
   }
 
+  let translations: Record<string, ReturnType<typeof buildExpoPayload>["sections"]> | undefined;
   let resolvedPayload: ReturnType<typeof buildExpoPayload> | null = null;
   if (!connectionOnly && sections.length > 0) {
     /**
@@ -209,7 +213,22 @@ export async function serveExpoRuntime(req: Request, target: LoaderTarget): Prom
       return { ...section, content: { ...section.content, sourceRef: "" } };
     });
 
-    resolvedPayload = buildExpoPayload({ ...publishedConfig, sections: safe }, { locale, pages: siblings, now: new Date() });
+    const available = expoContentLocales(safe, defaultLocale);
+    const forced = search.has("hl") || search.has("lang");
+    const locale = resolveLocaleFromRawSignals(
+      [...parseLocaleSignalParam(search.get("hl")), normalizeLocaleTag(search.get("lang"))],
+      available,
+      defaultLocale,
+    );
+    const config = { ...publishedConfig, sections: safe };
+    const context = { defaultLocale, pages: siblings, now: new Date() };
+    resolvedPayload = buildExpoPayload(config, { ...context, locale });
+    // A single cached script can select a host language without a second loader request.
+    if (!forced && available.length > 1) {
+      translations = Object.fromEntries(available
+        .filter((code) => code !== defaultLocale)
+        .map((code) => [code, buildExpoPayload(config, { ...context, locale: code }).sections]));
+    }
   }
 
   const payload = {
@@ -223,6 +242,7 @@ export async function serveExpoRuntime(req: Request, target: LoaderTarget): Prom
     campaigns: resolvedPayload?.campaigns ?? [],
     destinations: resolvedPayload?.destinations ?? [],
     ...(connectionOnly ? { connectionOnly: true } : {}),
+    ...(translations ? { translations, defaultLocale } : {}),
   };
 
   const canonicalPayload = jsonForScript(payload);
