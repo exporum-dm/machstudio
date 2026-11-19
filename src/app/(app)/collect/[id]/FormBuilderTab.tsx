@@ -164,6 +164,7 @@ export default function FormBuilderTab({
             baseLocale={config.defaultLocale}
             onChange={setConfig}
             emptyHint="탭에서 항목·안내·동의를 먼저 채우면 여기에 그대로 나타나요."
+            draft={{ scope: "collect", resourceId: sourceId, subject: "행사 등록 폼" }}
           />
         ) : (
         <>

@@ -749,6 +749,7 @@ export default function RegistrationFormTab({ webinar, onSilentUpdate, confirmLi
             baseLocale={baseLocale}
             onChange={applyI18n}
             emptyHint="탭에서 항목·동의 문구를 먼저 채우면 여기에 그대로 나타나요."
+            draft={{ scope: "webinar", resourceId: webinar.id, subject: "웨비나 사전등록 폼" }}
           />
         ) : (
         <>
