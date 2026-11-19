@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, use } from "react";
-import { BarChart3, Loader2, Lock } from "lucide-react";
+import { BarChart3, CalendarDays, Loader2, Lock } from "lucide-react";
 import { formatKstDateTime } from "@/lib/datetime";
 
 interface PublicProject {
@@ -55,6 +55,10 @@ interface AnalyticsData {
   campaignSummary: CampaignRow[];
   dailyTrend: DailyPoint[];
   rangeDays: number;
+  /** 서버가 정한 집계 기간 — 운영자가 공유 모달에서 고른 값이다(src/lib/share-range.ts). */
+  rangeLabel?: string;
+  rangeFrom?: string;
+  rangeTo?: string;
 }
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -209,7 +213,16 @@ export default function AnalyticsSharePage({ params }: { params: Promise<{ token
           <div>
             <p className="text-xs text-muted-foreground">{project.workspaceName} · {project.name}</p>
             <h1 className="text-2xl font-semibold mt-1">광고 성과</h1>
-            <p className="text-xs text-muted-foreground mt-1">최근 30일 요약 · 공유 보기 · 읽기 전용</p>
+            {/* 어느 기간의 숫자인지가 숫자 자체만큼 중요하다 — 머리말에서 바로 읽히게 둔다. */}
+            <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <CalendarDays className="h-3.5 w-3.5" />
+              <span className="tabular-nums text-foreground">
+                {analytics.rangeFrom && analytics.rangeTo
+                  ? `${analytics.rangeFrom} ~ ${analytics.rangeTo}`
+                  : `최근 ${analytics.rangeDays}일`}
+              </span>
+              {analytics.rangeLabel && <span>· {analytics.rangeLabel}</span>}
+            </p>
           </div>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary/40 px-3 py-1 text-[11px] text-muted-foreground">
             <Lock className="h-3 w-3" /> 읽기 전용

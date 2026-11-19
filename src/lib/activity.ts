@@ -29,6 +29,7 @@ export type ActivityAction =
   | "analytics.share_enabled"
   | "analytics.share_disabled"
   | "analytics.share_token_rotated"
+  | "analytics.share_range_changed"
   | "analytics.share_password_set"
   | "analytics.share_password_removed"
   | "dashboard.realtime_share_enabled"
