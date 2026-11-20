@@ -80,6 +80,8 @@ export function buildWebinarLoaderScript({ siteId, baseUrl }: { siteId: string; 
   var CFG_CACHE_TTL = 60 * 1000;
   var LIVE_WINDOW_PAD_MS = 30 * 60 * 1000;
   var LIVE_POLL_MS = 120 * 1000;
+  /* 예정 시각 밖에서도 이만큼마다 한 번은 확인한다 — 아래 pollingHot 의 닭과 달걀 때문. */
+  var IDLE_POLL_MS = 10 * 60 * 1000;
   var VIS_REFETCH_THROTTLE_MS = 30 * 1000;
 
 ${ATTRIBUTION_CORE_JS}
@@ -92,6 +94,7 @@ ${ATTRIBUTION_CORE_JS}
   var lastRenderKey = "";
   var lastVisRefetchAt = 0;
   var pollTimer = null;
+  var lastIdlePollAt = 0;
   var boundaryTimer = null;
 
   function warn(msg, e) {
@@ -195,8 +198,8 @@ ${ATTRIBUTION_CORE_JS}
     if (!cfg || !cfg.slug) return;
     CFG = cfg;
     var serverNow = parseMs(cfg.serverNow);
-    /* serverNow 는 응답 **본문**에 있어 CDN 캐시와 함께 굳는다(s-maxage 60 + SWR 300).
-       보정 없이 쓰면 최대 6분 과거의 시각을 "지금"으로 믿어 serverOffsetMs 가 그만큼 음수가 되고,
+    /* serverNow 는 응답 **본문**에 있어 CDN 캐시와 함께 굳는다(s-maxage 60 + SWR 60).
+       보정 없이 쓰면 최대 2분 과거의 시각을 "지금"으로 믿어 serverOffsetMs 가 그만큼 음수가 되고,
        경계 타이머가 늦게 잡혀 라이브 전환이 지연됐다. Age 헤더로 캐시에 머문 시간을 더해 되돌린다. */
     if (serverNow !== null) serverNow += (typeof ageMs === "number" && ageMs > 0 ? ageMs : 0);
     if (serverNow !== null && fetchedAtMs) serverOffsetMs = serverNow - fetchedAtMs;
@@ -1348,18 +1351,50 @@ ${ON_ACCENT_JS}  function theme() {
     }, delay);
   }
 
-  function inLiveWindow() {
+  /**
+   * 지금 **자주** 확인해야 하는 때인가.
+   *
+   * 예정 방송창(±30분)만 보던 때는, 운영자가 예정 시각 **밖에서** 손으로 상태를 바꾸면
+   * 이미 열려 있는 페이지가 그 사실을 영영 몰랐다. 실제로 겪는 경우가 여럿이다:
+   *  · 사전등록 기간에 미리 라이브로 전환해 점검할 때
+   *  · 예정보다 일찍 방송을 시작할 때
+   *  · 끝난 방송을 'registration' 으로 되돌려 접수를 재개할 때(isEntryOpen 주석의 그 경우)
+   * 수동 전환이 걸려 있으면 **또 바뀔 수 있다**고 보고 계속 지켜본다.
+   */
+  function pollingHot() {
     if (!CFG) return false;
+    if (CFG.statusOverride) return true;
     var now = serverNowMs();
+    // 입장 오픈이 방송 시작보다 이를 수 있다 — 그 전환도 놓치면 안 된다.
+    var entryOpen = parseMs(CFG.entryOpenAt);
     var start = parseMs(CFG.liveStartAt);
+    var from = entryOpen !== null && (start === null || entryOpen < start) ? entryOpen : start;
     var end = parseMs(CFG.liveEndAt);
-    if (start === null || end === null) return false;
-    return now >= start - LIVE_WINDOW_PAD_MS && now <= end + LIVE_WINDOW_PAD_MS;
+    if (from === null || end === null) return false;
+    return now >= from - LIVE_WINDOW_PAD_MS && now <= end + LIVE_WINDOW_PAD_MS;
   }
+
+  /** 이 페이지가 웨비나와 관련해 **무언가 그리고 있나** — 아무것도 없으면 확인할 이유도 없다. */
+  function rendersAnything() {
+    if (mounts("live").length || mounts("hero-button").length || mounts("register-form").length) return true;
+    return componentEnabled("banner", true) && bannerAllowedOnPage();
+  }
+
   function schedulePolling() {
     if (pollTimer) return;
+    lastIdlePollAt = Date.now();
     pollTimer = setInterval(function() {
-      if (inLiveWindow()) fetchConfig(true);
+      // 숨은 탭은 보지 않는다 — 돌아올 때 visibilitychange 가 한 번 받아 온다.
+      if (typeof document.visibilityState === "string" && document.visibilityState !== "visible") return;
+      if (!rendersAnything()) return;
+      if (pollingHot()) { lastIdlePollAt = Date.now(); fetchConfig(true); return; }
+      // 끝난 웨비나는 더 바뀔 게 없다.
+      if (computeStatus() === "ended") return;
+      /* 느린 하트비트. 이게 없으면 "예정 밖 수동 전환" 을 알 길이 없다 — 전환을 알려면
+         config 를 받아야 하는데, 받을 이유(statusOverride)를 바로 그 config 가 쥐고 있다. */
+      if (Date.now() - lastIdlePollAt < IDLE_POLL_MS) return;
+      lastIdlePollAt = Date.now();
+      fetchConfig(true);
     }, LIVE_POLL_MS);
   }
 

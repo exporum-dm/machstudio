@@ -19,7 +19,12 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Methods": "GET, OPTIONS",
 } as const;
 
-const CACHE_OK = "public, s-maxage=60, stale-while-revalidate=300";
+/**
+ * 이 응답에는 **상태**가 들어 있다(statusOverride·입장 오픈). SWR 300 이면 CDN 이 최대 5분
+ * 묵은 상태를 내줄 수 있어, 라이브로 전환해도 배너가 한참 사전등록으로 남았다.
+ * 60 초로 줄여 최악이 ~2분이 되게 한다(원본 조회는 가벼운 select 몇 개다).
+ */
+const CACHE_OK = "public, s-maxage=60, stale-while-revalidate=60";
 const CACHE_MISS = "public, s-maxage=60";
 
 export async function OPTIONS() {
