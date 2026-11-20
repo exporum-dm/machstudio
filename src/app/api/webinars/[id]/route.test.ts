@@ -6,7 +6,7 @@ const { countSessions, updateWebinar } = vi.hoisted(() => ({
   updateWebinar: vi.fn(),
 }));
 
-vi.mock("@/lib/activity", () => ({ logActivity: vi.fn() }));
+vi.mock("@/lib/activity", () => ({ logActivity: vi.fn(), logWebinarUpdate: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: "operator" } } }) } }),
 }));
