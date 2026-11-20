@@ -3,7 +3,8 @@
 import { useId, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { kstDateTimeLocalInput, kstDateTimeLocalToIso } from "@/lib/datetime";
-import WebinarSchedulePicker from "@/components/webinar/WebinarSchedulePicker";
+import WebinarSchedulePicker, { EntryOpenField, type EntryOpenValue } from "@/components/webinar/WebinarSchedulePicker";
+import { parseEntryOpenSetting } from "@/lib/webinar-status";
 import { useAutosave, useExternalSync } from "@/components/ui/use-autosave";
 import { useReportAutosave } from "@/components/ui/autosave-scope";
 import { FIELD_CLS } from "@/components/ui/primitives";
@@ -30,11 +31,21 @@ export default function BasicInfoTab({ webinar, onSilentUpdate, embedded }: {
   const uid = useId();
   const toLocal = (iso: string) => kstDateTimeLocalInput(iso);
 
+  /**
+   * 저장 모양(ISO) ↔ 화면 모양(KST 벽시각). 상태 머신은 ISO 를 읽고 이 파일의 컨트롤은
+   * 벽시각 문자열을 쓴다 — 경계를 여기 한 줄로 몰아 둔다.
+   */
+  const toEntryOpenValue = (components: Record<string, unknown> | null | undefined): EntryOpenValue => {
+    const setting = parseEntryOpenSetting(components);
+    return setting.mode === "at" ? { mode: "at", local: toLocal(setting.at) } : setting;
+  };
+
   const [form, setForm] = useState({
     name: webinar.name,
     description: webinar.description ?? "",
     liveStartAt: toLocal(webinar.liveStartAt),
     liveEndAt: toLocal(webinar.liveEndAt),
+    entryOpen: toEntryOpenValue(webinar.components),
   });
 
   // 자동저장 — 이름·설명·일정·마감옵션 변경 시 디바운스 후 PATCH. 이름이 비면 저장하지 않는다(필수).
@@ -50,6 +61,14 @@ export default function BasicInfoTab({ webinar, onSilentUpdate, embedded }: {
           description: form.description.trim() || null,
           liveStartAt: kstDateTimeLocalToIso(form.liveStartAt),
           liveEndAt: kstDateTimeLocalToIso(form.liveEndAt),
+          /* 입장 오픈은 일정의 일부라 이 탭이 소유한다. components 병합은 최상위 키 단위라
+             `entryOpen` 만 보내도 다른 설정(배너·폼 등)은 그대로 남는다. */
+          components: {
+            entryOpen:
+              form.entryOpen.mode === "at"
+                ? { mode: "at", at: kstDateTimeLocalToIso(form.entryOpen.local) }
+                : form.entryOpen,
+          },
           // 마감·라이브 중 접수는 등록 폼 탭이 소유한다 — 여기서 보내면 서로 덮어쓴다.
         }),
       });
@@ -70,8 +89,10 @@ export default function BasicInfoTab({ webinar, onSilentUpdate, embedded }: {
       description: webinar.description ?? "",
       liveStartAt: toLocal(webinar.liveStartAt),
       liveEndAt: toLocal(webinar.liveEndAt),
+      entryOpen: toEntryOpenValue(webinar.components),
     }),
-    [webinar.name, webinar.description, webinar.liveStartAt, webinar.liveEndAt],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [webinar.name, webinar.description, webinar.liveStartAt, webinar.liveEndAt, webinar.components],
   );
   useExternalSync(incoming, setForm, dirty);
 
@@ -118,6 +139,13 @@ export default function BasicInfoTab({ webinar, onSilentUpdate, embedded }: {
           // 마감과 무관한 PATCH 가 한 번 더 나간다.
           value={{ liveStartAt: form.liveStartAt, liveEndAt: form.liveEndAt, signupDeadline: toLocal(webinar.signupDeadline) }}
           onChange={(v) => setForm((f) => ({ ...f, liveStartAt: v.liveStartAt, liveEndAt: v.liveEndAt }))}
+        />
+        {/* 입장 오픈 — 전까지 "시작 60분 전" 이 코드에 박혀 아무도 못 바꿨다. 일정 바로 아래가
+            제 자리다: 방송 시각이 기준이고, 바꾸면 미리보기가 그 자리에서 같이 움직인다. */}
+        <EntryOpenField
+          liveStartAt={form.liveStartAt}
+          value={form.entryOpen}
+          onChange={(entryOpen) => setForm((f) => ({ ...f, entryOpen }))}
         />
       </section>
 
