@@ -106,6 +106,26 @@ export function shareRangeFromPicker(picked: { from: Date; to: Date; label: stri
   return { kind: "fixed", from: kstDateString(picked.from), to: kstDateString(picked.to) };
 }
 
+/**
+ * 캠페인이 집행된 기간을 표에 쓸 짧은 글자로.
+ *
+ * 머리말에 이미 조회 연도가 있어서 **같은 해면 연도를 뗀다** — 표에 열이 일곱 개라
+ * 한 칸이라도 좁아야 캠페인 이름이 덜 잘린다. 해를 넘긴 캠페인만 연도를 붙인다:
+ * 안 붙이면 `12.28 ~ 01.05` 가 거꾸로 간 기간처럼 보인다.
+ *
+ * 입력은 KST 달력일(`YYYY-MM-DD`) — 서버가 이미 변환해 내려 준다.
+ */
+export function formatCampaignPeriod(from: string | null | undefined, to: string | null | undefined): string {
+  if (!DATE_RE.test(from ?? "") || !DATE_RE.test(to ?? "")) return "—";
+  const start = from as string;
+  const end = to as string;
+  // 뒤집힌 값은 고쳐서 보여 주지 않는다 — 그대로 두면 데이터가 이상하다는 걸 알 수 있다.
+  const short = (date: string) => date.slice(5).replace("-", ".");
+  if (start === end) return short(start);
+  if (start.slice(0, 4) === end.slice(0, 4)) return `${short(start)} ~ ${short(end)}`;
+  return `${start.replaceAll("-", ".")} ~ ${end.replaceAll("-", ".")}`;
+}
+
 /** 창의 길이(일) — 공개 payload 의 `rangeDays` 호환용. */
 export function shareRangeDays(range: ShareRange, now: Date = new Date()): number {
   if (range.kind === "rolling") return range.days;

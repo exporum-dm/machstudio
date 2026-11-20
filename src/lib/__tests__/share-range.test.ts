@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SHARE_RANGE,
   MAX_ROLLING_DAYS,
+  formatCampaignPeriod,
   formatShareRange,
   parseShareRange,
   shareRangeDays,
@@ -162,5 +163,39 @@ describe("날짜 선택기 결과 → 저장 기간", () => {
   it("저장 문자열로 왕복한다", () => {
     const picked = { ...win("2026-10-20", "2026-11-19"), label: "최근 30일" };
     expect(parseShareRange(formatShareRange(shareRangeFromPicker(picked)))).toEqual({ kind: "rolling", days: 30 });
+  });
+});
+
+describe("캠페인 집행 기간 표기", () => {
+  it("같은 해면 연도를 뗀다", () => {
+    expect(formatCampaignPeriod("2026-08-22", "2026-11-20")).toBe("08.22 ~ 11.20");
+  });
+
+  it("하루짜리는 한 번만 쓴다", () => {
+    expect(formatCampaignPeriod("2026-11-20", "2026-11-20")).toBe("11.20");
+  });
+
+  /** 연도를 떼면 `12.28 ~ 01.05` 가 거꾸로 간 기간처럼 보인다. */
+  it("해를 넘기면 연도를 붙인다", () => {
+    expect(formatCampaignPeriod("2026-12-28", "2027-01-05")).toBe("2026.12.28 ~ 2027.01.05");
+  });
+
+  it("값이 없거나 모양이 깨졌으면 비워 둔다", () => {
+    for (const [from, to] of [
+      [null, null],
+      [undefined, undefined],
+      ["2026-08-22", null],
+      [null, "2026-11-20"],
+      ["", ""],
+      ["2026-8-22", "2026-11-20"],
+      ["어제", "오늘"],
+    ] as Array<[string | null | undefined, string | null | undefined]>) {
+      expect(formatCampaignPeriod(from, to)).toBe("—");
+    }
+  });
+
+  /** 뒤집힌 값을 몰래 고치지 않는다 — 그대로 보여야 데이터가 이상한 걸 알아챈다. */
+  it("뒤집힌 기간도 그대로 보여 준다", () => {
+    expect(formatCampaignPeriod("2026-11-20", "2026-08-22")).toBe("11.20 ~ 08.22");
   });
 });
