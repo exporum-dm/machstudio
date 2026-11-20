@@ -142,6 +142,17 @@ export async function POST(request: Request) {
       by: ["sourceType", "campaignName"],
       where,
       _sum: { cost: true, impressions: true, clicks: true, conversions: true },
+      /**
+       * 캠페인이 **실제로 집행된 기간** — 데이터가 있는 첫날과 마지막 날.
+       *
+       * 매체가 알려 주는 "캠페인 설정상 시작·종료일" 이 아니라 우리가 받아 둔 일자 기록의
+       * 양 끝이다. 숫자와 같은 출처라 **합계와 기간이 어긋나지 않는다**(설정상 종료일이
+       * 미래여도, 지출이 없는 날까지 기간에 넣으면 보는 사람이 "왜 비었지" 를 묻게 된다).
+       *
+       * reportDate 가 없는 기록(기간 단위로 올라온 보고서)은 reportStart/End 로 떨어진다.
+       */
+      _min: { reportDate: true, reportStart: true },
+      _max: { reportDate: true, reportEnd: true },
       orderBy: { _sum: { cost: "desc" } },
       take: 10,
     }),
@@ -169,7 +180,18 @@ export async function POST(request: Request) {
     .sort((a, b) => b.cost - a.cost);
 
   const campaignSummary = campaignGroups
-    .map((row) => withDerivedMetrics({ sourceType: row.sourceType, campaignName: row.campaignName, ...sumToBase(row._sum) }))
+    .map((row) => {
+      const from = row._min.reportDate ?? row._min.reportStart;
+      const to = row._max.reportDate ?? row._max.reportEnd;
+      return withDerivedMetrics({
+        sourceType: row.sourceType,
+        campaignName: row.campaignName,
+        // KST 달력일로 내린다 — 화면이 시간대를 다시 계산하지 않게(자정 부근에 하루 밀린다).
+        periodFrom: from ? dateKey(from) : null,
+        periodTo: to ? dateKey(to) : null,
+        ...sumToBase(row._sum),
+      });
+    })
     .sort((a, b) => b.cost - a.cost);
 
   const dailyMap = new Map<string, { date: string; cost: number; impressions: number; clicks: number; conversions: number }>();

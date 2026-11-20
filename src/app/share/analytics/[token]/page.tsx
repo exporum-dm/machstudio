@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, use } from "react";
 import { BarChart3, CalendarDays, Loader2, Lock } from "lucide-react";
 import { formatKstDateTime } from "@/lib/datetime";
+import { formatCampaignPeriod } from "@/lib/share-range";
 
 interface PublicProject {
   id: string;
@@ -23,6 +24,9 @@ interface MediaRow {
 interface CampaignRow {
   sourceType: string;
   campaignName: string;
+  /** 실제로 집행된 기간(데이터가 있는 첫날·마지막 날). 서버가 KST 달력일로 내려 준다. */
+  periodFrom?: string | null;
+  periodTo?: string | null;
   cost: number;
   impressions: number;
   clicks: number;
@@ -92,6 +96,8 @@ export default function AnalyticsSharePage({ params }: { params: Promise<{ token
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
+  /** 일자별 지출 그래프에서 지금 짚고 있는 날. 막대만 보고는 언제인지 알 수 없었다. */
+  const [hoveredDay, setHoveredDay] = useState<number | null>(null);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -266,16 +272,54 @@ export default function AnalyticsSharePage({ params }: { params: Promise<{ token
           {analytics.dailyTrend.length === 0 ? (
             <p className="text-xs text-muted-foreground">데이터 없음</p>
           ) : (
-            <div className="flex items-end gap-0.5 h-32">
-              {analytics.dailyTrend.map((d) => (
-                <div
-                  key={d.date}
-                  className="flex-1 bg-violet-500/60 rounded-t-sm"
-                  style={{ height: `${(d.cost / maxDailyCost) * 100}%` }}
-                  title={`${d.date}: ${formatKRW(d.cost)}`}
-                />
-              ))}
-            </div>
+            <>
+              <div className="flex items-end gap-0.5 h-32" onMouseLeave={() => setHoveredDay(null)}>
+                {analytics.dailyTrend.map((d, index) => {
+                  /**
+                   * 막대가 아니라 **칸 전체**가 hover 대상이다 — 지출이 0인 날은 막대 높이가
+                   * 0이라 짚을 수가 없고, 하필 그런 날이 "왜 비었지?" 하고 확인하고 싶은 날이다.
+                   */
+                  const active = hoveredDay === index;
+                  // 양 끝 막대의 말풍선은 가운데 정렬하면 카드 밖으로 넘친다.
+                  const anchor =
+                    index < analytics.dailyTrend.length * 0.1
+                      ? "left-0"
+                      : index > analytics.dailyTrend.length * 0.9
+                        ? "right-0"
+                        : "left-1/2 -translate-x-1/2";
+                  return (
+                    <div
+                      key={d.date}
+                      className="relative flex h-full flex-1 items-end"
+                      onMouseEnter={() => setHoveredDay(index)}
+                      // 모바일엔 hover 가 없다 — 탭으로도 짚을 수 있어야 공유받은 사람이 쓴다.
+                      onTouchStart={() => setHoveredDay(index)}
+                    >
+                      <div
+                        className={`w-full rounded-t-sm transition-colors ${active ? "bg-violet-500" : "bg-violet-500/60"}`}
+                        style={{ height: `${Math.max((d.cost / maxDailyCost) * 100, d.cost > 0 ? 1.5 : 0)}%` }}
+                      />
+                      {active && (
+                        <div
+                          className={`pointer-events-none absolute bottom-full z-10 mb-2 whitespace-nowrap rounded-lg bg-foreground px-2.5 py-1.5 text-[11px] leading-4 text-background shadow-lg ${anchor}`}
+                        >
+                          <p className="font-medium">{d.date}</p>
+                          <p className="tabular-nums">지출 {formatKRW(d.cost)}</p>
+                          <p className="tabular-nums opacity-70">
+                            클릭 {formatNumber(d.clicks)} · 전환 {formatNumber(d.conversions)}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {/* 짚기 전에도 양 끝이 언제인지는 보여야 한다 — 그래프만으로 방향을 잡게. */}
+              <div className="mt-2 flex justify-between text-[11px] tabular-nums text-muted-foreground">
+                <span>{analytics.dailyTrend[0].date}</span>
+                <span>{analytics.dailyTrend[analytics.dailyTrend.length - 1].date}</span>
+              </div>
+            </>
           )}
         </section>
 
@@ -290,6 +334,7 @@ export default function AnalyticsSharePage({ params }: { params: Promise<{ token
                   <tr className="text-left text-muted-foreground border-b border-border">
                     <th className="py-2 pr-3 font-medium">매체</th>
                     <th className="py-2 pr-3 font-medium">캠페인</th>
+                    <th className="py-2 pr-3 font-medium">기간</th>
                     <th className="py-2 pr-3 font-medium text-right">지출</th>
                     <th className="py-2 pr-3 font-medium text-right">클릭</th>
                     <th className="py-2 pr-3 font-medium text-right">전환</th>
@@ -301,6 +346,9 @@ export default function AnalyticsSharePage({ params }: { params: Promise<{ token
                     <tr key={`${c.sourceType}:${c.campaignName}`} className="border-b border-border/40 last:border-0">
                       <td className="py-2 pr-3 text-muted-foreground">{SOURCE_LABEL[c.sourceType] ?? c.sourceType}</td>
                       <td className="py-2 pr-3 truncate max-w-[280px]">{c.campaignName}</td>
+                      <td className="py-2 pr-3 whitespace-nowrap tabular-nums text-muted-foreground">
+                        {formatCampaignPeriod(c.periodFrom, c.periodTo)}
+                      </td>
                       <td className="py-2 pr-3 tabular-nums text-right">{formatKRW(c.cost)}</td>
                       <td className="py-2 pr-3 tabular-nums text-right">{formatNumber(c.clicks)}</td>
                       <td className="py-2 pr-3 tabular-nums text-right">{formatNumber(c.conversions)}</td>
