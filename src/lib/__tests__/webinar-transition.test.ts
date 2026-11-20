@@ -2,7 +2,9 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_ENTRY_OPEN_BEFORE_MINUTES,
+  entryOpenAtOf,
   nextWebinarTransition,
+  parseEntryOpenSetting,
   webinarFace,
   type WebinarStatusInput,
 } from "@/lib/webinar-status";
@@ -112,5 +114,91 @@ describe("다음 전환", () => {
     const next = nextWebinarTransition(early, at(12));
     expect(next?.at.toISOString()).toBe(at(21).toISOString());
     expect(next?.to).toBe("entryOpen");
+  });
+});
+
+/**
+ * **입장 오픈 시점 — 두 모양만 인정한다.**
+ *
+ * 전까지 "시작 60분 전" 이 코드에 박혀 있어 아무도 못 바꿨다. 이제 프리셋은 `before`
+ * (시작 기준)로, '직접 지정' 은 `at`(절대 시각)으로 저장한다.
+ *
+ * 둘을 나눈 이유가 이 테스트의 핵심이다: 프리셋을 절대 시각으로 굳혀 저장하면 나중에
+ * 방송을 미뤘을 때 **입장만 어제 열린다.**
+ */
+describe("입장 오픈 시점", () => {
+  const withComponents = (components: unknown) => ({ ...base, components });
+
+  it("설정이 없으면 시작 60분 전", () => {
+    expect(parseEntryOpenSetting({})).toEqual({ mode: "before", minutes: 60 });
+    expect(entryOpenAtOf(base.liveStartAt, {}).toISOString()).toBe(at(23).toISOString());
+  });
+
+  /** 이 기능이 생기기 전에 저장된 값 — 계속 읽는다. */
+  it("옛 키도 읽는다", () => {
+    expect(parseEntryOpenSetting({ entryOpenBeforeMinutes: 30 })).toEqual({ mode: "before", minutes: 30 });
+    expect(entryOpenAtOf(base.liveStartAt, { entryOpenBeforeMinutes: 30 }).toISOString()).toBe(at(23.5).toISOString());
+  });
+
+  it("시작과 동시에(0분)도 유효하다", () => {
+    const c = { entryOpen: { mode: "before", minutes: 0 } };
+    expect(entryOpenAtOf(base.liveStartAt, c).toISOString()).toBe(at(24).toISOString());
+  });
+
+  /** 상대 모드의 존재 이유 — 방송을 옮기면 입장도 따라온다. */
+  it("시작 기준은 방송 시각을 따라 움직인다", () => {
+    const c = { entryOpen: { mode: "before", minutes: 60 } };
+    expect(entryOpenAtOf(at(24).toISOString(), c).toISOString()).toBe(at(23).toISOString());
+    // 방송을 하루 미뤘다 → 입장도 하루 미뤄진다.
+    expect(entryOpenAtOf(at(48).toISOString(), c).toISOString()).toBe(at(47).toISOString());
+  });
+
+  /** 예약의 존재 이유 — 적어 둔 시각은 움직이지 않는다. */
+  it("예약한 시각은 방송 시각을 옮겨도 그대로", () => {
+    const c = { entryOpen: { mode: "at", at: at(20).toISOString() } };
+    expect(entryOpenAtOf(at(24).toISOString(), c).toISOString()).toBe(at(20).toISOString());
+    expect(entryOpenAtOf(at(48).toISOString(), c).toISOString()).toBe(at(20).toISOString());
+  });
+
+  it("예약 시각이 상태 판정에 그대로 쓰인다", () => {
+    const reserved = withComponents({ entryOpen: { mode: "at", at: at(20).toISOString() } });
+    expect(webinarFace(reserved, at(19.5))).toBe("upcoming");
+    expect(webinarFace(reserved, at(20))).toBe("entryOpen");
+
+    const next = nextWebinarTransition(reserved, at(12));
+    expect(next?.at.toISOString()).toBe(at(20).toISOString());
+    expect(next?.to).toBe("entryOpen");
+  });
+
+  /** 입장 시점 하나 때문에 상태 판정이 통째로 멈출 이유가 없다 — 전부 기본값으로. */
+  it("못 읽는 값은 기본값으로 떨어진다", () => {
+    for (const components of [
+      null,
+      undefined,
+      "nope",
+      { entryOpen: null },
+      { entryOpen: "1시간" },
+      { entryOpen: [] },
+      { entryOpen: { mode: "at" } },
+      { entryOpen: { mode: "at", at: "어제" } },
+      { entryOpen: { mode: "before" } },
+      { entryOpen: { mode: "before", minutes: -5 } },
+      { entryOpen: { mode: "before", minutes: 25 * 60 } },
+      { entryOpen: { mode: "weird", minutes: 10 } },
+      { entryOpenBeforeMinutes: -1 },
+    ]) {
+      expect(parseEntryOpenSetting(components)).toEqual({ mode: "before", minutes: 60 });
+    }
+  });
+
+  /** 저장 모양으로 왕복한다 — 화면이 읽어 그대로 돌려보내도 값이 변하지 않아야 한다. */
+  it("왕복한다", () => {
+    for (const setting of [
+      { mode: "before", minutes: 0 },
+      { mode: "before", minutes: 90 },
+      { mode: "at", at: at(20).toISOString() },
+    ]) {
+      expect(parseEntryOpenSetting({ entryOpen: setting })).toEqual(setting);
+    }
   });
 });

@@ -132,6 +132,108 @@ export function SignupDeadlineField({
   );
 }
 
+/**
+ * 입장 오픈 — 화면이 쓰는 모양. 저장 모양(`EntryOpenSetting`)과 달리 **KST 벽시각 문자열**을
+ * 쓴다(이 파일의 다른 컨트롤과 같은 규약). ISO 변환은 부모가 한다.
+ */
+export type EntryOpenValue = { mode: "before"; minutes: number } | { mode: "at"; local: string };
+
+/** 프리셋 — "시작과 동시에" 가 맨 앞이다. 대개 그걸 고르고, 미리 여는 건 선택이다. */
+const ENTRY_OPEN_PRESETS = [0, 30, 60, 120];
+
+/**
+ * **입장 오픈 시점.** 전까지는 "시작 60분 전" 이 코드에 박혀 있어 아무도 못 바꿨다.
+ *
+ * 프리셋은 `before`(시작 기준)로 저장한다 — 방송을 하루 미뤄도 입장이 같이 따라와야 한다.
+ * `직접 지정` 만 `at`(절대 시각) 으로 굳힌다. 그게 "예약" 의 뜻이다.
+ */
+export function EntryOpenField({
+  liveStartAt, value, onChange,
+}: {
+  /** "YYYY-MM-DDTHH:mm" — 프리셋 미리보기의 기준 */
+  liveStartAt: string;
+  value: EntryOpenValue;
+  onChange: (next: EntryOpenValue) => void;
+}) {
+  const [startDate, startTime] = splitLocal(liveStartAt);
+  const [custom, setCustom] = useState<[string, string]>(() =>
+    value.mode === "at" && value.local ? splitLocal(value.local) : [startDate, startTime],
+  );
+
+  /** 프리셋이 가리키는 실제 시각 — 고르기 전에 보이면 "몇 분 전" 을 암산할 일이 없다. */
+  const previewOf = (minutes: number) => {
+    if (!startDate || !startTime) return "";
+    const [h, m] = startTime.split(":").map(Number);
+    const base = new Date(Date.UTC(
+      Number(startDate.slice(0, 4)), Number(startDate.slice(5, 7)) - 1, Number(startDate.slice(8, 10)), h, m,
+    ));
+    base.setUTCMinutes(base.getUTCMinutes() - minutes);
+    const ymd = base.toISOString().slice(0, 10);
+    const hhmm = base.toISOString().slice(11, 16);
+    return `${fmtDay(ymd)} ${fmtTime(hhmm)}`;
+  };
+
+  const activeMinutes = value.mode === "before" ? value.minutes : null;
+  const preview =
+    value.mode === "at"
+      ? (value.local ? `${fmtDay(value.local.slice(0, 10))} ${fmtTime(value.local.slice(11, 16))}` : "")
+      : previewOf(value.minutes);
+
+  return (
+    <div>
+      <label className="mb-1.5 block text-xs text-muted-foreground">입장 오픈</label>
+      <div className="flex flex-wrap gap-1.5">
+        {ENTRY_OPEN_PRESETS.map((minutes) => (
+          <motion.button
+            key={minutes}
+            type="button"
+            whileTap={{ scale: 0.96 }}
+            transition={spring}
+            aria-pressed={activeMinutes === minutes}
+            onClick={() => onChange({ mode: "before", minutes })}
+            className={`px-3 py-1.5 text-xs font-medium transition-colors ${R.control} ${
+              activeMinutes === minutes ? SELECTED : "text-muted-foreground hover:bg-secondary"
+            }`}
+          >
+            {minutes === 0 ? "시작과 동시에" : minutes < 60 ? `${minutes}분 전` : `${minutes / 60}시간 전`}
+          </motion.button>
+        ))}
+        <motion.button
+          type="button"
+          whileTap={{ scale: 0.96 }}
+          transition={spring}
+          aria-pressed={value.mode === "at"}
+          onClick={() => onChange({ mode: "at", local: joinLocal(custom[0] || startDate, custom[1] || startTime) })}
+          className={`px-3 py-1.5 text-xs font-medium transition-colors ${R.control} ${
+            value.mode === "at" ? SELECTED : "text-muted-foreground hover:bg-secondary"
+          }`}
+        >
+          직접 지정
+        </motion.button>
+      </div>
+
+      {value.mode === "at" && (
+        <div className="mt-2 grid grid-cols-2 gap-3">
+          <input type="date" value={custom[0]} aria-label="입장 오픈 날짜"
+            onChange={(e) => { const next: [string, string] = [e.target.value, custom[1] || startTime]; setCustom(next); onChange({ mode: "at", local: joinLocal(next[0], next[1]) }); }}
+            className={FIELD_CLS} />
+          <input type="time" step={300} value={custom[1]} aria-label="입장 오픈 시각"
+            onChange={(e) => { const next: [string, string] = [custom[0] || startDate, e.target.value]; setCustom(next); onChange({ mode: "at", local: joinLocal(next[0], next[1]) }); }}
+            className={FIELD_CLS} />
+        </div>
+      )}
+
+      <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+        {preview ? <>이 시각부터 <b className="font-medium text-foreground">{preview}</b> 버튼이 &lsquo;입장하기&rsquo;로 바뀌어요.</> : "라이브 시작 시각을 먼저 정해주세요."}
+        {value.mode === "before"
+          ? " 방송 시각을 옮기면 함께 따라와요."
+          : " 방송 시각을 옮겨도 이 시각 그대로예요."}
+        {" 방송이 시작되면 설정과 무관하게 입장이 열립니다."}
+      </p>
+    </div>
+  );
+}
+
 export default function WebinarSchedulePicker({
   value,
   onChange,
