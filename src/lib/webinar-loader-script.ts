@@ -104,6 +104,7 @@ ${ATTRIBUTION_CORE_JS}
   function serverNowMs() { return Date.now() + serverOffsetMs; }
 
   function parseMs(iso) {
+    if (!iso) return null;
     var t = new Date(iso).getTime();
     return isNaN(t) ? null : t;
   }
@@ -145,6 +146,19 @@ ${ATTRIBUTION_CORE_JS}
       return deadline !== null && serverNowMs() <= deadline;
     }
     return false;
+  }
+
+  function bannerPhase(status) {
+    var schedule = CFG.bannerSchedule;
+    if (schedule) {
+      var now = serverNowMs();
+      if (now >= parseMs(schedule.ended)) return "ended";
+      if (now >= parseMs(schedule.live)) return "live";
+      return now >= parseMs(schedule.registration) ? "registration" : "upcoming";
+    }
+    if (status === "ended") return "ended";
+    if (isEntryOpen(status)) return "live";
+    return canRegisterNow(status) ? "registration" : "upcoming";
   }
 
   /* ── 글로브 매칭 (백슬래시 없는 indexOf 워크) ── */
@@ -1287,6 +1301,7 @@ ${ON_ACCENT_JS}  function theme() {
 
     var status = computeStatus();
     var entry = isEntryOpen(status);
+    var phase = bannerPhase(status);
     var c = (CFG.components || {});
     var bc = c.banner || {};
     var texts = bannerTexts();
@@ -1294,8 +1309,8 @@ ${ON_ACCENT_JS}  function theme() {
 
     // 설문 링크가 없어도 "종료됐다"는 안내는 남긴다(아래에서 설문 버튼만 조건부로 붙인다).
     // 예전엔 !surveyUrl() 이면 배너를 포기해서, 어드민이 편집한 종료 문구가 영원히 렌더되지 않았다.
-    if (status === "ended" && endedMode() === "hidden") return;
-    try { if (bc.dismissible !== false && sessionStorage.getItem(bannerDismissKey(status))) return; } catch (e) {}
+    if (phase === "ended" && endedMode() === "hidden") return;
+    try { if (bc.dismissible !== false && sessionStorage.getItem(bannerDismissKey(phase))) return; } catch (e) {}
 
     var banner = el("div", "mw-banner mw-reset");
     banner.id = "mw-banner";
@@ -1304,7 +1319,7 @@ ${ON_ACCENT_JS}  function theme() {
     var title = el("div", "mw-banner-title");
     var ctas = el("div", "mw-banner-ctas");
 
-    if (status === "ended") {
+    if (phase === "ended") {
       title.textContent = texts.ended || ((CFG.name || "웨비나") + "가 종료되었습니다. 참여해주셔서 감사합니다!");
       if (surveyUrl()) {
         var sv = el("a", "mw-btn mw-btn-primary", btnLabel(bl.survey, "만족도 조사 참여하기"));
@@ -1313,13 +1328,13 @@ ${ON_ACCENT_JS}  function theme() {
         sv.rel = "noopener noreferrer";
         ctas.appendChild(sv);
       }
-    } else if (entry) {
+    } else if (phase === "live") {
       var badge = el("span", "mw-live-badge");
       badge.appendChild(el("span", "mw-live-dot"));
-      badge.appendChild(document.createTextNode(status === "live" ? "LIVE" : "OPEN"));
+      badge.appendChild(document.createTextNode(status === "live" ? "LIVE" : entry ? "OPEN" : "입장 안내"));
       title.appendChild(badge);
       title.appendChild(document.createTextNode(
-        texts.live || ((CFG.name || "웨비나") + (status === "live" ? "가 지금 진행 중입니다!" : " 입장이 시작됐어요!"))
+        texts.live || ((CFG.name || "웨비나") + (status === "live" ? "가 지금 진행 중입니다!" : entry ? " 입장이 시작됐어요!" : " 입장 안내"))
       ));
       if (canRegisterNow(status)) {
         var rBtn = el("button", "mw-btn mw-btn-secondary", btnLabel(bl.liveRegister, "사전등록"));
@@ -1327,10 +1342,12 @@ ${ON_ACCENT_JS}  function theme() {
         rBtn.addEventListener("click", openFormModal);
         ctas.appendChild(rBtn);
       }
-      var goBtn = el("a", "mw-btn mw-btn-primary", btnLabel(bl.live, "웨비나 입장하기"));
-      goBtn.href = livePageUrl();
-      ctas.appendChild(goBtn);
-    } else if (canRegisterNow(status)) {
+      if (entry) {
+        var goBtn = el("a", "mw-btn mw-btn-primary", btnLabel(bl.live, "웨비나 입장하기"));
+        goBtn.href = livePageUrl();
+        ctas.appendChild(goBtn);
+      }
+    } else if (phase === "registration") {
       // 등록 중: 사전등록만 강조(입장 버튼은 오픈 전이므로 노출하지 않음). 앰버 펄스 배지로 "접수 중" 표시.
       var regBadge = el("span", "mw-reg-badge");
       regBadge.appendChild(el("span", "mw-reg-dot"));
@@ -1345,10 +1362,12 @@ ${ON_ACCENT_JS}  function theme() {
         calBtn.addEventListener("click", openCalendar);
         ctas.appendChild(calBtn);
       }
-      var regBtn = el("button", "mw-btn mw-btn-primary", btnLabel(bl.registration, "웨비나 사전등록"));
-      regBtn.type = "button";
-      regBtn.addEventListener("click", openFormModal);
-      ctas.appendChild(regBtn);
+      if (canRegisterNow(status)) {
+        var regBtn = el("button", "mw-btn mw-btn-primary", btnLabel(bl.registration, "웨비나 사전등록"));
+        regBtn.type = "button";
+        regBtn.addEventListener("click", openFormModal);
+        ctas.appendChild(regBtn);
+      }
     } else {
       title.textContent = texts.upcoming || ((CFG.name || "웨비나") + "가 곧 시작됩니다.");
       if (bc.showCalendarButton !== false) {
@@ -1374,7 +1393,7 @@ ${ON_ACCENT_JS}  function theme() {
   function renderAll() {
     if (!CFG) return;
     var status = computeStatus();
-    var key = status + "|" + (isEntryOpen(status) ? "1" : "0") + "|" + (CFG.updatedKey || "");
+    var key = status + "|" + isEntryOpen(status) + "|" + canRegisterNow(status) + "|" + bannerPhase(status) + "|" + (CFG.updatedKey || "");
     injectStyles();
     renderLive();
     if (key === lastRenderKey) return;
@@ -1389,6 +1408,8 @@ ${ON_ACCENT_JS}  function theme() {
     if (!CFG) return;
     var now = serverNowMs();
     var candidates = [parseMs(CFG.entryOpenAt), parseMs(CFG.liveStartAt), parseMs(CFG.liveEndAt), parseMs(CFG.signupDeadline)];
+    var schedule = CFG.bannerSchedule;
+    if (schedule) candidates.push(parseMs(schedule.registration), parseMs(schedule.live), parseMs(schedule.ended));
     var next = null;
     for (var i = 0; i < candidates.length; i++) {
       var t = candidates[i];
@@ -1440,8 +1461,8 @@ ${ON_ACCENT_JS}  function theme() {
       if (typeof document.visibilityState === "string" && document.visibilityState !== "visible") return;
       if (!rendersAnything()) return;
       if (pollingHot()) { lastIdlePollAt = Date.now(); fetchConfig(true); return; }
-      // 끝난 웨비나는 더 바뀔 게 없다.
-      if (computeStatus() === "ended") return;
+      var status = computeStatus();
+      if (status === "ended" && bannerPhase(status) === "ended") return;
       /* 느린 하트비트. 이게 없으면 "예정 밖 수동 전환" 을 알 길이 없다 — 전환을 알려면
          config 를 받아야 하는데, 받을 이유(statusOverride)를 바로 그 config 가 쥐고 있다. */
       if (Date.now() - lastIdlePollAt < IDLE_POLL_MS) return;

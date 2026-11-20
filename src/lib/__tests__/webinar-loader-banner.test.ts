@@ -54,7 +54,7 @@ async function settle() {
 async function boot(initial: Record<string, unknown> = {}) {
   let current = config(initial);
   const fetchMock = vi.fn(async (url: string) => {
-    if (String(url).includes("/config")) return response(current);
+    if (String(url).includes("/config")) return response({ ...current, serverNow: new Date().toISOString() });
     return response({});
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -109,6 +109,43 @@ describe("배너가 보여 주는 상태", () => {
     await boot({ statusOverride: "ended" });
     expect(bannerText()).toContain("종료");
   });
+});
+
+it("transitions through all four scheduled banner phases on an already open page", async () => {
+  const start = Date.now();
+  const at = (seconds: number) => new Date(start + seconds * 1_000).toISOString();
+  await boot({
+    bannerSchedule: { registration: at(10), live: at(20), ended: at(30) },
+    entryOpenAt: at(20),
+    liveStartAt: at(35),
+    liveEndAt: at(60),
+    signupDeadline: at(19),
+    components: { banner: { textByStatus: { upcoming: "UPCOMING", registration: "REGISTER", live: "ENTER", ended: "ENDED" } } },
+  });
+  expect(bannerText()).toContain("UPCOMING");
+  await vi.advanceTimersByTimeAsync(11_100);
+  expect(bannerText()).toContain("REGISTER");
+  expect(bannerText()).toContain("웨비나 사전등록");
+  await vi.advanceTimersByTimeAsync(10_000);
+  expect(bannerText()).toContain("ENTER");
+  expect(bannerText()).toContain("웨비나 입장하기");
+  await vi.advanceTimersByTimeAsync(10_000);
+  expect(bannerText()).toContain("ENDED");
+  expect(bannerText()).not.toContain("웨비나 입장하기");
+});
+
+it("keeps the scheduled phase but hides entry until the webinar actually admits viewers", async () => {
+  const start = Date.now();
+  const at = (seconds: number) => new Date(start + seconds * 1_000).toISOString();
+  await boot({
+    bannerSchedule: { registration: at(-20), live: at(-10), ended: at(120) },
+    entryOpenAt: at(40),
+    liveStartAt: at(50),
+  });
+  expect(bannerText()).toContain("입장 안내");
+  expect(bannerText()).not.toContain("웨비나 입장하기");
+  await vi.advanceTimersByTimeAsync(41_100);
+  expect(bannerText()).toContain("웨비나 입장하기");
 });
 
 describe("예정 시각 밖의 수동 전환이 이미 열린 페이지에 닿는가", () => {

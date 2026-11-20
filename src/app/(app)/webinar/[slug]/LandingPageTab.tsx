@@ -4,7 +4,7 @@
 // 모든 값은 config.landingPage 한 곳에 저장되고 공개 페이지(/webinar/[slug]/landing)가 그대로 렌더한다.
 // 섹션은 "토글 ON + 실제 내용 있음"일 때만 공개 페이지에 노출된다(빈 껍데기 방지 — 읽기에서 걸러짐).
 
-import { useId, useRef, useState, useMemo } from "react";
+import { useId, useRef, useState, useMemo, type ReactNode } from "react";
 import { formatKst } from "@/lib/datetime";
 import { ExternalLink, Clapperboard, Ban, Loader2, UploadCloud, Link2, Image as ImageIcon, ImagePlus } from "lucide-react";
 import { toast } from "sonner";
@@ -256,6 +256,7 @@ export default function LandingPageTab({
   onGoToSource,
   onGoToDeploy,
   confirmLiveOff,
+  afterSponsors,
 }: {
   webinar: Webinar;
   onSilentUpdate: () => void;
@@ -267,6 +268,7 @@ export default function LandingPageTab({
    * 껍데기가 시청자 수를 알고 있어서 문구에 실제 인원이 들어간다.
    */
   confirmLiveOff?: (what: string, effect: string) => Promise<boolean>;
+  afterSponsors?: ReactNode;
 }) {
   const uid = useId();
   const [state, setState] = useState<EditorState>(() => toEditorState(webinar.config));
@@ -945,7 +947,7 @@ export default function LandingPageTab({
             />
           </SectionCard>
 
-          {/* 스폰서 — 페이지 최하단 */}
+          {/* 스폰서 — 공개 페이지의 마지막 콘텐츠 섹션 */}
           <SectionCard
             title="스폰서"
             hint="페이지 맨 아래 로고 벽이에요. 구분(주최·주관·후원)을 적으면 같은 구분끼리 묶여서 나가요. 이름이 있는 항목만 노출돼요."
@@ -1067,6 +1069,7 @@ export default function LandingPageTab({
           </SectionCard>
           </>
           )}
+          {afterSponsors}
         </div>
       </div>
     </div>

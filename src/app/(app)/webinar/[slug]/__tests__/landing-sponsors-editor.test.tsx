@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 import LandingPageTab from "../LandingPageTab";
+import WebinarBannerSettings from "../WebinarBannerSettings";
 
 /**
  * 만들기 › 랜딩 페이지 › **스폰서** 편집기.
@@ -33,7 +34,7 @@ const sponsors = {
 let host: HTMLDivElement | null = null;
 let root: Root | null = null;
 
-function render(config: Record<string, unknown>) {
+function render(config: Record<string, unknown>, afterSponsors?: ReactNode) {
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -46,6 +47,7 @@ function render(config: Record<string, unknown>) {
         <LandingPageTab
           webinar={{ id: "w1", slug: "s1", name: "테스트", description: null, config, liveStartAt: "2026-08-11T05:00:00.000Z" }}
           onSilentUpdate={() => {}}
+          afterSponsors={afterSponsors}
         />
       </ConfirmProvider>,
     );
@@ -69,9 +71,59 @@ afterEach(() => {
   host = null;
   root = null;
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 const rows = (el: HTMLElement) => [...el.querySelectorAll<HTMLInputElement>('input[aria-label="스폰서 이름"]')];
+
+it("places the banner below sponsors and auto-saves the three scheduled transitions in UTC", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-11-20T00:00:00Z"));
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
+  const el = render({ landingPage: { enabled: true, sponsors } }, (
+    <WebinarBannerSettings webinarId="w1" webinarName="테스트" onSilentUpdate={() => {}}
+      schedule={{
+        liveStartAt: "2026-11-24T05:00:00Z",
+        liveEndAt: "2026-11-24T07:00:00Z",
+        signupDeadline: "2026-11-24T04:30:00Z",
+      }}
+    />
+  ));
+  const banner = Array.from(el.querySelectorAll("h2")).find((heading) => heading.textContent?.trim() === "하단 배너")!.closest("section")!;
+  expect(rows(el)[0].compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(Array.from(banner.querySelectorAll("[aria-pressed]")).map((button) => button.textContent?.trim()))
+    .toEqual(["시작 전", "사전등록 중", "라이브·입장 중", "종료 후"]);
+  const inputs = Array.from(banner.querySelectorAll<HTMLInputElement>('input[type="datetime-local"]'));
+  const setInput = async (input: HTMLInputElement, value: string) => {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  };
+  await setInput(inputs[0], "2026-11-24T09:00");
+  await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+  expect(fetchMock).not.toHaveBeenCalled();
+
+  await setInput(inputs[1], "2026-11-24T13:30");
+  await setInput(inputs[2], "2026-11-24T16:00");
+  await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+  expect(fetchMock).toHaveBeenCalledWith("/api/webinars/w1", expect.objectContaining({
+    method: "PATCH",
+    body: JSON.stringify({ components: { bannerSchedule: {
+      registration: "2026-11-24T00:00:00.000Z",
+      live: "2026-11-24T04:30:00.000Z",
+      ended: "2026-11-24T07:00:00.000Z",
+    } } }),
+  }));
+
+  const reset = Array.from(banner.querySelectorAll("button")).find((button) => button.textContent === "기본 일정 사용")!;
+  await act(async () => { reset.click(); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+  expect(fetchMock).toHaveBeenLastCalledWith("/api/webinars/w1", expect.objectContaining({
+    body: JSON.stringify({ components: { bannerSchedule: null } }),
+  }));
+});
 
 describe("행 = 항목, 열 = 속성 — 네 값이 모두 보이고 인라인으로 고쳐진다", () => {
   it("저장된 스폰서가 값이 채워진 입력으로 나온다", () => {

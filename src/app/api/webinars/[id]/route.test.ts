@@ -28,6 +28,19 @@ const patchCurrent = (value: string) => PATCH(new Request("https://example.test/
 
 beforeEach(() => vi.clearAllMocks());
 
+it("rejects a banner schedule whose transition times are out of order", async () => {
+  const res = await PATCH(new Request("https://example.test/api/webinars/webinar-a", {
+    method: "PATCH",
+    body: JSON.stringify({ components: { bannerSchedule: {
+      registration: "2026-11-24T02:00:00.000Z",
+      live: "2026-11-24T01:00:00.000Z",
+      ended: "2026-11-24T03:00:00.000Z",
+    } } }),
+  }), { params: Promise.resolve({ id: "webinar-a" }) });
+  expect(res.status).toBe(400);
+  expect(updateWebinar).not.toHaveBeenCalled();
+});
+
 it("rejects session IDs from another webinar, and prevents using the same session twice", async () => {
   countSessions.mockResolvedValue(0);
   expect((await patchCurrent("foreign-session")).status).toBe(400);

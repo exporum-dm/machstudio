@@ -494,8 +494,6 @@ function WebinarDetail({ id }: { id: string }) {
                 projectId={webinar.project?.id ?? ""}
                 slug={webinar.slug}
                 webinarName={webinar.name}
-                components={webinar.components ?? null}
-                onSilentUpdate={() => fetchWebinar(true)}
               />}
             {activeTab === "operate" && (
               <OperateTab
