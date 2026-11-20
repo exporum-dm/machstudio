@@ -24,6 +24,8 @@ import { getPublicAppOrigin } from "@/lib/app-url";
 import { useAutosave } from "@/components/ui/use-autosave";
 import { AutosaveIndicator } from "@/components/ui/autosave-indicator";
 import { isHttpUrl, normalizeLandingPageConfig } from "@/lib/webinar-config";
+import { formatKstDateTime } from "@/lib/datetime";
+import { nextWebinarTransition, webinarFace, type WebinarFace, type WebinarStatusInput } from "@/lib/webinar-status";
 import { FIELD_CLS, FINISH, UrlField } from "@/components/ui/primitives";
 import { Switch } from "@/components/ui/switch";
 
@@ -148,6 +150,14 @@ function buildLandingEmbedSnippet(origin: string, slug: string, name: string, bg
 }
 
 type BannerPhase = "registration" | "live" | "upcoming" | "ended";
+
+/** 상태 머신의 "지금 보이는 모습" → 배너 상태 탭. 배너의 'live' 는 입장이 열린 구간이다. */
+const FACE_TO_PHASE: Record<WebinarFace, BannerPhase> = {
+  registration: "registration",
+  entryOpen: "live",
+  upcoming: "upcoming",
+  ended: "ended",
+};
 
 const BANNER_PHASES: Array<{ key: BannerPhase; label: string }> = [
   { key: "registration", label: "사전등록 중" },
@@ -315,6 +325,21 @@ export default function DeployTab({ webinarId, projectId, slug, webinarName, com
   // config 가 안 내려오므로(이 탭은 components 만 받는다) 여기서 따로 읽어 온다.
   // null 이면 아직 못 정한 상태 — 스니펫은 옛 고정값(#06080d)으로 폴백한다.
   const [landingBg, setLandingBg] = useState<string | null>(null);
+  /**
+   * 배너 설정에서 **지금 어떤 상태가 보이고 언제 바뀌는지**를 알려주려고 일정을 함께 읽는다.
+   * 상태를 정하는 값(방송 시각·등록 마감)은 기본 정보 탭, 수동 전환은 운영 콘솔에 있는데,
+   * 정작 문구를 고치는 자리에서 그게 안 보여 "각 상황을 수동으로 켤 수 있어야 하지 않나"
+   * 라는 질문이 나왔다. 새 장치를 더하는 대신 **있는 것을 이 자리에서 보이게** 한다.
+   */
+  const [schedule, setSchedule] = useState<WebinarStatusInput | null>(null);
+  const phasePickedRef = useRef(false);
+  const currentFace = schedule ? webinarFace(schedule) : null;
+  const nextTransition = schedule ? nextWebinarTransition(schedule) : null;
+  useEffect(() => {
+    if (!currentFace || phasePickedRef.current) return;
+    phasePickedRef.current = true;
+    setBannerPhase(FACE_TO_PHASE[currentFace]);
+  }, [currentFace]);
 
   // 스니펫은 파트너 사이트에 그대로 박히므로 배포 URL 기준이어야 한다.
   // 접속 중인 호스트(localhost·프리뷰 배포)를 쓰면 곧 죽는 주소가 남는다.
@@ -329,6 +354,16 @@ export default function DeployTab({ webinarId, projectId, slug, webinarName, com
         if (!alive || !res.ok || !data?.webinar) return;
         const lp = normalizeLandingPageConfig(data.webinar.config);
         setLandingBg(lp.sectionBg.hero === "light" ? lp.colors.lightBg : lp.colors.darkBg);
+        const w = data.webinar;
+        if (w.liveStartAt && w.liveEndAt && w.signupDeadline) {
+          setSchedule({
+            liveStartAt: w.liveStartAt,
+            liveEndAt: w.liveEndAt,
+            signupDeadline: w.signupDeadline,
+            statusOverride: w.statusOverride ?? null,
+            components: w.components,
+          });
+        }
       } catch {
         /* 실패해도 조용히 폴백 색을 쓴다 */
       }
@@ -545,21 +580,57 @@ export default function DeployTab({ webinarId, projectId, slug, webinarName, com
 
           return (
             <>
-              <div className="mt-5 flex flex-wrap gap-1.5">
-                {BANNER_PHASES.map((p) => (
-                  <button
-                    key={p.key}
-                    type="button"
-                    onClick={() => setBannerPhase(p.key)}
-                    className={`rounded-lg px-3 py-1.5 text-xs transition-colors ${
-                      bannerPhase === p.key
-                        ? "bg-violet-500 text-white shadow-sm"
-                        : "bg-secondary/60 hover:bg-secondary"
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
+              {currentFace && (
+                <div className="mt-4 rounded-xl bg-secondary/40 px-3 py-2.5">
+                  <p className="text-xs">
+                    지금 방문자에게 보이는 상태{" "}
+                    <b className="font-semibold text-foreground">
+                      {BANNER_PHASES.find((p) => p.key === FACE_TO_PHASE[currentFace])?.label}
+                    </b>
+                  </p>
+                  {schedule?.statusOverride ? (
+                    <p className="mt-1 text-[11px] leading-relaxed text-amber-600">
+                      운영 콘솔에서 <b className="font-medium">수동 전환</b> 중이라 예정 시각과 무관하게 이 상태로 고정돼 있어요.
+                      운영 콘솔에서 &lsquo;자동 판정으로 되돌리기&rsquo;를 누르면 일정대로 돌아갑니다.
+                    </p>
+                  ) : nextTransition ? (
+                    <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                      {formatKstDateTime(nextTransition.at.toISOString())} 에{" "}
+                      <b className="font-medium text-foreground">
+                        {BANNER_PHASES.find((p) => p.key === FACE_TO_PHASE[nextTransition.to])?.label}
+                      </b>
+                      {" "}으로 바뀝니다. 시각은 <b className="font-medium">기본 정보</b> 탭의 일정이 정해요.
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                      일정상 예정된 전환이 더 없어요.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {BANNER_PHASES.map((p) => {
+                  const isNow = currentFace !== null && FACE_TO_PHASE[currentFace] === p.key;
+                  return (
+                    <button
+                      key={p.key}
+                      type="button"
+                      onClick={() => setBannerPhase(p.key)}
+                      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors ${
+                        bannerPhase === p.key
+                          ? "bg-violet-500 text-white shadow-sm"
+                          : "bg-secondary/60 hover:bg-secondary"
+                      }`}
+                    >
+                      {/* 지금 실제로 보이는 상태에 점 — 네 탭 중 어디가 '진짜'인지 한눈에. */}
+                      {isNow && (
+                        <span className={`h-1.5 w-1.5 rounded-full ${bannerPhase === p.key ? "bg-white" : "bg-violet-500"}`} />
+                      )}
+                      {p.label}
+                    </button>
+                  );
+                })}
               </div>
 
               <BannerPreview

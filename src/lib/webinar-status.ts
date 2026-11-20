@@ -73,6 +73,60 @@ export function getEntryOpenBeforeMinutes(components: unknown): number {
   return DEFAULT_ENTRY_OPEN_BEFORE_MINUTES;
 }
 
+/**
+ * **부착물이 지금 보여 주는 모습** — 상태(status)보다 한 겹 아래다.
+ *
+ * 배너·히어로는 `status` 만으로 갈리지 않는다: 'registration' 이어도 입장 오픈 시각이
+ * 지났으면 입장 버튼을 보여 주고, 마감 뒤 시작 전에는 캘린더만 남는다. 운영자에게
+ * "언제 뭐가 바뀌나" 를 알려 주려면 이 네 가지로 말해야 한다.
+ */
+export type WebinarFace = "registration" | "upcoming" | "entryOpen" | "ended";
+
+export function webinarFace(webinar: WebinarStatusInput, now: Date = new Date()): WebinarFace {
+  const r = resolveWebinarStatus(webinar, now);
+  if (r.status === "ended") return "ended";
+  if (r.entryOpen) return "entryOpen";
+  if (r.canRegister) return "registration";
+  return "upcoming";
+}
+
+export interface WebinarTransition {
+  at: Date;
+  to: WebinarFace;
+}
+
+/**
+ * 다음 전환 시각과 그때의 모습.
+ *
+ * 후보 시각을 늘어놓고 고르는 게 아니라, **각 후보 시각의 모습을 실제로 계산해** 지금과
+ * 다른 첫 번째를 고른다. 순서만 보고 고르면 틀린다 — 등록 마감이 입장 오픈보다 뒤인
+ * 웨비나에서는 마감을 지나도 화면이 그대로인데 "곧 바뀝니다" 라고 알리게 된다.
+ *
+ * 수동 전환 중이면 **null** 이다. 그때는 일정이 화면을 움직이지 않으므로, 예정 시각을
+ * 알려 주면 오히려 거짓말이 된다(운영자가 직접 되돌려야 일정으로 복귀한다).
+ */
+export function nextWebinarTransition(
+  webinar: WebinarStatusInput,
+  now: Date = new Date(),
+): WebinarTransition | null {
+  if (isWebinarStatusOverride(webinar.statusOverride)) return null;
+
+  const liveStartAt = toDate(webinar.liveStartAt);
+  const entryOpenAt = new Date(
+    liveStartAt.getTime() - getEntryOpenBeforeMinutes(webinar.components) * 60_000,
+  );
+  const here = webinarFace(webinar, now);
+
+  return (
+    [toDate(webinar.signupDeadline), entryOpenAt, liveStartAt, toDate(webinar.liveEndAt)]
+      .filter((at) => at.getTime() > now.getTime())
+      .sort((a, b) => a.getTime() - b.getTime())
+      // 경계는 `>=` 로 판정되지만 마감은 `<=` 라 그 순간엔 아직 안 바뀐다 — 1ms 뒤를 본다.
+      .map((at) => ({ at, to: webinarFace(webinar, new Date(at.getTime() + 1)) }))
+      .find((t) => t.to !== here) ?? null
+  );
+}
+
 export function resolveWebinarStatus(webinar: WebinarStatusInput, now: Date = new Date()): WebinarStatusResult {
   const liveStartAt = toDate(webinar.liveStartAt);
   const liveEndAt = toDate(webinar.liveEndAt);
