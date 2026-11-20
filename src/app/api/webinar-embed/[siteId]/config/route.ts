@@ -8,6 +8,7 @@
  */
 import { buildIcs } from "@/lib/webinar-calendar";
 import { NextResponse } from "next/server";
+import { parseBannerSchedule } from "@/lib/webinar-banner-schedule";
 import { prisma } from "@/lib/prisma";
 import { resolveWebinarStatus } from "@/lib/webinar-status";
 import { endedSurveyLinks } from "@/lib/webinar-ended-surveys";
@@ -163,6 +164,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ siteId: 
     statusOverride: webinar.statusOverride ?? null,
     serverNow: new Date().toISOString(),
     entryOpenAt: statusInfo.entryOpenAt.toISOString(),
+    bannerSchedule: parseBannerSchedule((webinar.components as Record<string, unknown> | null)?.bannerSchedule),
     liveStartAt: webinar.liveStartAt.toISOString(),
     liveEndAt: webinar.liveEndAt.toISOString(),
     signupDeadline: webinar.signupDeadline.toISOString(),

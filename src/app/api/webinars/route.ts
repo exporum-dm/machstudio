@@ -140,6 +140,7 @@ export async function POST(request: Request) {
     if (source.components && typeof source.components === "object" && !Array.isArray(source.components)) {
       const clonedComponents = { ...source.components };
       for (const { key } of LIVE_SESSION_SLOTS) delete clonedComponents[key];
+      delete clonedComponents.bannerSchedule;
       components = clonedComponents;
     } else {
       components = source.components ?? undefined;

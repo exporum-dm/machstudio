@@ -6,6 +6,7 @@ import { logActivity, logWebinarUpdate } from "@/lib/activity";
 import { summarizeWebinarChanges } from "@/lib/webinar-change-summary";
 import { isWebinarStatusOverride } from "@/lib/webinar-status";
 import { LIVE_SESSION_SLOTS, normalizeLiveSessionDisplay } from "@/lib/webinar-config";
+import { parseBannerSchedule } from "@/lib/webinar-banner-schedule";
 import { assertScheduleOrder, parseWebinarDate, WebinarScheduleError } from "@/lib/webinar-schedule";
 
 async function getWebinarWithAuth(id: string, userId: string) {
@@ -58,6 +59,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const selectedSessions: string[] = [];
   if (components && typeof components === "object" && !Array.isArray(components)) {
+    if (components.bannerSchedule != null) {
+      const schedule = parseBannerSchedule(components.bannerSchedule);
+      if (!schedule) {
+        return NextResponse.json({ error: "배너 전환 시각 세 개를 시간순으로 지정해주세요." }, { status: 400 });
+      }
+      components.bannerSchedule = schedule;
+    }
     for (const { key } of LIVE_SESSION_SLOTS) {
       const value = components[key];
       if (value === undefined || value === "auto" || value === "hidden") continue;

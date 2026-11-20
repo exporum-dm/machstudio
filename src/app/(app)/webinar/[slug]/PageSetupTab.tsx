@@ -14,6 +14,7 @@ import { normalizeLivePageConfig } from "@/lib/webinar-config";
 import SurveyTab from "./SurveyTab";
 import { type OperateSection } from "./OperateTab";
 import LandingPageTab from "./LandingPageTab";
+import WebinarBannerSettings from "./WebinarBannerSettings";
 import { FINISH, JumpLink, R, SELECTED_SURFACE, SELECTED_TEXT } from "@/components/ui/primitives";
 import SetupPreview from "./SetupPreview";
 import ExposureTab from "./ExposureTab";
@@ -45,6 +46,7 @@ interface Webinar {
   liveStartAt: string;
   liveEndAt: string;
   signupDeadline: string;
+  statusOverride?: string | null;
   theme: Record<string, string>;
   config: Record<string, unknown>;
   components?: Record<string, unknown> | null;
@@ -482,6 +484,9 @@ export default function PageSetupTab({
                     onGoToSource={() => onSectionChange("source")}
                     onGoToDeploy={onJumpToTab ? () => onJumpToTab("deploy") : undefined}
                     confirmLiveOff={confirmLiveOff}
+                    afterSponsors={
+                      <WebinarBannerSettings webinarId={webinar.id} webinarName={webinar.name} schedule={webinar} onSilentUpdate={onSilentUpdate} />
+                    }
                   />
                 </div>
               )}

@@ -54,8 +54,6 @@ function render({ projectId = "url-project" }: { projectId?: string } = {}) {
         projectId={projectId}
         slug="url-webinar"
         webinarName="URL 웨비나"
-        components={null}
-        onSilentUpdate={() => {}}
       />,
     );
   });
