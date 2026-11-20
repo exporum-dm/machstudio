@@ -393,6 +393,27 @@ ${ON_ACCENT_JS}  function theme() {
     var b = c.banner || {};
     return b.textByStatus || {};
   }
+  /**
+   * 배너 **버튼** 문구. 지금까지 코드에 박혀 있어 운영자가 바꿀 수 없었다 —
+   * 히어로 버튼(heroButton.labelByStatus)은 진작 바꿀 수 있었는데 배너만 남아 있었다.
+   *
+   * 키가 상태가 아니라 **행동**인 이유: 캘린더는 '사전등록 중' 과 '시작 전' 양쪽에 같은
+   * 모습으로 뜨고, 사전등록 버튼은 '입장 중' 에 보조로 한 번 더 뜬다. 상태로 쪼개면 같은
+   * 문구를 두 번 적게 된다.
+   */
+  function bannerLabels() {
+    var c = (CFG && CFG.components) || {};
+    var b = c.banner || {};
+    return b.buttonLabels || {};
+  }
+  /**
+   * 버튼 문구 하나 — **공백만 남은 값은 비어 있는 것으로 본다.**
+   * "value || fallback" 만 쓰면 "   " 가 참이라 글자 없는 버튼이 파트너 사이트에 나간다.
+   * 어드민이 저장할 때 trim 하지만, 손으로 들어간 값·옛 데이터까지 여기서 막는다.
+   */
+  function btnLabel(value, fallback) {
+    return (typeof value === "string" ? value.trim() : "") || fallback;
+  }
   function componentEnabled(name, defaultOn) {
     var c = (CFG && CFG.components) || {};
     var comp = c[name];
@@ -1239,6 +1260,7 @@ ${ON_ACCENT_JS}  function theme() {
     var c = (CFG.components || {});
     var bc = c.banner || {};
     var texts = bannerTexts();
+    var bl = bannerLabels();
 
     // 설문 링크가 없어도 "종료됐다"는 안내는 남긴다(아래에서 설문 버튼만 조건부로 붙인다).
     // 예전엔 !surveyUrl() 이면 배너를 포기해서, 어드민이 편집한 종료 문구가 영원히 렌더되지 않았다.
@@ -1255,7 +1277,7 @@ ${ON_ACCENT_JS}  function theme() {
     if (status === "ended") {
       title.textContent = texts.ended || ((CFG.name || "웨비나") + "가 종료되었습니다. 참여해주셔서 감사합니다!");
       if (surveyUrl()) {
-        var sv = el("a", "mw-btn mw-btn-primary", "만족도 조사 참여하기");
+        var sv = el("a", "mw-btn mw-btn-primary", btnLabel(bl.survey, "만족도 조사 참여하기"));
         sv.href = surveyUrl();
         sv.target = "_blank";
         sv.rel = "noopener noreferrer";
@@ -1270,12 +1292,12 @@ ${ON_ACCENT_JS}  function theme() {
         texts.live || ((CFG.name || "웨비나") + (status === "live" ? "가 지금 진행 중입니다!" : " 입장이 시작됐어요!"))
       ));
       if (canRegisterNow(status)) {
-        var rBtn = el("button", "mw-btn mw-btn-secondary", "사전등록");
+        var rBtn = el("button", "mw-btn mw-btn-secondary", btnLabel(bl.liveRegister, "사전등록"));
         rBtn.type = "button";
         rBtn.addEventListener("click", openFormModal);
         ctas.appendChild(rBtn);
       }
-      var goBtn = el("a", "mw-btn mw-btn-primary", "웨비나 입장하기");
+      var goBtn = el("a", "mw-btn mw-btn-primary", btnLabel(bl.live, "웨비나 입장하기"));
       goBtn.href = livePageUrl();
       ctas.appendChild(goBtn);
     } else if (canRegisterNow(status)) {
@@ -1288,12 +1310,12 @@ ${ON_ACCENT_JS}  function theme() {
         texts.registration || ((CFG.name || "웨비나") + " 사전등록이 진행 중입니다.")
       ));
       if (bc.showCalendarButton !== false) {
-        var calBtn = el("button", "mw-btn mw-btn-secondary mw-btn-cal", "캘린더 추가");
+        var calBtn = el("button", "mw-btn mw-btn-secondary mw-btn-cal", btnLabel(bl.calendar, "캘린더 추가"));
         calBtn.type = "button";
         calBtn.addEventListener("click", openCalendar);
         ctas.appendChild(calBtn);
       }
-      var regBtn = el("button", "mw-btn mw-btn-primary", "웨비나 사전등록");
+      var regBtn = el("button", "mw-btn mw-btn-primary", btnLabel(bl.registration, "웨비나 사전등록"));
       regBtn.type = "button";
       regBtn.addEventListener("click", openFormModal);
       ctas.appendChild(regBtn);
@@ -1302,7 +1324,7 @@ ${ON_ACCENT_JS}  function theme() {
       if (bc.showCalendarButton !== false) {
         /* mw-btn-cal(PC 숨김)을 붙이지 않는다 — 이 분기에선 캘린더가 유일한 액션이라
            숨기면 버튼 0개인 배너가 남는다. 사전등록 중 배너처럼 다른 CTA 가 있을 때만 숨긴다. */
-        var calBtn2 = el("button", "mw-btn mw-btn-secondary", "캘린더 추가");
+        var calBtn2 = el("button", "mw-btn mw-btn-secondary", btnLabel(bl.calendar, "캘린더 추가"));
         calBtn2.type = "button";
         calBtn2.addEventListener("click", openCalendar);
         ctas.appendChild(calBtn2);
