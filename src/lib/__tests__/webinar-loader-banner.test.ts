@@ -176,3 +176,75 @@ describe("예정 시각 밖의 수동 전환이 이미 열린 페이지에 닿�
     expect(fetchMock.mock.calls.length).toBe(afterBoot);
   });
 });
+
+/**
+ * **배너 버튼 문구는 운영자가 정한다.**
+ *
+ * 히어로 버튼(heroButton.labelByStatus)은 진작 바꿀 수 있었는데 배너 버튼만 코드에 박혀 있었다.
+ * 키를 상태가 아니라 **행동**으로 둔 이유: 캘린더는 '사전등록 중'·'시작 전' 양쪽에 같은 모습으로
+ * 뜨고, 사전등록 버튼은 '입장 중' 에 보조로 한 번 더 뜬다. 상태로 쪼개면 같은 문구를 두 번 적는다.
+ *
+ * 제목이 아니라 **버튼만** 본다 — 기본 제목이 "…웨비나 사전등록이 진행 중입니다" 라서
+ * 배너 전체 텍스트로 비교하면 버튼을 안 고쳐도 통과해 버린다. 순서까지 함께 못 박는다.
+ */
+describe("배너 버튼 문구", () => {
+  const buttons = () =>
+    Array.from(document.querySelectorAll("#mw-banner .mw-btn")).map((b) => b.textContent ?? "");
+  const withLabels = (labels: Record<string, string>, over: Record<string, unknown> = {}) => ({
+    components: { banner: { buttonLabels: labels } },
+    ...over,
+  });
+
+  it("사전등록 중 — 캘린더와 주 버튼", async () => {
+    await boot(withLabels({ registration: "지금 신청하기", calendar: "일정 담기" }));
+    expect(buttons()).toEqual(["일정 담기", "지금 신청하기"]);
+  });
+
+  it("입장 중 — 보조 사전등록과 주 입장 버튼을 따로 바꾼다", async () => {
+    await boot(withLabels({ live: "시청하러 가기", liveRegister: "아직 등록 전이에요" }, { statusOverride: "live" }));
+    expect(buttons()).toEqual(["아직 등록 전이에요", "시청하러 가기"]);
+  });
+
+  it("종료 후 — 설문 버튼", async () => {
+    await boot(
+      withLabels({ survey: "후기 남기기" }, {
+        statusOverride: "ended",
+        links: { livePageUrl: null, surveyUrl: "https://example.test/survey", calendarUrl: null },
+      }),
+    );
+    expect(buttons()).toEqual(["후기 남기기"]);
+  });
+
+  /** 캘린더 문구는 '사전등록 중'·'시작 전' 두 상태가 **같은 칸**을 쓴다. */
+  it("시작 전 — 캘린더 문구를 함께 쓴다", async () => {
+    await boot(
+      withLabels({ calendar: "일정 담기" }, {
+        // 마감이 지났고 방송은 아직 — upcoming 분기(캘린더만 뜨는 상태).
+        signupDeadline: "2020-01-01T00:00:00.000Z",
+      }),
+    );
+    expect(buttons()).toEqual(["일정 담기"]);
+  });
+
+  /** 비워 두면 기본 문구 — 운영자가 안 적어도 배너가 비어 보이면 안 된다. */
+  it("비워 두거나 설정이 없으면 기본 문구", async () => {
+    await boot(withLabels({ registration: "   ", calendar: "" }));
+    expect(buttons()).toEqual(["캘린더 추가", "웨비나 사전등록"]);
+
+    await boot();
+    expect(buttons()).toEqual(["캘린더 추가", "웨비나 사전등록"]);
+  });
+});
+
+describe("배너 표시 끄기", () => {
+  /** 로더는 `enabled !== false` 로 읽는다 — 끈 경우에만 사라진다. */
+  it("끄면 배너가 뜨지 않는다", async () => {
+    await boot({ components: { banner: { enabled: false } } });
+    expect(document.getElementById("mw-banner")).toBeNull();
+  });
+
+  it("명시하지 않으면 뜬다", async () => {
+    await boot({ components: { banner: {} } });
+    expect(document.getElementById("mw-banner")).not.toBeNull();
+  });
+});
