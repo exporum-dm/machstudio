@@ -22,7 +22,7 @@
 import { prisma } from "@/lib/prisma";
 import { surveyAcceptingWhere } from "@/lib/webinar-survey";
 import { resolveWebinarStatus } from "@/lib/webinar-status";
-import { normalizeQaMode } from "@/lib/webinar-config";
+import { normalizeLivePageConfig, normalizeQaMode } from "@/lib/webinar-config";
 
 /**
  * 신선도 한도. 폴 주기(12초)의 절반이 안 되게 잡아, 공지를 올린 운영자가 체감하는 지연이
@@ -54,6 +54,8 @@ export interface WebinarLiveSnapshot {
   survey: unknown;
   /** 라이브 중 동시 시청자 수. 라이브가 아니면 null — 그때는 waitingCount 가 그 자리를 맡는다. */
   viewerCount: number | null;
+  /** 시청자용 응답에 집계 결과를 공개할지 여부. */
+  showViewerCount: boolean;
   /** 라이브 전 "N명이 함께 기다려요". 라이브 중이면 null(두 수가 한 화면에서 경쟁하지 않게). */
   waitingCount: number | null;
   /** 누적 사전등록자 수 — 사회적 증거. 위 두 값과 달리 "지금 접속 중" 이 아니라 총원이다. */
@@ -115,7 +117,7 @@ async function loadSnapshot(slug: string): Promise<WebinarLiveSnapshot> {
     return {
       webinar: null, status: null, chatEnabled: false, qaMode: normalizeQaMode({}),
       announcements: [], poll: null, popup: null, tally: null, survey: null,
-      viewerCount: null, waitingCount: null, registrantCount: 0,
+      viewerCount: null, showViewerCount: false, waitingCount: null, registrantCount: 0,
     };
   }
 
@@ -202,6 +204,7 @@ async function loadSnapshot(slug: string): Promise<WebinarLiveSnapshot> {
     tally,
     survey,
     viewerCount,
+    showViewerCount: normalizeLivePageConfig(row.config).entry.viewerCount,
     waitingCount,
     registrantCount,
   };

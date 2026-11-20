@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { maskName } from "@/lib/mask";
 import { getWebinarLiveSnapshot } from "@/lib/webinar-live-snapshot";
+import { normalizeLiveSessionDisplay } from "@/lib/webinar-config";
 
 const CORS = { "Access-Control-Allow-Origin": "*" };
 
@@ -137,7 +138,8 @@ async function liveState(request: Request, { params }: { params: Promise<{ slug:
       // 라이브 중 콘솔에서 모드를 바꿔도 이미 보고 있는 시청자가 다음 폴에서 따라오게(chatEnabled 와 동일 패턴)
       qaMode,
       youtubeId,
-      viewerCount: snap.viewerCount,
+      viewerCount: snap.showViewerCount ? snap.viewerCount : null,
+      sessionDisplay: normalizeLiveSessionDisplay(snap.webinar.components),
       announcements: snap.announcements,
       answeredQA,
       chat,

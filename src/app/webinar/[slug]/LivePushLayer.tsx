@@ -7,10 +7,12 @@
 // - Tally: 공식 embed.js 를 지연 로드, hiddenFields 로 응답자 식별(registrationId) 전달
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ArrowRight, BarChart3, Bell, ClipboardCheck, ExternalLink, Megaphone, MessageSquarePlus, X } from "lucide-react";
 import SurveyForm, { SURVEY_FORM_CSS, clearSurveyDraft } from "./SurveyForm";
-import ViewerModal from "./ViewerModal";
+import ViewerModal, { viewerOverlayBottom } from "./ViewerModal";
 import type { SurveyAnswers, SurveyQuestion } from "@/lib/webinar-survey";
+import { onAccentColor } from "@/lib/color";
 
 export interface LivePopup {
   id: string;
@@ -138,6 +140,7 @@ export default function LivePushLayer({
   poll: incomingPoll,
   survey: incomingSurvey,
   announcements = [],
+  mobileInboxTarget,
 }: {
   slug: string;
   registrationId: string | null;
@@ -149,6 +152,7 @@ export default function LivePushLayer({
   poll: LivePoll | null;
   survey?: LiveSurveyPush | null;
   announcements?: LiveAnnouncement[];
+  mobileInboxTarget?: HTMLDivElement | null;
 }) {
   // 표시 상태 — props(통합 폴링 결과)를 받아 세션 기억(닫음/투표)을 반영해 실제 노출 여부를 정한다.
   const [popup, setPopup] = useState<LivePopup | null>(null);
@@ -166,6 +170,7 @@ export default function LivePushLayer({
   const surveyFetchRef = useRef<string | null>(null); // 문항 로드 중/완료된 키 — 폴마다 재요청 방지
   const openedTallyRef = useRef<Set<string>>(new Set());
   const accent = accentColor || "#6d28d9";
+  const onAccent = onAccentColor(accent);
   // 팝업/투표 카드도 테마(표면·텍스트)를 따르게 — 없으면 기존 다크 폴백
   const surface = surfaceColor || "#1a1a1f";
   const text = textColor || "#ffffff";
@@ -387,31 +392,107 @@ export default function LivePushLayer({
     && !activePoll,
   );
 
+  const renderInbox = (mobile: boolean) => (
+    <div
+      className={mobile
+        ? "flex flex-col items-start gap-2 px-3 pb-3"
+        : "pointer-events-none fixed right-4 z-[55] hidden max-w-[calc(100vw-2rem)] flex-col items-end gap-2 [visibility:var(--webinar-viewport-visibility,visible)] sm:flex [&>*]:pointer-events-auto"}
+      style={mobile ? undefined : { bottom: viewerOverlayBottom }}
+    >
+      {showSurveyNudge && incomingSurvey && !inboxOpen && (
+        <button
+          type="button"
+          onClick={() => reopenSurvey(incomingSurvey)}
+          className="flex min-h-12 w-full items-center gap-2.5 rounded-2xl p-3 text-left shadow-md motion-safe:transition-transform motion-safe:hover:-translate-y-0.5 sm:w-80"
+          style={{ background: surface, color: text }}
+        >
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl" style={{ background: `color-mix(in srgb, ${accent} 18%, transparent)`, color: accent }}><ClipboardCheck className="h-4 w-4" /></span>
+          <span className="min-w-0 flex-1 truncate text-sm font-semibold">{incomingSurvey.title}</span>
+          <span className="flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-2 text-xs font-bold" style={{ background: `color-mix(in srgb, ${accent} 14%, transparent)`, color: accent }}>
+            설문 참여하기 <ArrowRight className="h-3.5 w-3.5" />
+          </span>
+        </button>
+      )}
+
+      {inboxOpen && (
+        <section
+          aria-label="라이브 알림"
+          className={mobile ? "w-full overflow-hidden rounded-xl shadow-sm" : "w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl shadow-2xl"}
+          style={{ background: surface, color: text, border: `1px solid ${soft(14)}` }}
+        >
+          <div className="flex items-center gap-2 border-b px-4 py-3" style={{ borderColor: soft(12) }}>
+            <Bell className="h-4 w-4" style={{ color: accent }} />
+            <h2 className="text-sm font-bold">라이브 알림</h2>
+            <span className="ml-auto text-[11px]" style={{ color: soft(55) }}>{interactionCount}개</span>
+            <button type="button" onClick={() => setInboxOpen(false)} aria-label="라이브 알림 닫기" className="grid h-7 w-7 place-items-center rounded-lg transition-colors hover:bg-white/10" style={{ color: soft(55) }}><X className="h-4 w-4" /></button>
+          </div>
+          <div className="max-h-[min(60vh,420px)] space-y-1 overflow-y-auto p-2">
+            {announcements.map((announcement) => (
+              <div key={`announcement-${announcement.id}`} className="rounded-xl px-3 py-2.5" style={{ background: soft(5) }}>
+                <div className="mb-1 flex items-center gap-1.5 text-[10px] font-bold" style={{ color: accent }}><Megaphone className="h-3.5 w-3.5" />공지</div>
+                <p className="whitespace-pre-wrap text-[13px] leading-relaxed" style={{ color: soft(84) }}>{announcement.message}</p>
+              </div>
+            ))}
+            {incomingPoll && (
+              <button type="button" onClick={() => reopenPoll(incomingPoll)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-white/5">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl" style={{ background: `color-mix(in srgb, ${accent} 18%, transparent)`, color: accent }}><BarChart3 className="h-4 w-4" /></span>
+                <span className="min-w-0 flex-1"><span className="block text-[10px] font-bold" style={{ color: accent }}>실시간 투표</span><span className="mt-0.5 block truncate text-[13px] font-medium">{incomingPoll.question}</span></span>
+                <ExternalLink className="h-4 w-4 shrink-0" style={{ color: soft(45) }} />
+              </button>
+            )}
+            {incomingSurvey && !surveyCompleted && (
+              <button type="button" onClick={() => reopenSurvey(incomingSurvey)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-white/5">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl" style={{ background: `color-mix(in srgb, ${accent} 18%, transparent)`, color: accent }}><ClipboardCheck className="h-4 w-4" /></span>
+                <span className="min-w-0 flex-1"><span className="block text-[10px] font-bold" style={{ color: accent }}>만족도 설문</span><span className="mt-0.5 block truncate text-[13px] font-medium">{incomingSurvey.title}</span><span className="mt-0.5 block text-[11px]" style={{ color: soft(58) }}>더 나은 웨비나를 위해 의견을 들려주세요.</span></span>
+                <ExternalLink className="h-4 w-4 shrink-0" style={{ color: soft(45) }} />
+              </button>
+            )}
+            {incomingPopup && (
+              <button type="button" onClick={() => reopenPopup(incomingPopup)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-white/5">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl" style={{ background: `color-mix(in srgb, ${accent} 18%, transparent)`, color: accent }}><MessageSquarePlus className="h-4 w-4" /></span>
+                <span className="min-w-0 flex-1"><span className="block text-[10px] font-bold" style={{ color: accent }}>팝업</span><span className="mt-0.5 block truncate text-[13px] font-medium">{incomingPopup.title}</span></span>
+                <ExternalLink className="h-4 w-4 shrink-0" style={{ color: soft(45) }} />
+              </button>
+            )}
+            {incomingTally && (
+              <button type="button" onClick={() => reopenTally(incomingTally)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-white/5">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl" style={{ background: `color-mix(in srgb, ${accent} 18%, transparent)`, color: accent }}><Bell className="h-4 w-4" /></span>
+                <span className="min-w-0 flex-1"><span className="block text-[10px] font-bold" style={{ color: accent }}>외부 설문</span><span className="mt-0.5 block truncate text-[13px] font-medium">{incomingTally.title}</span></span>
+                <ExternalLink className="h-4 w-4 shrink-0" style={{ color: soft(45) }} />
+              </button>
+            )}
+          </div>
+        </section>
+      )}
+
+      <button
+        type="button"
+        onClick={() => setInboxOpen((open) => !open)}
+        aria-expanded={inboxOpen}
+        aria-label={`라이브 알림 ${interactionCount}개 다시 확인`}
+        className="flex h-11 items-center gap-2 rounded-full px-4 text-sm font-bold shadow-lg motion-safe:transition-transform motion-safe:hover:-translate-y-0.5"
+        style={{ background: accent, color: onAccent }}
+      >
+        <Bell className="h-4 w-4" />
+        알림
+        <span className="grid h-5 min-w-5 place-items-center rounded-full px-1 text-[10px]" style={{ background: "rgba(255,255,255,0.22)" }}>{interactionCount}</span>
+      </button>
+    </div>
+  );
+
   return (
     <>
       {popup && (
-        <div
-          className="fixed inset-0 z-[70] flex items-center justify-center p-5"
-          style={{ background: "rgba(0,0,0,0.68)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)" }}
-          onClick={(e) => { if (e.target === e.currentTarget && popup.dismissible !== false) dismiss(); }}
+        <ViewerModal
+          surface={surface}
+          text={text}
+          soft={soft}
+          label={popup.title}
+          onClose={popup.dismissible !== false ? dismiss : undefined}
+          zIndex={70}
+          maxWidthClass="max-w-md"
         >
-          <div
-            className="relative flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-2xl shadow-2xl"
-            style={{ background: surface, color: text, border: `1px solid ${soft(12)}` }}
-          >
             <div className="absolute inset-x-[18%] top-0 z-10 h-0.5 rounded-full" style={{ background: `linear-gradient(90deg, transparent, ${accent}, transparent)` }} />
-            {popup.dismissible !== false && (
-              <button
-                onClick={dismiss}
-                aria-label="팝업 닫기"
-                className="absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-lg text-base transition-opacity hover:opacity-80"
-                style={{ background: soft(7), color: soft(55), border: `1px solid ${soft(12)}` }}
-              >
-                ×
-              </button>
-            )}
-            {/* 콘텐츠만 스크롤 — 긴 내용도 닫기(×)·CTA 가 잘리지 않게(모바일). ×·상단바는 고정. */}
-            <div className="min-h-0 overflow-y-auto p-7">
             <h2 className="mb-2 pr-9 text-lg font-bold leading-snug">{popup.title}</h2>
             {popup.message && <p className="mb-5 whitespace-pre-wrap text-sm leading-relaxed" style={{ color: soft(68) }}>{popup.message}</p>}
             <div className="space-y-2">
@@ -451,9 +532,7 @@ export default function LivePushLayer({
             {popup.dismissible !== false && (
               <p className="mt-3 text-center text-[11px]" style={{ color: soft(42) }}>닫으면 이 팝업은 다시 표시되지 않아요.</p>
             )}
-            </div>
-          </div>
-        </div>
+        </ViewerModal>
       )}
 
       {/* 설문 푸시 모달 — 팝업 모달이 떠 있을 땐 보류(팝업 우선). SurveyForm(STK 토큰) 재사용. */}
@@ -484,7 +563,7 @@ export default function LivePushLayer({
                     <SurveyForm key={surveyDraftKey(activeSurvey)} questions={activeSurvey.questions} submitting={surveySubmitting} onSubmit={submitSurvey} storageKey={surveyDraftKey(activeSurvey)} />
                   </div>
                   {surveyError && <p className="mt-3 text-[13px] text-red-400" role="alert">{surveyError}</p>}
-              <p className="mt-3 text-center text-[11px]" style={{ color: soft(40) }}>닫으면 이 설문은 다시 표시되지 않아요.</p>
+              <p className="mt-3 text-center text-[11px]" style={{ color: soft(56) }}>닫은 뒤에도 설문을 다시 열 수 있어요.</p>
             </>
           )}
         </ViewerModal>
@@ -493,8 +572,8 @@ export default function LivePushLayer({
       {/* 실시간 투표 토스트 — 우하단. 팝업 모달이 떠 있을 땐 숨김(팝업 우선), 닫히면 다시 노출. 색은 테마 구동. */}
       {activePoll && !popup && (
         <div
-          className="fixed bottom-4 right-4 z-[60] w-[320px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl p-4 shadow-2xl backdrop-blur"
-          style={{ background: surface, color: text, border: `1px solid ${soft(12)}` }}
+          className="fixed right-4 z-[60] w-[320px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl p-4 shadow-2xl backdrop-blur [visibility:var(--webinar-viewport-visibility,visible)]"
+          style={{ bottom: viewerOverlayBottom, background: surface, color: text, border: `1px solid ${soft(12)}` }}
         >
           <button
             onClick={dismissPoll}
@@ -537,91 +616,10 @@ export default function LivePushLayer({
 
       {/* 닫힌 라이브 인터랙션을 다시 여는 공용 알림함. 활성 송출이 종료되면 live-state 에서 빠져 자동으로 사라진다. */}
       {showInbox && (
-        <div className="fixed bottom-4 right-4 z-[55] flex max-w-[calc(100vw-2rem)] flex-col items-end gap-2">
-          {showSurveyNudge && incomingSurvey && !inboxOpen && (
-            <button
-              type="button"
-              onClick={() => reopenSurvey(incomingSurvey)}
-              className="w-[min(320px,calc(100vw-2rem))] rounded-2xl p-3 text-left shadow-xl transition-transform hover:-translate-y-0.5"
-              style={{ background: surface, color: text, border: `1px solid ${soft(14)}` }}
-            >
-              <span className="flex items-start gap-2.5">
-                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl" style={{ background: `color-mix(in srgb, ${accent} 18%, transparent)`, color: accent }}><ClipboardCheck className="h-4 w-4" /></span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[13px] font-semibold leading-snug">더 나은 웨비나를 위해<br />만족도 설문에 참여해주세요.</span>
-                  <span className="mt-1 block truncate text-[11px]" style={{ color: soft(58) }}>{incomingSurvey.title}</span>
-                </span>
-              </span>
-              <span className="mt-3 flex h-8 items-center justify-center gap-1.5 rounded-lg text-[12px] font-bold" style={{ background: `color-mix(in srgb, ${accent} 14%, transparent)`, color: accent }}>
-                설문 참여하기 <ArrowRight className="h-3.5 w-3.5" />
-              </span>
-            </button>
-          )}
-
-          {inboxOpen && (
-            <section
-              aria-label="라이브 알림"
-              className="w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl shadow-2xl"
-              style={{ background: surface, color: text, border: `1px solid ${soft(14)}` }}
-            >
-              <div className="flex items-center gap-2 border-b px-4 py-3" style={{ borderColor: soft(12) }}>
-                <Bell className="h-4 w-4" style={{ color: accent }} />
-                <h2 className="text-sm font-bold">라이브 알림</h2>
-                <span className="ml-auto text-[11px]" style={{ color: soft(55) }}>{interactionCount}개</span>
-                <button type="button" onClick={() => setInboxOpen(false)} aria-label="라이브 알림 닫기" className="grid h-7 w-7 place-items-center rounded-lg transition-colors hover:bg-white/10" style={{ color: soft(55) }}><X className="h-4 w-4" /></button>
-              </div>
-              <div className="max-h-[min(60vh,420px)] space-y-1 overflow-y-auto p-2">
-                {announcements.map((announcement) => (
-                  <div key={`announcement-${announcement.id}`} className="rounded-xl px-3 py-2.5" style={{ background: soft(5) }}>
-                    <div className="mb-1 flex items-center gap-1.5 text-[10px] font-bold" style={{ color: accent }}><Megaphone className="h-3.5 w-3.5" />공지</div>
-                    <p className="whitespace-pre-wrap text-[13px] leading-relaxed" style={{ color: soft(84) }}>{announcement.message}</p>
-                  </div>
-                ))}
-                {incomingPoll && (
-                  <button type="button" onClick={() => reopenPoll(incomingPoll)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-white/5">
-                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl" style={{ background: `color-mix(in srgb, ${accent} 18%, transparent)`, color: accent }}><BarChart3 className="h-4 w-4" /></span>
-                    <span className="min-w-0 flex-1"><span className="block text-[10px] font-bold" style={{ color: accent }}>실시간 투표</span><span className="mt-0.5 block truncate text-[13px] font-medium">{incomingPoll.question}</span></span>
-                    <ExternalLink className="h-4 w-4 shrink-0" style={{ color: soft(45) }} />
-                  </button>
-                )}
-                {incomingSurvey && !surveyCompleted && (
-                  <button type="button" onClick={() => reopenSurvey(incomingSurvey)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-white/5">
-                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl" style={{ background: `color-mix(in srgb, ${accent} 18%, transparent)`, color: accent }}><ClipboardCheck className="h-4 w-4" /></span>
-                    <span className="min-w-0 flex-1"><span className="block text-[10px] font-bold" style={{ color: accent }}>만족도 설문</span><span className="mt-0.5 block truncate text-[13px] font-medium">{incomingSurvey.title}</span><span className="mt-0.5 block text-[11px]" style={{ color: soft(58) }}>더 나은 웨비나를 위해 의견을 들려주세요.</span></span>
-                    <ExternalLink className="h-4 w-4 shrink-0" style={{ color: soft(45) }} />
-                  </button>
-                )}
-                {incomingPopup && (
-                  <button type="button" onClick={() => reopenPopup(incomingPopup)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-white/5">
-                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl" style={{ background: `color-mix(in srgb, ${accent} 18%, transparent)`, color: accent }}><MessageSquarePlus className="h-4 w-4" /></span>
-                    <span className="min-w-0 flex-1"><span className="block text-[10px] font-bold" style={{ color: accent }}>팝업</span><span className="mt-0.5 block truncate text-[13px] font-medium">{incomingPopup.title}</span></span>
-                    <ExternalLink className="h-4 w-4 shrink-0" style={{ color: soft(45) }} />
-                  </button>
-                )}
-                {incomingTally && (
-                  <button type="button" onClick={() => reopenTally(incomingTally)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-white/5">
-                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl" style={{ background: `color-mix(in srgb, ${accent} 18%, transparent)`, color: accent }}><Bell className="h-4 w-4" /></span>
-                    <span className="min-w-0 flex-1"><span className="block text-[10px] font-bold" style={{ color: accent }}>외부 설문</span><span className="mt-0.5 block truncate text-[13px] font-medium">{incomingTally.title}</span></span>
-                    <ExternalLink className="h-4 w-4 shrink-0" style={{ color: soft(45) }} />
-                  </button>
-                )}
-              </div>
-            </section>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setInboxOpen((open) => !open)}
-            aria-expanded={inboxOpen}
-            aria-label={`라이브 알림 ${interactionCount}개 다시 확인`}
-            className="flex h-11 items-center gap-2 rounded-full px-4 text-sm font-bold shadow-xl transition-transform hover:-translate-y-0.5"
-            style={{ background: accent, color: "#fff" }}
-          >
-            <Bell className="h-4 w-4" />
-            알림
-            <span className="grid h-5 min-w-5 place-items-center rounded-full px-1 text-[10px]" style={{ background: "rgba(255,255,255,0.22)" }}>{interactionCount}</span>
-          </button>
-        </div>
+        <>
+          {renderInbox(false)}
+          {mobileInboxTarget && createPortal(renderInbox(true), mobileInboxTarget)}
+        </>
       )}
     </>
   );

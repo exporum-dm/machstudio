@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createQaHistoryToken } from "@/lib/webinar-qa-history-token";
 import { prisma } from "@/lib/prisma";
 import { rateLimitAsync, rateLimitPeekAsync } from "@/lib/ratelimit";
 import { normalizePhone, normalizeEmail } from "@/lib/webinar-config";
@@ -47,7 +48,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     );
   }
 
-  const webinar = await prisma.webinar.findUnique({ where: { slug }, select: { id: true, config: true } });
+  const webinar = await prisma.webinar.findUnique({ where: { slug }, select: { id: true, config: true, liveEndAt: true } });
   if (!webinar) return NextResponse.json({ error: "없는 웨비나예요" }, { status: 404 });
 
   const body = await request.json();
@@ -111,7 +112,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     : false;
 
   return NextResponse.json(
-    { found: !!registration, registration: registration ?? null, reminderSubscribed, ...(youtubeId ? { youtubeId } : {}) },
+    { found: !!registration, registration: registration ?? null, reminderSubscribed,
+      ...(registration ? { qaHistoryToken: createQaHistoryToken(slug, registration.id, webinar.liveEndAt) } : {}),
+      ...(youtubeId ? { youtubeId } : {}) },
     { headers: { "Access-Control-Allow-Origin": "*" } }
   );
 }

@@ -502,6 +502,7 @@ function WebinarDetail({ id }: { id: string }) {
                 webinarId={id}
                 webinar={webinar}
                 onNavigate={handleNavigate}
+                onSilentUpdate={() => fetchWebinar(true)}
                 section={operateSection}
                 onSectionChange={(section) => navigate("operate", section, { replace: true })}
               />

@@ -6,11 +6,32 @@ import {
   buildSessionNumbering,
   cleanSessionText,
   isRealSession,
+  resolveLiveSessionHighlights,
   resolveSessionRef,
   sessionHasSpeaker,
   sessionKicker,
   sessionTypeLabel,
 } from "../webinar-sessions";
+
+describe("live session highlights", () => {
+  const sessions = [{ id: "one", status: "done" }, { id: "two", status: "now" }, { id: "three", status: "upcoming" }];
+
+  it("uses the schedule by default and lets the operator hold an earlier session", () => {
+    expect(resolveLiveSessionHighlights(sessions, { liveCurrentSession: "auto", liveNextSession: "auto" }))
+      .toEqual({ activeSession: sessions[1], nextSession: sessions[2] });
+    expect(resolveLiveSessionHighlights(sessions, { liveCurrentSession: "one", liveNextSession: "auto" }))
+      .toEqual({ activeSession: sessions[0], nextSession: sessions[1] });
+  });
+
+  it("hides either highlight without removing the agenda", () => {
+    expect(resolveLiveSessionHighlights(sessions, { liveCurrentSession: "hidden", liveNextSession: "one" }))
+      .toEqual({ activeSession: null, nextSession: sessions[0] });
+    expect(resolveLiveSessionHighlights(sessions, { liveCurrentSession: "two", liveNextSession: "hidden" }))
+      .toEqual({ activeSession: sessions[1], nextSession: null });
+    expect(resolveLiveSessionHighlights(sessions, { liveCurrentSession: "deleted-id", liveNextSession: "hidden" }))
+      .toEqual({ activeSession: null, nextSession: null });
+  });
+});
 
 /**
  * 이 파일에 테스트가 없던 상태로 유형을 2종 늘렸다. isRealSession 하나가 표시 순번·세션 개수·

@@ -25,12 +25,14 @@ export default function OperateTab({
   webinarId,
   webinar,
   onNavigate,
+  onSilentUpdate,
   section,
   onSectionChange,
 }: {
   webinarId: string;
   webinar?: WebinarForConsole;
   onNavigate?: (target: string) => void;
+  onSilentUpdate?: () => Promise<void>;
   section: OperateSection;
   onSectionChange: (section: OperateSection) => void;
 }) {
@@ -70,7 +72,7 @@ export default function OperateTab({
       </div>
 
       {section === "console" ? (
-        <LiveConsoleTab webinarId={webinarId} webinar={webinar} onNavigate={onNavigate} />
+        <LiveConsoleTab webinarId={webinarId} webinar={webinar} onNavigate={onNavigate} onSilentUpdate={onSilentUpdate} />
       ) : (
         <div className="-m-4 sm:-m-6 lg:-m-8 lg:-mt-4">
           <RegistrantsTab webinarId={webinarId} />

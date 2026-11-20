@@ -9,10 +9,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { getYouTubeVideoId } from "@/lib/youtube";
-import { CheckCircle2, Send, Share2 } from "lucide-react";
+import { CheckCircle2, ChevronDown, Send, Share2 } from "lucide-react";
 import { webinarRadiusScale } from "@/lib/webinar-radius";
 import { formatKst, kstDateString } from "@/lib/datetime";
-import { buildSessionNumbering, cleanSessionText, isPauseSession, isRealSession, parseSpeaker, resolveSessionRef, sessionHasSpeaker, sessionTypeLabel } from "@/lib/webinar-sessions";
+import { buildSessionNumbering, cleanSessionText, isPauseSession, isRealSession, parseSpeaker, resolveLiveSessionHighlights, resolveSessionRef, sessionHasSpeaker, sessionTypeLabel } from "@/lib/webinar-sessions";
+import { normalizeLiveSessionDisplay, type LiveSessionDisplay } from "@/lib/webinar-config";
+import type { OwnWebinarQuestion } from "@/lib/webinar-qa-history";
 import SurveyForm, { SURVEY_FORM_CSS, clearSurveyDraft } from "./SurveyForm";
 import { formatSurveyOpensAt, type SurveyAnswers, type SurveyQuestion } from "@/lib/webinar-survey";
 import { IMAGE_PRESETS, transformedImageUrl } from "@/lib/webinar-image";
@@ -115,13 +117,19 @@ interface QAProps {
   sent: boolean;
   error?: string;
   answered?: AnsweredQA[];
+  ownQuestions?: OwnWebinarQuestion[];
+  historyOpen?: boolean;
+  onToggleHistory?: () => void;
+  historyLoading?: boolean;
+  historyError?: string;
+  onRetryHistory?: () => void;
+  needsHistoryVerification?: boolean;
   onVote?: (qaId: string) => void;
   votedIds?: string[];
   /**
    * 질문 공개 범위.
    *  open   = 올라온 질문을 서로 보고 추천할 수 있다(기본)
-   *  closed = 질문은 주최자만 본다 → 시청자에겐 입력창만 남는다.
-   * 서버가 폐쇄형이면 목록을 아예 안 내려주므로 여기 분기는 화면 정리용이다(게이팅은 서버 몫).
+   *  closed = 본인이 남긴 질문만 확인할 수 있다.
    */
   mode?: "open" | "closed";
 }
@@ -397,9 +405,11 @@ export default function LiveContentStk({
   chatEnabled = false,
   isLive = true,
   viewerCount,
+  sessionDisplay = normalizeLiveSessionDisplay(null),
   qa,
   chat,
   onTabChange,
+  onMobileInboxMount,
   notifyState,
   slug,
   registrationId,
@@ -419,9 +429,11 @@ export default function LiveContentStk({
   chatEnabled?: boolean;
   isLive?: boolean;
   viewerCount?: number | null;
+  sessionDisplay?: LiveSessionDisplay;
   qa: QAProps;
   chat?: ChatProps;
   onTabChange?: (tab: string) => void;
+  onMobileInboxMount?: (node: HTMLDivElement | null) => void;
   notifyState?: { subscribed: boolean; onToggle: () => void; error?: string; pending?: boolean };
   /** CTA 폼 모달·새 창 열기에 필요 — 없으면 폼형 CTA 버튼은 동작하지 않는다(목업 하니스 등) */
   slug?: string;
@@ -511,8 +523,7 @@ export default function LiveContentStk({
     return list;
   }, [webinar.sessions, dayStr, now]);
 
-  const activeSession = sessions.find((s) => s.status === "now") ?? null;
-  const nextSession = sessions.find((s) => s.status === "upcoming") ?? null;
+  const { activeSession, nextSession } = resolveLiveSessionHighlights(sessions, sessionDisplay);
   // 지금/다음 세션이 있을 때만 focus — 모든 세션 종료 후엔 끝난 세션을 "다음"으로 잘못 표기하지 않는다
   const focus = activeSession ?? nextSession ?? null;
 
@@ -658,11 +669,18 @@ export default function LiveContentStk({
                 </span>
               </div>
             )}
+            {activeSession && nextSession && (
+              <p className="mt-3 text-sm" style={{ color: "var(--sub)" }}>
+                <strong className="mr-2" style={{ color: "var(--key)" }}>다음</strong>
+                {nextSession.title}
+              </p>
+            )}
           </div>
 
           <aside className="lv-dock">
             <div className="lv-card" ref={cardRef}>
               <div className="lv-docktitle">실시간 참여</div>
+              <div className="sm:hidden" ref={onMobileInboxMount} />
               <div className="lv-tabs" role="tablist" style={{ gridTemplateColumns: `repeat(${tabs.length}, 1fr)` }}>
                 {tabs.map((t) => (
                   <button
@@ -735,11 +753,44 @@ export default function LiveContentStk({
                     {qa.sent && <p className="lv-hint" style={{ color: "#2f9e63" }}>질문이 전달됐어요!</p>}
                     {qa.error && <p className="lv-hint" role="alert" style={{ color: "#f87171" }}>{qa.error}</p>}
                   </div>
+                  {qa.onToggleHistory && (
+                    <section className="mx-3 mb-2 rounded-xl" style={{ background: "var(--key-dim)" }}>
+                      <button type="button" className="flex min-h-11 w-full items-center justify-between rounded-xl px-3 text-sm font-semibold" onClick={qa.onToggleHistory} aria-expanded={qa.historyOpen} aria-controls="lv-question-history">
+                        내가 남긴 질문{qa.ownQuestions?.length ? ` (${qa.ownQuestions.length})` : ""}
+                        <ChevronDown aria-hidden className={`size-4 motion-safe:transition-transform ${qa.historyOpen ? "rotate-180" : ""}`} />
+                      </button>
+                      <div id="lv-question-history" hidden={!qa.historyOpen} className="px-3 pb-2.5" aria-live="polite">
+                      {Boolean(qa.ownQuestions?.length) && (
+                        <ul className="max-h-36 space-y-2 overflow-y-auto overscroll-contain py-1">
+                          {qa.ownQuestions?.map((item) => {
+                            const session = sessions.find((candidate) => candidate.number === item.sessionNumber);
+                            return (
+                              <li key={item.id} className="text-sm">
+                                {session && <p className="text-xs" style={{ color: "var(--sub)" }}>{session.title}</p>}
+                                <p className="whitespace-pre-wrap break-words">{item.question}</p>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                      {qa.historyError && (
+                        <p className="mt-1 text-xs" role="status">{qa.historyError} <button type="button" onClick={qa.onRetryHistory} className="underline">다시 불러오기</button></p>
+                      )}
+                      {qa.needsHistoryVerification && (
+                        <p className="mt-1 text-xs" style={{ color: "var(--sub)" }}>
+                          저장된 질문을 보려면 입장 정보를 다시 확인해주세요.
+                          {onReauth && <button type="button" onClick={onReauth} className="ml-1 underline">입장 정보 확인</button>}
+                        </p>
+                      )}
+                      {!qa.ownQuestions?.length && !qa.historyError && !qa.needsHistoryVerification && (
+                        <p className="text-xs" style={{ color: "var(--sub)" }}>{qa.historyLoading ? "질문 내역을 불러오는 중이에요." : "아직 남긴 질문이 없어요."}</p>
+                      )}
+                      </div>
+                    </section>
+                  )}
                   {qaClosed ? (
-                    /* 폐쇄형 — 목록·추천 없이 "질문하기"만. 왜 목록이 없는지 한 줄로 알려준다
-                       (그냥 비어 있으면 고장으로 읽힌다). */
                     <div className="lv-empty">
-                      남긴 질문은 주최자에게만 전달돼요.<br />다른 참여자에게는 보이지 않아요.
+                      주최자에게 질문을 보낼 수 있어요.<br />제출한 질문은 본인과 주최자가 볼 수 있어요.
                     </div>
                   ) : answered.length > 0 ? (
                     <div className="lv-list" tabIndex={0} aria-label="질문 목록">
@@ -831,13 +882,16 @@ export default function LiveContentStk({
                   {sessions.length > 0 ? (
                     <div className="lv-agscroll" tabIndex={0} aria-label="세션 순서">
                       {sessions.map((s) => {
-                        const isNext = s.id === nextSession?.id && s.status === "upcoming";
-                        const label = s.status === "done" ? "완료" : s.status === "now" ? "진행 중" : isNext ? "다음" : s.status === "upcoming" ? "예정" : "";
-                        const pct = s.status === "now" && s.endMs > s.startMs
+                        const isCurrent = s.id === activeSession?.id;
+                        const isNext = s.id === nextSession?.id;
+                        const state = isCurrent ? "now" : isNext || s.status === "now" ? "upcoming" : s.status;
+                        const label = isCurrent ? "진행 중" : isNext ? "다음" : state === "done" ? "완료" : state === "upcoming" ? "예정" : "";
+                        const scheduledProgress = isCurrent && sessionDisplay.liveCurrentSession === "auto" && s.endMs > s.startMs;
+                        const pct = scheduledProgress
                           ? Math.min(100, Math.max(0, ((now - s.startMs) / (s.endMs - s.startMs)) * 100))
                           : 0;
                         return (
-                          <div className={`lv-ses ${s.status}`} key={s.id}>
+                          <div className={`lv-ses ${state}`} key={s.id}>
                             <span className="tc">{s.startTime}</span>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <h4>
@@ -868,13 +922,13 @@ export default function LiveContentStk({
                                   </div>
                                 );
                               })()}
-                              {s.status === "now" && (
+                              {scheduledProgress && (
                                 <div className="lv-prog"><span style={{ width: `${pct}%` }} /></div>
                               )}
                             </div>
                             {label && (
                               <span className="st">
-                                {s.status === "now" && <span className="d" />}{label}
+                                {isCurrent && <span className="d" />}{label}
                               </span>
                             )}
                           </div>

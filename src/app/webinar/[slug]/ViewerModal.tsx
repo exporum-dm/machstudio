@@ -5,6 +5,8 @@ import { useEffect, useRef, type ReactNode } from "react";
 const FOCUSABLE =
   'button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
+export const viewerOverlayBottom = "calc(var(--webinar-viewport-bottom, 0px) + max(1rem, env(safe-area-inset-bottom, 0px)))";
+
 /**
  * 시청자용 모달 껍데기 — 배경·카드·닫기 버튼·스크롤 컨테이너.
  *
@@ -90,7 +92,7 @@ export default function ViewerModal({
     };
 
     document.addEventListener("keydown", onKeyDown, true);
-    (dialog.querySelector<HTMLElement>("[autofocus]") ?? focusable()[0] ?? dialog).focus();
+    (dialog.querySelector<HTMLElement>("[autofocus]") ?? focusable()[0] ?? dialog).focus({ preventScroll: true });
 
     return () => {
       document.removeEventListener("keydown", onKeyDown, true);
@@ -99,21 +101,30 @@ export default function ViewerModal({
       // 한 번 복원해 열기 버튼 ↔ 모달 사이 포커스가 왕복하지 않게 한다.
       queueMicrotask(() => {
         if (dialog.isConnected) return;
-        if (restoreTarget?.isConnected) restoreTarget.focus();
+        if (restoreTarget?.isConnected) restoreTarget.focus({ preventScroll: true });
       });
     };
   }, [restoreFocusTo]);
 
   return (
     <div
-      className="stk-live fixed inset-0 flex items-center justify-center p-4"
-      style={{ zIndex, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(5px)", WebkitBackdropFilter: "blur(5px)" }}
+      className="stk-live fixed inset-x-0 flex items-center justify-center overflow-hidden px-4 [visibility:var(--webinar-viewport-visibility,visible)]"
+      style={{
+        zIndex,
+        top: "var(--webinar-viewport-top, 0px)",
+        height: "var(--webinar-viewport-height, 100dvh)",
+        paddingTop: "max(1rem, env(safe-area-inset-top, 0px))",
+        paddingBottom: "max(1rem, env(safe-area-inset-bottom, 0px))",
+        background: "rgba(0,0,0,0.6)",
+        backdropFilter: "blur(5px)",
+        WebkitBackdropFilter: "blur(5px)",
+      }}
       // 배경 클릭만 닫는다 — 카드 안에서 시작한 클릭이 올라와 닫히는 일이 없게 target 을 대조한다.
       onClick={(e) => { if (onClose && e.target === e.currentTarget) onClose(); }}
     >
       <div
         ref={dialogRef}
-        className={`relative flex max-h-[85vh] w-full ${maxWidthClass} flex-col overflow-hidden rounded-2xl shadow-2xl`}
+        className={`relative flex max-h-full w-full ${maxWidthClass} flex-col overflow-hidden rounded-2xl shadow-2xl sm:max-h-[min(85dvh,100%)]`}
         style={{ background: surface, color: text }}
         role="dialog"
         aria-modal="true"
@@ -124,13 +135,13 @@ export default function ViewerModal({
           <button
             onClick={onClose}
             aria-label="닫기"
-            className="absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-lg text-base transition-colors"
+            className="absolute right-3 top-3 z-10 flex h-11 w-11 items-center justify-center rounded-xl text-base transition-colors sm:h-8 sm:w-8"
             style={{ color: soft(50), background: soft(6) }}
           >
             ×
           </button>
         )}
-        <div className="min-h-0 overflow-y-auto p-7">{children}</div>
+        <div className="min-h-0 overflow-y-auto overscroll-contain p-5 sm:p-7">{children}</div>
       </div>
     </div>
   );
