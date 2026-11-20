@@ -40,9 +40,9 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { WEBINAR_STATUS_META } from "@/lib/webinar-status";
 import { surveyOpenState, type SurveyQuestion } from "@/lib/webinar-survey";
 import { formatKst } from "@/lib/datetime";
-import { isHttpUrlOrSitePath } from "@/lib/webinar-config";
+import { isHttpUrlOrSitePath, LIVE_SESSION_SLOTS, normalizeLiveSessionDisplay, type LiveSessionSlot } from "@/lib/webinar-config";
 import { UrlField } from "@/components/ui/primitives";
-import { isPauseSession, isRealSession, sessionTypeLabel } from "@/lib/webinar-sessions";
+import { isPauseSession, isRealSession, resolveLiveSessionHighlights, sessionTypeLabel } from "@/lib/webinar-sessions";
 
 const spring = { type: "spring", stiffness: 420, damping: 30 } as const;
 
@@ -1510,10 +1510,37 @@ function LiveClock({ startAt, endAt }: { startAt?: string; endAt?: string }) {
 
 // 러닝오더 — 세션 타임라인. 세션 시각("HH:MM")을 웨비나의 KST 캘린더 날짜에 앵커링해 절대시각으로 done/live/next 판정
 // (KST 고정 +9, DST 없음). 이로써 자정 넘김·전날/다음날에도 상태가 정확하다.
-function RunningOrder({ sessions, liveStartAt }: { sessions: WebinarForConsole["sessions"]; liveStartAt?: string }) {
+function RunningOrder({ webinarId, sessions, liveStartAt, components, onSilentUpdate }: {
+  webinarId: string;
+  sessions: WebinarForConsole["sessions"];
+  liveStartAt?: string;
+  components?: WebinarForConsole["components"];
+  onSilentUpdate?: () => Promise<void>;
+}) {
   const [now, setNow] = useState(() => Date.now());
+  const [display, setDisplay] = useState(() => normalizeLiveSessionDisplay(components));
+  const [saving, setSaving] = useState(false);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(t); }, []);
   if (!sessions.length) return null;
+
+  async function updateDisplay(slot: LiveSessionSlot, value: string) {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/webinars/${webinarId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ components: { [slot]: value } }),
+      });
+      if (!res.ok) throw new Error();
+      setDisplay((prev) => ({ ...prev, [slot]: value }));
+      void onSilentUpdate?.();
+      toast.success("시청 화면의 세션 표시를 바꿨어요");
+    } catch {
+      toast.error("세션 표시를 바꾸지 못했어요. 다시 시도해주세요.");
+    } finally {
+      setSaving(false);
+    }
+  }
   const KST = 9 * 3_600_000;
   const base = liveStartAt ? new Date(liveStartAt) : null;
   const kst = base && !Number.isNaN(base.getTime()) ? new Date(base.getTime() + KST) : null;
@@ -1527,9 +1554,10 @@ function RunningOrder({ sessions, liveStartAt }: { sessions: WebinarForConsole["
     const st = absOf(s.startTime);
     let en = absOf(s.endTime);
     if (st != null && en != null && en <= st) en += 86_400_000; // 종료가 시작보다 이르면 자정 넘김 세션
-    return { s, st, en };
+    const status = st == null || en == null ? "none" : en <= now ? "done" : st <= now ? "now" : "upcoming";
+    return { id: s.id, s, status };
   });
-  const firstUpcoming = ordered.find((x) => x.st != null && x.st > now)?.s;
+  const { activeSession, nextSession } = resolveLiveSessionHighlights(ordered, display);
   const nowKst = new Date(now + KST);
   const nowLabel = `${String(nowKst.getUTCHours()).padStart(2, "0")}:${String(nowKst.getUTCMinutes()).padStart(2, "0")}`;
   return (
@@ -1539,9 +1567,33 @@ function RunningOrder({ sessions, liveStartAt }: { sessions: WebinarForConsole["
         <h2 className="text-sm font-semibold">러닝오더</h2>
         <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">현재 {nowLabel}</span>
       </div>
+      <div className="grid gap-3 border-b border-border p-4 sm:grid-cols-2 sm:px-5" aria-busy={saving}>
+        {LIVE_SESSION_SLOTS.map(({ key, label }) => {
+          const selected = display[key];
+          const otherSlot = key === "liveCurrentSession" ? "liveNextSession" : "liveCurrentSession";
+          return (
+            <label key={key} className="grid gap-1.5 text-xs font-medium">
+              {label} 표시
+              <select
+                className="h-9 min-w-0 rounded-lg bg-secondary px-2 text-sm shadow-sm focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-60"
+                value={selected}
+                disabled={saving}
+                onChange={(event) => void updateDisplay(key, event.target.value)}
+              >
+                <option value="auto">일정대로 자동 표시</option>
+                <option value="hidden">숨기기</option>
+                {selected !== "auto" && selected !== "hidden" && !sessions.some((s) => s.id === selected) && (
+                  <option value={selected} disabled>삭제된 세션 · 숨김</option>
+                )}
+                {ordered.map(({ s }) => <option key={s.id} value={s.id} disabled={display[otherSlot] === s.id}>{s.startTime} {s.title}</option>)}
+              </select>
+            </label>
+          );
+        })}
+      </div>
       <div className="divide-y divide-border/60">
-        {ordered.map(({ s, st, en }) => {
-          const state = st == null || en == null ? "upcoming" : en <= now ? "done" : st <= now ? "live" : s === firstUpcoming ? "next" : "upcoming";
+        {ordered.map(({ s, status }) => {
+          const state = s.id === activeSession?.id ? "live" : s.id === nextSession?.id ? "next" : status === "done" ? "done" : "upcoming";
           return (
             <div key={s.id} className="flex items-center gap-3 px-4 py-2.5 sm:px-5">
               <span className={`h-2 w-2 shrink-0 rounded-full ${state === "live" ? "animate-pulse bg-green-500" : state === "next" ? "bg-violet-500" : state === "done" ? "bg-muted-foreground/30" : "bg-border"}`} />
@@ -1826,10 +1878,12 @@ export default function LiveConsoleTab({
   webinarId,
   webinar,
   onNavigate,
+  onSilentUpdate,
 }: {
   webinarId: string;
   webinar?: WebinarForConsole;
   onNavigate?: (target: string) => void;
+  onSilentUpdate?: () => Promise<void>;
 }) {
   const confirm = useConfirm();
   const [data, setData] = useState<DashboardData | null>(null);
@@ -2158,7 +2212,16 @@ export default function LiveConsoleTab({
     { key: "reminders", label: "알림", icon: Mail, render: () => <ReminderPanel webinarId={webinarId} /> },
   ];
 
-  const runningOrder = <RunningOrder sessions={webinar?.sessions ?? []} liveStartAt={webinar?.liveStartAt} />;
+  const runningOrder = webinar && (
+    <RunningOrder
+      key={webinarId}
+      webinarId={webinarId}
+      sessions={webinar.sessions ?? []}
+      liveStartAt={webinar.liveStartAt}
+      components={webinar.components}
+      onSilentUpdate={onSilentUpdate}
+    />
+  );
 
   // 라이브 2행 좌우 — 480px 고정 높이, 헤더 고정 + 내부만 스크롤(fillHeight)
   const qaCard = (

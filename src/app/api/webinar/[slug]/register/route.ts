@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createQaHistoryToken } from "@/lib/webinar-qa-history-token";
 import { prisma } from "@/lib/prisma";
 import { rateLimitAsync } from "@/lib/ratelimit";
 import { resolveWebinarStatus } from "@/lib/webinar-status";
@@ -327,6 +328,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     {
       // shareCode 는 이 등록자 본인에게만 준다 — 공유 버튼이 이 값으로 링크를 만든다.
       registration: { id: registration.id, name: registration.name, shareCode: registration.shareCode },
+      qaHistoryToken: createQaHistoryToken(slug, registration.id, webinar.liveEndAt),
       ...(videoId ? { youtubeId: videoId } : {}),
     },
     { status: 201, headers: CORS_HEADERS },

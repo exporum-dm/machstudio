@@ -1224,6 +1224,11 @@ ${ON_ACCENT_JS}  function theme() {
     liveMounts.forEach(function(mount) {
       // slug 기준 가드 — activeWebinar 전환(전시 교체)이 config 로 오면 iframe 을 새 슬러그로 재렌더.
       if (mount.getAttribute("data-mw-slug") === CFG.slug) return;
+      if (mount.mwLiveListeners) mount.mwLiveListeners.abort();
+      var listeners = new AbortController();
+      mount.mwLiveListeners = listeners;
+      var eventOptions = { passive: true, signal: listeners.signal };
+      var appOrigin = new URL(BASE).origin;
       mount.setAttribute("data-mw-slug", CFG.slug);
       clear(mount);
       var frame = document.createElement("iframe");
@@ -1232,16 +1237,41 @@ ${ON_ACCENT_JS}  function theme() {
       frame.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen";
       frame.setAttribute("allowfullscreen", "true");
       mount.appendChild(frame);
+      var pendingViewport = false;
+      function sendViewport() {
+        if (pendingViewport) return;
+        pendingViewport = true;
+        window.requestAnimationFrame(function() {
+          pendingViewport = false;
+          if (!frame.isConnected || !frame.contentWindow) return;
+          var rect = frame.getBoundingClientRect();
+          var viewport = window.visualViewport;
+          var viewportTop = viewport ? viewport.offsetTop : 0;
+          var viewportBottom = viewportTop + (viewport ? viewport.height : window.innerHeight);
+          var top = Math.min(rect.height, Math.max(0, viewportTop - rect.top));
+          var height = Math.max(0, Math.min(rect.height, viewportBottom - rect.top) - top);
+          frame.contentWindow.postMessage({ type: "mach-live-viewport", top: top, height: height, bottom: Math.max(0, rect.height - top - height) }, appOrigin);
+        });
+      }
+      frame.addEventListener("load", sendViewport, eventOptions);
+      window.addEventListener("scroll", sendViewport, { passive: true, capture: true, signal: listeners.signal });
+      window.addEventListener("resize", sendViewport, eventOptions);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", sendViewport, eventOptions);
+        window.visualViewport.addEventListener("scroll", sendViewport, eventOptions);
+      }
       window.addEventListener("message", function(ev) {
         try {
           // 이 프레임이 보낸 메시지만 신뢰 — 호스트 페이지의 다른 iframe/스크립트 위조 차단
-          if (ev.source !== frame.contentWindow) return;
+          if (ev.source !== frame.contentWindow || ev.origin !== appOrigin) return;
           var data = ev.data;
           if (data && data.type === "mach-resize" && typeof data.height === "number" && data.height > 200) {
             frame.style.height = Math.ceil(data.height) + "px";
+            sendViewport();
           }
         } catch (e) {}
-      });
+      }, eventOptions);
+      sendViewport();
     });
   }
 

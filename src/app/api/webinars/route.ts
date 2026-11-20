@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma";
 import { logActivity } from "@/lib/activity";
+import { LIVE_SESSION_SLOTS } from "@/lib/webinar-config";
 import { assertScheduleOrder, parseWebinarDate, WebinarScheduleError } from "@/lib/webinar-schedule";
 
 export async function GET(request: Request) {
@@ -136,7 +137,13 @@ export async function POST(request: Request) {
       clonedConfig.livePage = livePage;
     }
     config = clonedConfig;
-    components = source.components ?? undefined;
+    if (source.components && typeof source.components === "object" && !Array.isArray(source.components)) {
+      const clonedComponents = { ...source.components };
+      for (const { key } of LIVE_SESSION_SLOTS) delete clonedComponents[key];
+      components = clonedComponents;
+    } else {
+      components = source.components ?? undefined;
+    }
     /* speakerLinks 는 Json 컬럼이라 null 을 그대로 넘길 수 없다 — Prisma 는 JSON 필드의
        "값을 비운다" 를 DbNull 로 표현한다(그냥 null 은 타입 오류). */
     clonedSessions = source.sessions.map((s) => ({

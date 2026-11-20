@@ -5,6 +5,7 @@ import { Prisma } from "@/generated/prisma";
 import { logActivity, logWebinarUpdate } from "@/lib/activity";
 import { summarizeWebinarChanges } from "@/lib/webinar-change-summary";
 import { isWebinarStatusOverride } from "@/lib/webinar-status";
+import { LIVE_SESSION_SLOTS, normalizeLiveSessionDisplay } from "@/lib/webinar-config";
 import { assertScheduleOrder, parseWebinarDate, WebinarScheduleError } from "@/lib/webinar-schedule";
 
 async function getWebinarWithAuth(id: string, userId: string) {
@@ -54,6 +55,28 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const body = await request.json();
   const { name, description, liveStartAt, liveEndAt, signupDeadline, theme, config, statusOverride, components } = body;
+
+  const selectedSessions: string[] = [];
+  if (components && typeof components === "object" && !Array.isArray(components)) {
+    for (const { key } of LIVE_SESSION_SLOTS) {
+      const value = components[key];
+      if (value === undefined || value === "auto" || value === "hidden") continue;
+      if (typeof value !== "string" || !value) {
+        return NextResponse.json({ error: "유효한 세션을 선택해주세요." }, { status: 400 });
+      }
+      selectedSessions.push(value);
+    }
+    if (selectedSessions.length > 0) {
+      const display = normalizeLiveSessionDisplay({ ...(webinar.components as object | null), ...components });
+      if (display.liveCurrentSession === display.liveNextSession) {
+        return NextResponse.json({ error: "현재와 다음 슬롯에 같은 세션을 표시할 수 없어요." }, { status: 400 });
+      }
+    }
+  }
+  const selectedIds = [...new Set(selectedSessions)];
+  if (selectedIds.length && await prisma.webinarSession.count({ where: { webinarId: id, id: { in: selectedIds } } }) !== selectedIds.length) {
+    return NextResponse.json({ error: "이 웨비나의 세션을 선택해주세요." }, { status: 400 });
+  }
 
   // 상태 수동 오버라이드 — null(자동 복귀) 또는 유틸이 정의한 값만 허용
   if (statusOverride !== undefined && statusOverride !== null && !isWebinarStatusOverride(statusOverride)) {

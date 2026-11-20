@@ -195,3 +195,21 @@ export function parseSpeaker(
   if (idx >= 0) return { name: raw.slice(0, idx).trim(), company: raw.slice(idx + 1).trim() };
   return { name: raw, company: "" };
 }
+import type { LiveSessionDisplay } from "./webinar-config";
+
+export function resolveLiveSessionHighlights<T extends { id: string; status: string }>(
+  sessions: T[],
+  display: LiveSessionDisplay,
+) {
+  const { liveCurrentSession: current, liveNextSession: next } = display;
+  const activeSession = sessions.find((session) => current === "auto"
+    ? session.status === "now" && session.id !== next
+    : session.id === current) ?? null;
+  const manualCurrent = current !== "auto" ? activeSession : null;
+  const nextSession = next === "auto" && manualCurrent
+    ? sessions[sessions.indexOf(manualCurrent) + 1] ?? null
+    : sessions.find((session) => session !== activeSession && (next === "auto"
+      ? session.status === "upcoming"
+      : session.id === next)) ?? null;
+  return { activeSession, nextSession };
+}

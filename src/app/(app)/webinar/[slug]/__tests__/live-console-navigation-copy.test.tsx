@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import LiveConsoleTab from "../LiveConsoleTab";
@@ -66,7 +66,12 @@ function clickDisclosure(label: string) {
   act(() => { button?.click(); });
 }
 
-function render() {
+type ConsoleProps = ComponentProps<typeof LiveConsoleTab>;
+
+function render(
+  webinar: ConsoleProps["webinar"] = { config: {}, components: { chatEnabled: false }, sessions: [], _count: { registrations: 0 } },
+  onSilentUpdate?: ConsoleProps["onSilentUpdate"],
+) {
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -75,7 +80,8 @@ function render() {
       <ConfirmProvider>
         <LiveConsoleTab
           webinarId="webinar-navigation-copy"
-          webinar={{ config: {}, components: { chatEnabled: false }, sessions: [], _count: { registrations: 0 } }}
+          webinar={webinar}
+          onSilentUpdate={onSilentUpdate}
         />
       </ConfirmProvider>,
     );
@@ -115,4 +121,39 @@ describe("운영 콘솔 안내는 현재 만들기 메뉴를 가리킨다", () =
     expect(host?.textContent).toContain("만들기 → 시청 화면 → 라이브 → 참여 구성에서 채팅을 켜야 보여요");
     expect(host?.textContent).not.toContain("만들기 → 라이브 페이지");
   });
+});
+
+it("saves a manual session selection and refreshes the parent webinar", async () => {
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(() => null);
+  const fetchMock = vi.fn(async (url: string, options?: RequestInit) => {
+    if (options?.method === "PATCH") return { ok: true };
+    return { ok: true, json: async () => responsesByUrl[url] };
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const onSilentUpdate = vi.fn(async () => {});
+  render({
+    config: {},
+    components: { liveNextSession: "next" },
+    sessions: [
+      { id: "current", number: 1, type: "session", title: "Current speaker", startTime: "14:00", endTime: "14:20" },
+      { id: "next", number: 2, type: "session", title: "Next speaker", startTime: "14:20", endTime: "14:40" },
+    ],
+    _count: { registrations: 0 },
+  }, onSilentUpdate);
+  await flush();
+
+  const selects = host!.querySelectorAll<HTMLSelectElement>("select");
+  const current = [...selects].find((select) => select.closest("label")?.textContent?.includes("현재 세션 표시"));
+  expect(current?.value).toBe("auto");
+  expect(current?.querySelector<HTMLOptionElement>("option[value='next']")?.disabled).toBe(true);
+  await act(async () => {
+    current!.value = "current";
+    current!.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(fetchMock).toHaveBeenCalledWith("/api/webinars/webinar-navigation-copy", expect.objectContaining({
+    method: "PATCH",
+    body: JSON.stringify({ components: { liveCurrentSession: "current" } }),
+  }));
+  expect(current?.value).toBe("current");
+  expect(onSilentUpdate).toHaveBeenCalledOnce();
 });

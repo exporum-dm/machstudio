@@ -21,12 +21,15 @@ import {
   isValidEmail,
   isValidPhone,
   normalizeLivePageConfig,
+  normalizeLiveSessionDisplay,
   normalizeRegistrationForm,
   safeHttpUrl,
   webinarFormTranslatedLocales,
   type WebinarRegistrationField,
+  type LiveSessionDisplay,
 } from "@/lib/webinar-config";
 import { resolveLocaleFromRawSignals } from "@/lib/form-locale";
+import type { OwnWebinarQuestion } from "@/lib/webinar-qa-history";
 import { MultiChoiceField, SingleChoiceField } from "@/components/webinar/choice-fields";
 import { readStatusRefresh } from "../status-refresh";
 import { buildUtmEnvelope, sendVisitBeacon } from "@/lib/attribution-client";
@@ -134,6 +137,7 @@ interface LiveStateResponse {
   qaMode?: "open" | "closed";
   youtubeId?: string | null;
   viewerCount?: number | null;
+  sessionDisplay?: LiveSessionDisplay;
   announcements: Announcement[];
   answeredQA?: AnsweredQA[];
   chat?: { messages: ChatMessage[] };
@@ -185,6 +189,7 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
   const [pinnedMessage, setPinnedMessage] = useState<{ id: string; name: string; message: string; isHost: boolean } | null>(null);
   const [serverNowMs, setServerNowMs] = useState<number | undefined>(undefined);
   const [viewerCount, setViewerCount] = useState<number | null>(null); // 실시간 동시 시청자 수(라이브)
+  const [sessionDisplay, setSessionDisplay] = useState<LiveSessionDisplay | null>(null);
   const [isTrulyLive, setIsTrulyLive] = useState(false); // status === "live" (입장오픈 전 창과 구분)
   const [entryOpenNow, setEntryOpenNow] = useState(false); // 입장 확인 창이 열렸는가 — signup 고정 상태의 "입장으로 돌아가기" 노출용
   // 함께 기다리는 사람 수 — /status 가 함께 내려준다(별도 폴러를 만들지 않는다).
@@ -207,6 +212,7 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
   const [pushTally, setPushTally] = useState<LiveTallyPush | null>(null);
   const [pushPoll, setPushPoll] = useState<LivePoll | null>(null);
   const [pushSurvey, setPushSurvey] = useState<LiveSurveyPush | null>(null);
+  const [mobileInboxTarget, setMobileInboxTarget] = useState<HTMLDivElement | null>(null);
   // 알림 구독 ("알림 받고 이어보기")
   const [notifySubscribed, setNotifySubscribed] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
@@ -273,20 +279,90 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
   const [isSendingQA, setIsSendingQA] = useState(false);
   const [qaSent, setQaSent] = useState(false);
   const [qaError, setQaError] = useState("");
+  const [qaHistoryToken, setQaHistoryToken] = useState<string | null>(null);
+  const [qaHistoryOpen, setQaHistoryOpen] = useState(false);
+  const [qaHistoryLoaded, setQaHistoryLoaded] = useState(false);
+  const [ownQuestions, setOwnQuestions] = useState<OwnWebinarQuestion[]>([]);
+  const [qaHistoryError, setQaHistoryError] = useState("");
+  const qaIdentity = useRef(0);
+
+  const fetchOwnQuestions = useCallback(async (signal?: AbortSignal) => {
+    if (!registrationId || !qaHistoryToken || isPreviewUrl()) return;
+    const identity = qaIdentity.current;
+    const inactive = () => signal?.aborted || identity !== qaIdentity.current;
+    setQaHistoryError("");
+    try {
+      const params = new URLSearchParams({ mine: "1", registrationId });
+      const res = await fetch(`/api/webinar/${slug}/qa?${params}`, {
+        headers: { Authorization: `Bearer ${qaHistoryToken}` },
+        signal,
+      });
+      if (res.status === 403) {
+        if (!inactive()) setQaHistoryToken(null);
+        return;
+      }
+      if (!res.ok) throw new Error();
+      const { questions } = await res.json() as { questions: OwnWebinarQuestion[] };
+      if (inactive()) return;
+      setOwnQuestions((current) => {
+        const loaded = new Set(questions.map(({ id }) => id));
+        return [...current.filter(({ id }) => !loaded.has(id)), ...questions].slice(0, 100);
+      });
+      setQaHistoryLoaded(true);
+    } catch {
+      if (!inactive()) setQaHistoryError("질문 내역을 불러오지 못했어요.");
+    }
+  }, [slug, registrationId, qaHistoryToken]);
+
+  useEffect(() => {
+    if (view !== "live" || activeTab !== "qa" || !registrationId || !qaHistoryToken || !qaHistoryOpen) return;
+    const controller = new AbortController();
+    void fetchOwnQuestions(controller.signal);
+    return () => controller.abort();
+  }, [view, activeTab, registrationId, qaHistoryToken, qaHistoryOpen, fetchOwnQuestions]);
 
   const pingRef = useRef<NodeJS.Timeout | null>(null);
 
-  // iframe 높이 자동 전달 (아임웹 임베드 시 사용)
+  // iframe 높이 전달 + 호스트에서 실제로 보이는 영역을 팝업/배너 기준으로 사용한다.
   useEffect(() => {
+    const root = document.documentElement.style;
+    const viewport = window.visualViewport;
+    const inFrame = window.parent !== window;
+    const applyViewport = (top: number, height: number, bottom: number) => {
+      root.setProperty("--webinar-viewport-top", `${top}px`);
+      root.setProperty("--webinar-viewport-height", `${height}px`);
+      root.setProperty("--webinar-viewport-bottom", `${bottom}px`);
+      root.setProperty("--webinar-viewport-visibility", height > 0 ? "visible" : "hidden");
+    };
+    const receiveViewport = (event: MessageEvent) => {
+      if (!inFrame || event.source !== window.parent || event.data?.type !== "mach-live-viewport") return;
+      const { top, height, bottom } = event.data;
+      if ([top, height, bottom].every((value) => Number.isFinite(value) && value >= 0)) applyViewport(top, height, bottom);
+    };
+    const updateNativeViewport = () => {
+      if (!inFrame && viewport) {
+        applyViewport(viewport.offsetTop, viewport.height, Math.max(0, window.innerHeight - viewport.offsetTop - viewport.height));
+      }
+    };
     const sendHeight = () => {
-      if (window.parent !== window) {
+      if (inFrame) {
         window.parent.postMessage({ type: "mach-resize", height: document.body.scrollHeight }, "*");
       }
     };
+    window.addEventListener("message", receiveViewport);
+    viewport?.addEventListener("resize", updateNativeViewport);
+    viewport?.addEventListener("scroll", updateNativeViewport);
+    updateNativeViewport();
     sendHeight();
     const ro = new ResizeObserver(sendHeight);
     ro.observe(document.body);
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("message", receiveViewport);
+      viewport?.removeEventListener("resize", updateNativeViewport);
+      viewport?.removeEventListener("scroll", updateNativeViewport);
+      for (const name of ["top", "height", "bottom", "visibility"]) root.removeProperty(`--webinar-viewport-${name}`);
+    };
   }, []);
 
   /**
@@ -305,8 +381,9 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
     try {
       const raw = localStorage.getItem(`mach_reg_${slug}`);
       if (raw) {
-        const s = JSON.parse(raw) as { registrationId?: string; videoId?: string | null; shareCode?: string | null };
+        const s = JSON.parse(raw) as { registrationId?: string; videoId?: string | null; shareCode?: string | null; qaHistoryToken?: string | null };
         if (s.registrationId) setRegistrationId(s.registrationId);
+        setQaHistoryToken(typeof s.qaHistoryToken === "string" ? s.qaHistoryToken : null);
         if (typeof s.videoId === "string") setVideoId(s.videoId);
         // 새로고침해도 공유 버튼이 바로 동작해야 한다 — 코드를 다시 받으려면 입장 확인을 또 해야 한다.
         if (typeof s.shareCode === "string") setShareCode(normalizeShareCode(s.shareCode) || null);
@@ -316,9 +393,9 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
   useEffect(() => {
     if (isPreviewUrl()) return;
     try {
-      if (registrationId) localStorage.setItem(`mach_reg_${slug}`, JSON.stringify({ registrationId, videoId, shareCode }));
+      if (registrationId) localStorage.setItem(`mach_reg_${slug}`, JSON.stringify({ registrationId, videoId, shareCode, qaHistoryToken }));
     } catch { /* 무시 */ }
-  }, [slug, registrationId, videoId, shareCode]);
+  }, [slug, registrationId, videoId, shareCode, qaHistoryToken]);
 
   const fetchWebinar = useCallback(async () => {
     try {
@@ -407,6 +484,7 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
       // null 역시 동기화해 운영자가 영상을 비웠을 때 이전 영상을 계속 보여주지 않는다.
       if (data.youtubeId !== undefined && data.youtubeId !== videoId) setVideoId(data.youtubeId);
       setViewerCount(data.viewerCount ?? null);
+      if (data.sessionDisplay) setSessionDisplay(data.sessionDisplay);
 
       setAnnouncements(data.announcements ?? []);
       // 라이브 중 오픈형 → 폐쇄형으로 바뀌면 이미 받아 둔 목록을 지운다.
@@ -811,6 +889,7 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
         return;
       }
       setRegistrationId(data.registration.id);
+      setQaHistoryToken(data.qaHistoryToken ?? null);
       if (typeof data.registration.shareCode === "string") setShareCode(normalizeShareCode(data.registration.shareCode) || null);
       if (typeof data.youtubeId === "string") setVideoId(data.youtubeId);
       setRegistered(true);
@@ -871,6 +950,7 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
       };
 
       setRegistrationId(registration.id);
+      setQaHistoryToken(data.qaHistoryToken ?? null);
       // 공유 버튼이 쓸 추천 코드 — 입장 확인에서 받아 둔다(클릭 시점에 서버를 기다리지 않게)
       if (typeof registration.shareCode === "string") setShareCode(normalizeShareCode(registration.shareCode) || null);
       if (typeof data.youtubeId === "string") setVideoId(data.youtubeId);
@@ -937,10 +1017,14 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
     if (!question.trim()) return;
     setQaError("");
     setIsSendingQA(true);
+    const identity = qaIdentity.current;
     try {
       const res = await fetch(`/api/webinar/${slug}/qa`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(qaHistoryToken ? { Authorization: `Bearer ${qaHistoryToken}` } : {}),
+        },
         body: JSON.stringify({
           question: question.trim(),
           sessionNumber: selectedSession,
@@ -949,18 +1033,24 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
           registrationId,
         }),
       });
+      if (identity !== qaIdentity.current) return;
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setQaError(data.error ?? "질문 전송에 실패했어요. 잠시 후 다시 시도해주세요.");
         return;
       }
+      const data: { qa?: OwnWebinarQuestion } | null = await res.json().catch(() => null);
+      const receipt = data?.qa;
+      if (identity !== qaIdentity.current) return;
+      if (receipt?.createdAt) setOwnQuestions((current) => [receipt, ...current.filter(({ id }) => id !== receipt.id)].slice(0, 100));
+      setQaHistoryOpen(true);
       setQuestion("");
       setQaSent(true);
       setTimeout(() => setQaSent(false), 3000);
     } catch {
-      setQaError("질문 전송에 실패했어요. 연결 상태를 확인하고 다시 시도해주세요.");
+      if (identity === qaIdentity.current) setQaError("질문 전송에 실패했어요. 연결 상태를 확인하고 다시 시도해주세요.");
     } finally {
-      setIsSendingQA(false);
+      if (identity === qaIdentity.current) setIsSendingQA(false);
     }
   };
 
@@ -1088,8 +1178,18 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
    */
   const handleReauth = () => {
     if (isPreviewUrl()) return;
+    qaIdentity.current += 1;
     try { localStorage.removeItem(`mach_reg_${slug}`); } catch { /* 스토리지 차단 무시 */ }
     setRegistrationId(null);
+    setQaHistoryToken(null);
+    setQaHistoryOpen(false);
+    setQaHistoryLoaded(false);
+    setOwnQuestions([]);
+    setQaHistoryError("");
+    setIsSendingQA(false);
+    setQaSent(false);
+    setQuestion("");
+    setQaError("");
     setVideoId(null);
   };
   // 자체 설문 N개 vs 외부 URL 하나의 배타적 폴백 — 규칙은 webinar-ended-surveys.ts 한 곳에.
@@ -1226,6 +1326,7 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
         poll={view === "live" && registrationId ? pushPoll : null}
         survey={view === "live" && registrationId ? pushSurvey : null}
         announcements={view === "live" && registrationId ? announcements : []}
+        mobileInboxTarget={mobileInboxTarget}
       />
 
       {/* 공지 배너 — 라이브 뷰에서만. announcements 는 뷰 전환 시 초기화되지 않아,
@@ -1293,8 +1394,10 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
           serverNowMs={serverNowMs}
           isLive={isTrulyLive}
           viewerCount={viewerCount}
+          sessionDisplay={sessionDisplay ?? normalizeLiveSessionDisplay(webinar.components)}
           chatEnabled={chatEnabled}
           onTabChange={setActiveTab}
+          onMobileInboxMount={setMobileInboxTarget}
           slug={slug}
           registrationId={registrationId}
           qa={{
@@ -1308,6 +1411,13 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
             sent: qaSent,
             error: qaError,
             answered: answeredQA,
+            ownQuestions,
+            historyOpen: qaHistoryOpen,
+            onToggleHistory: () => setQaHistoryOpen((open) => !open),
+            historyLoading: !qaHistoryLoaded && Boolean(qaHistoryToken) && !qaHistoryError && !previewMode,
+            historyError: qaHistoryError,
+            onRetryHistory: () => void fetchOwnQuestions(),
+            needsHistoryVerification: !previewMode && !qaHistoryToken,
             // 폐쇄형은 목록이 없어 추천 대상도 없다 → 핸들러를 아예 넘기지 않는다
             onVote: qaMode === "closed" ? undefined : handleVoteQA,
             votedIds: [...votedQa],

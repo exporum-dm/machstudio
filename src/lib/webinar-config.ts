@@ -272,6 +272,22 @@ export function normalizeQaMode(components: unknown): QaMode {
   return c.qaMode === "closed" ? "closed" : "open";
 }
 
+export const LIVE_SESSION_SLOTS = [
+  { key: "liveCurrentSession", label: "현재 세션" },
+  { key: "liveNextSession", label: "다음 세션" },
+] as const;
+
+export type LiveSessionSlot = (typeof LIVE_SESSION_SLOTS)[number]["key"];
+export type LiveSessionDisplay = Record<LiveSessionSlot, string>;
+
+export function normalizeLiveSessionDisplay(components: unknown): LiveSessionDisplay {
+  const values = (components ?? {}) as Partial<LiveSessionDisplay>;
+  return {
+    liveCurrentSession: typeof values.liveCurrentSession === "string" && values.liveCurrentSession ? values.liveCurrentSession : "auto",
+    liveNextSession: typeof values.liveNextSession === "string" && values.liveNextSession ? values.liveNextSession : "auto",
+  };
+}
+
 // ── 라이브 페이지 화면(대기·입장·종료) 구성 — 섹션별 on/off + 자료·넥스트 데이터 ──
 // config.livePage 에 저장(JSON blob, 마이그레이션 불필요). 데이터가 없으면 토글이 켜져 있어도 뷰어에서 자동 숨김.
 export interface LiveResource {

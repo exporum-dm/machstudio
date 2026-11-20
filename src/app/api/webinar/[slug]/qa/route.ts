@@ -4,12 +4,36 @@ import { rateLimitAsync } from "@/lib/ratelimit";
 import { resolveWebinarStatus } from "@/lib/webinar-status";
 import { normalizeQaMode } from "@/lib/webinar-config";
 import { maskName } from "@/lib/mask";
+import { verifyQaHistoryToken } from "@/lib/webinar-qa-history-token";
+
+const historyHeaders = { "Cache-Control": "private, no-store" };
+const receiptFields = { id: true, question: true, sessionNumber: true, createdAt: true } as const;
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
+  const query = new URL(request.url).searchParams;
+  const registrationId = query.get("registrationId");
+  const personalHistory = query.get("mine") === "1";
+  if (personalHistory && (!registrationId || !verifyQaHistoryToken(request.headers.get("authorization"), slug, registrationId))) {
+    return NextResponse.json({ error: "입장 정보를 다시 확인해주세요." }, { status: 403, headers: historyHeaders });
+  }
 
   const webinar = await prisma.webinar.findUnique({ where: { slug }, select: { id: true, components: true } });
   if (!webinar) return NextResponse.json({ error: "없는 웨비나예요" }, { status: 404 });
+  if (personalHistory) {
+    const viewer = await prisma.webinarRegistration.findFirst({
+      where: { id: registrationId!, webinarId: webinar.id },
+      select: { id: true },
+    });
+    if (!viewer) return NextResponse.json({ error: "입장 정보를 다시 확인해주세요." }, { status: 403, headers: historyHeaders });
+    const questions = await prisma.webinarQA.findMany({
+      where: { webinarId: webinar.id, registrationId: viewer.id },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      select: receiptFields,
+    });
+    return NextResponse.json({ questions }, { headers: historyHeaders });
+  }
 
   // 폐쇄형이면 질문은 주최자만 본다 → 목록을 내보내지 않는다.
   // live-state 만 막아선 안 된다. 이 라우트는 Q&A 모달이 1회 로드하는 별도 경로이고
@@ -21,7 +45,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
 
   // 등록자 게이트 — live-state 와 같은 규칙. Q&A 보드는 등록자 전용 콘텐츠인데
   // 이 GET 만 게이트가 없어서, live-state 를 막아 둔 의미가 이 경로로 무효화됐다.
-  const registrationId = new URL(request.url).searchParams.get("registrationId");
   const viewer = registrationId
     ? await prisma.webinarRegistration.findFirst({
         where: { id: registrationId, webinarId: webinar.id },
@@ -88,7 +111,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     );
   }
 
-  if (!question?.trim()) {
+  if (typeof question !== "string" || !question.trim()) {
     return NextResponse.json({ error: "질문 내용을 입력해주세요" }, { status: 400 });
   }
 
@@ -120,6 +143,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   const qa = await prisma.webinarQA.create({
     data: {
       webinarId: webinar.id,
+      ...(verifyQaHistoryToken(request.headers.get("authorization"), slug, String(registrationId)) && { registrationId: String(registrationId) }),
       question: questionValue,
       sessionNumber: sessionNumber ?? null,
       name: displayName,
@@ -127,9 +151,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
       phone: phoneValue,
       email: emailValue,
     },
+    select: receiptFields,
   });
 
-  return NextResponse.json({ qa: { id: qa.id } }, {
+  return NextResponse.json({ qa }, {
     status: 201,
     headers: { "Access-Control-Allow-Origin": "*" },
   });
@@ -140,7 +165,7 @@ export async function OPTIONS() {
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
     },
   });
 }
