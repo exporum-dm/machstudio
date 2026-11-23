@@ -1699,7 +1699,10 @@ export default function LivePage({ params }: { params: Promise<{ slug: string }>
             live={live}
             surveys={surveyLinks}
             serverNowMs={serverNowMs}
-            onOpenSurvey={(s) => setOpenedSurvey(s)}
+            onOpenSurvey={(s) => {
+              if (registrationId || isPreviewUrl()) setOpenedSurvey(s);
+              else window.location.assign(s.url);
+            }}
             hasRegistration={hasRegistration}
             completedSurveyIds={completedSurveyIds}
             /* 종료 화면에서는 등록 자체가 이미 마감(canRegister=false)돼 있다 — 예전엔 여기서

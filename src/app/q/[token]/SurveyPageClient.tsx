@@ -12,6 +12,7 @@
  */
 import { use, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Loader2 } from "lucide-react";
+import SurveyIdentifyForm from "@/components/survey/SurveyIdentifyForm";
 import { localize } from "@/lib/collect-form-config";
 import { validateSurveyAnswers, visibleSections, type SurveyAnswerMap, type SurveyConfig, type SurveyQuestion } from "@/lib/survey-config";
 
@@ -185,18 +186,11 @@ export default function SurveyPageClient({ params }: { params: Promise<{ token: 
       {isPreview && <p className="bg-amber-100 px-5 py-2 text-center text-xs font-medium text-amber-800">{t.preview}</p>}
 
       {step === "identify" && (
-        <form onSubmit={identify} className="space-y-5 px-5 py-6">
-          {L(config.intro) && <p className="whitespace-pre-line text-[15px] leading-relaxed text-neutral-700">{L(config.intro)}</p>}
-          <label className="block space-y-2">
-            <span className="text-sm font-semibold text-neutral-900">{t.idLabel}</span>
-            <input value={idValue} onChange={(e) => setIdValue(e.target.value)} autoComplete="email" inputMode="email" placeholder={t.idPlaceholder}
-              className="h-12 w-full rounded-xl border border-neutral-300 bg-white px-4 text-base outline-none focus:border-[var(--acc)] focus:ring-2 focus:ring-[var(--acc)]/20" />
-          </label>
-          {idError && <p className="text-sm text-red-600">{idError}</p>}
-          <button type="submit" disabled={busy || !idValue.trim()}
-            className="flex h-12 w-full items-center justify-center rounded-xl bg-[var(--acc)] text-base font-semibold text-white transition active:scale-[0.99] disabled:opacity-50">
-            {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : t.continue}
-          </button>
+        <SurveyIdentifyForm
+          label={t.idLabel} placeholder={t.idPlaceholder} value={idValue} onChange={(value) => { setIdValue(value); setIdError(""); }}
+          onSubmit={identify} error={idError} busy={busy} submitLabel={t.continue}
+          intro={L(config.intro) && <p className="whitespace-pre-line text-[15px] leading-relaxed text-neutral-700">{L(config.intro)}</p>}
+        >
           {config.allowWalkIn && (
             <button type="button" onClick={() => { setWalkIn(true); setPerson(null); setStep("survey"); window.scrollTo({ top: 0 }); }}
               className="w-full py-2 text-center text-sm text-neutral-500 underline underline-offset-4">
@@ -204,7 +198,7 @@ export default function SurveyPageClient({ params }: { params: Promise<{ token: 
             </button>
           )}
           {L(config.privacyNote) && <p className="whitespace-pre-line text-xs leading-relaxed text-neutral-400">{L(config.privacyNote)}</p>}
-        </form>
+        </SurveyIdentifyForm>
       )}
 
       {step === "survey" && (
