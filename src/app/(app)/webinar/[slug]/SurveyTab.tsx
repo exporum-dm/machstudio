@@ -932,7 +932,7 @@ export default function SurveyTab({
         <div>
           <h3 className="text-sm font-semibold">설문</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            종료 화면·라이브 푸시·응답 링크에서 같은 설문으로 응답을 모아요. 결과는 분석 탭에서.
+            종료 화면·라이브 푸시·응답 링크에서 같은 설문으로 응답을 모아요. 공유 링크에서는 등록 이메일을 먼저 확인해요.
           </p>
         </div>
         <motion.button

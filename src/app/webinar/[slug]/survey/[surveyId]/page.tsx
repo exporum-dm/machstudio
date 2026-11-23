@@ -1,14 +1,16 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Loader2, Check } from "lucide-react";
+import SurveyIdentifyForm from "@/components/survey/SurveyIdentifyForm";
+import { isValidEmail, normalizeEmail } from "@/lib/webinar-config";
 import { buildStkCss } from "../../LiveContentStk";
 import SurveyForm, { SURVEY_FORM_CSS, clearSurveyDraft } from "../../SurveyForm";
 import { formatSurveyOpensAt, type SurveyAnswers, type SurveyQuestion } from "@/lib/webinar-survey";
 
 /**
  * 독립 설문 응답 페이지 — /webinar/[slug]/survey/[surveyId]
- * 종료 화면·이메일 링크에서 진입. 등록 브라우저면 localStorage 의 registrationId 로 응답을 연결한다.
+ * 종료 화면·이메일 링크에서 진입. 등록 이메일을 확인하고 받은 티켓으로 응답을 연결한다.
  */
 const PAGE_CSS = `
 .stk-live .svp-wrap { max-width:640px; margin:0 auto; padding:40px 20px 80px; }
@@ -16,6 +18,8 @@ const PAGE_CSS = `
 .stk-live .svp-title { font-size:26px; font-weight:820; letter-spacing:-.03em; color:var(--text); text-align:center; margin:0; word-break:keep-all; }
 .stk-live .svp-desc { font-size:14px; line-height:1.65; color:var(--muted); text-align:center; margin:10px 0 0; white-space:pre-wrap; word-break:keep-all; }
 .stk-live .svp-card { margin-top:28px; background:var(--card); border-radius:var(--radius-lg); box-shadow:var(--card-shadow); padding:30px 26px; }
+.stk-live .svp-identify { --acc:var(--key); --survey-identify-surface:var(--card-2); --survey-identify-text:var(--text); --survey-identify-error:var(--text); --survey-identify-border:var(--line); --survey-identify-on-accent:var(--on-key); }
+.stk-live .svp-identify > form { padding:0; }
 .stk-live .svp-center { min-height:60vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; color:var(--muted); text-align:center; padding:0 20px; }
 .stk-live .svp-check { width:58px; height:58px; border-radius:50%; background:color-mix(in srgb,#12B76A 14%,transparent); color:#12B76A; display:grid; place-items:center; box-shadow:0 0 0 8px color-mix(in srgb,#12B76A 6%,transparent); }
 .stk-live .svp-done-title { font-size:22px; font-weight:800; letter-spacing:-.02em; color:var(--text); margin:6px 0 0; }
@@ -40,12 +44,21 @@ type PageState = "loading" | "notfound" | "closed" | "before" | "form" | "done";
 
 export default function SurveyPage({ params }: { params: Promise<{ slug: string; surveyId: string }> }) {
   const { slug, surveyId } = use(params);
+  return <SurveyPageContent key={`${slug}/${surveyId}`} slug={slug} surveyId={surveyId} />;
+}
+
+function SurveyPageContent({ slug, surveyId }: { slug: string; surveyId: string }) {
   const [survey, setSurvey] = useState<PublicSurvey | null>(null);
   const [webinarName, setWebinarName] = useState("");
   const [theme, setTheme] = useState<{ accent: string; text: string; surface: string; radius?: string }>({ accent: "#6D28D9", text: "#141320", surface: "#FFFFFF" });
   const [state, setState] = useState<PageState>("loading");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [email, setEmail] = useState("");
+  const [identityError, setIdentityError] = useState("");
+  const [checkingEmail, setCheckingEmail] = useState(false);
+  const [ticket, setTicket] = useState<string | null>(null);
+  const surveyPath = `/api/webinar/${slug}/survey/${surveyId}`;
 
   /**
    * 시작 예약 시각이 되면 **스스로 열린다**.
@@ -70,7 +83,7 @@ export default function SurveyPage({ params }: { params: Promise<{ slug: string;
     (async () => {
       try {
         const [surveyRes, infoRes] = await Promise.all([
-          fetch(`/api/webinar/${slug}/survey/${surveyId}`),
+          fetch(surveyPath),
           fetch(`/api/webinar/${slug}/info`),
         ]);
         if (cancelled) return;
@@ -95,29 +108,64 @@ export default function SurveyPage({ params }: { params: Promise<{ slug: string;
       }
     })();
     return () => { cancelled = true; };
-  }, [slug, surveyId, reloadKey]);
+  }, [slug, surveyPath, reloadKey]);
 
   const css = useMemo(() => buildStkCss(theme.accent, theme.text, theme.surface, theme.radius) + SURVEY_FORM_CSS + PAGE_CSS, [theme]);
 
+  const identify = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (checkingEmail) return;
+    const normalized = normalizeEmail(email);
+    if (!normalized || !isValidEmail(normalized)) {
+      setIdentityError("올바른 이메일 주소를 입력해주세요.");
+      return;
+    }
+    if (new URLSearchParams(window.location.search).has("preview")) {
+      setTicket("preview");
+      return;
+    }
+    setCheckingEmail(true);
+    setIdentityError("");
+    try {
+      const res = await fetch(`${surveyPath}/identify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: normalized }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setIdentityError(data.error ?? "이메일을 확인하지 못했어요. 다시 시도해주세요."); return; }
+      if (data.found !== true || typeof data.ticket !== "string") {
+        setIdentityError("이 웨비나의 등록 정보를 찾지 못했어요. 등록할 때 사용한 이메일을 확인해주세요.");
+        return;
+      }
+      setTicket(data.ticket);
+    } catch {
+      setIdentityError("연결 상태를 확인하고 다시 시도해주세요.");
+    } finally {
+      setCheckingEmail(false);
+    }
+  };
+
   const handleSubmit = async (answers: SurveyAnswers) => {
+    if (!ticket || submitting) return;
+    if (new URLSearchParams(window.location.search).has("preview")) { setState("done"); return; }
     setSubmitting(true);
     setSubmitError("");
     try {
-      // 등록 브라우저면 응답을 등록자와 연결 (라이브 페이지가 저장한 mach_reg_<slug>)
-      let registrationId: string | undefined;
-      try {
-        const raw = localStorage.getItem(`mach_reg_${slug}`);
-        if (raw) registrationId = (JSON.parse(raw) as { registrationId?: string }).registrationId;
-      } catch { /* 스토리지 차단 무시 */ }
       const source = new URLSearchParams(window.location.search).get("src") === "ended" ? "ended" : "link";
 
-      const res = await fetch(`/api/webinar/${slug}/survey/${surveyId}`, {
+      const res = await fetch(surveyPath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers, registrationId, source }),
+        body: JSON.stringify({ answers, ticket, source }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
+        if (res.status === 403) {
+          setTicket(null);
+          setIdentityError(data.error ?? "등록 이메일을 다시 확인해주세요.");
+          return;
+        }
         setSubmitError(data.error ?? "제출에 실패했어요. 잠시 후 다시 시도해주세요.");
         return;
       }
@@ -167,8 +215,18 @@ export default function SurveyPage({ params }: { params: Promise<{ slug: string;
           <h1 className="svp-title">{survey.title}</h1>
           {survey.description && <p className="svp-desc">{survey.description}</p>}
           <div className="svp-card">
-            <SurveyForm questions={survey.questions} submitting={submitting} onSubmit={handleSubmit} storageKey={`mach_survey_draft_page_${surveyId}`} />
-            {submitError && <p className="sv-err" style={{ marginTop: 12 }} role="alert">{submitError}</p>}
+            {ticket ? (
+              <>
+                <SurveyForm questions={survey.questions} submitting={submitting} onSubmit={handleSubmit} storageKey={`mach_survey_draft_page_${surveyId}`} />
+                {submitError && <p className="sv-err" style={{ marginTop: 12 }} role="alert">{submitError}</p>}
+              </>
+            ) : (
+              <div className="svp-identify">
+                <SurveyIdentifyForm emailOnly label="등록할 때 사용한 이메일" placeholder="you@example.com"
+                  value={email} onChange={(value) => { setEmail(value); setIdentityError(""); }}
+                  onSubmit={identify} busy={checkingEmail} error={identityError} submitLabel="다음" />
+              </div>
+            )}
           </div>
         </div>
       )}

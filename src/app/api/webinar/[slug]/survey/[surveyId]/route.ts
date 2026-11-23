@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
 import { rateLimitAsync, getClientIp } from "@/lib/ratelimit";
+import { verifySurveyTicket } from "@/lib/survey-ticket";
 import { isSurveyAcceptingResponses, normalizeSurveyQuestions, surveyOpenState, validateSurveyAnswers } from "@/lib/webinar-survey";
 
 const CORS_HEADERS = { "Access-Control-Allow-Origin": "*" };
@@ -39,7 +40,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   );
 }
 
-// 응답 제출 — 등록자(registrationId)는 재제출 시 기존 응답을 덮어쓴다(수정 허용). 익명(링크)은 매번 새 응답.
+// 응답 제출 — 링크는 이메일 확인 티켓, 시청 화면은 이미 입장한 등록 정보를 사용한다.
 export async function POST(request: Request, { params }: { params: Promise<{ slug: string; surveyId: string }> }) {
   const { slug, surveyId } = await params;
 
@@ -72,28 +73,26 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
 
   const source = ["ended", "live", "link"].includes(body?.source) ? (body.source as string) : "link";
 
-  // registrationId 는 이 웨비나의 등록 건일 때만 인정 (타 웨비나/위조 id 연결 차단)
-  let registrationId: string | null = null;
-  if (typeof body?.registrationId === "string" && body.registrationId) {
-    const reg = await prisma.webinarRegistration.findFirst({
-      where: { id: body.registrationId, webinarId: survey.webinarId },
-      select: { id: true },
-    });
-    registrationId = reg?.id ?? null;
+  const usesTicket = body?.ticket != null;
+  const ticket = usesTicket ? verifySurveyTicket(body.ticket, `webinar:${surveyId}`) : null;
+  const candidateId = usesTicket
+    ? ticket?.recordId
+    : source !== "link" && typeof body?.registrationId === "string" ? body.registrationId : undefined;
+  const registration = candidateId ? await prisma.webinarRegistration.findFirst({
+    where: { id: candidateId, webinarId: survey.webinarId },
+    select: { id: true },
+  }) : null;
+  if (!registration) {
+    return NextResponse.json({ error: "등록할 때 사용한 이메일을 다시 확인해주세요." }, { status: 403, headers: CORS_HEADERS });
   }
 
+  const registrationId = registration.id;
   const answers = result.cleaned as unknown as Prisma.InputJsonValue;
-  if (registrationId) {
-    await prisma.webinarSurveyResponse.upsert({
-      where: { surveyId_registrationId: { surveyId, registrationId } },
-      create: { surveyId, webinarId: survey.webinarId, registrationId, answers, source },
-      update: { answers, source, submittedAt: new Date() },
-    });
-  } else {
-    await prisma.webinarSurveyResponse.create({
-      data: { surveyId, webinarId: survey.webinarId, registrationId: null, answers, source },
-    });
-  }
+  await prisma.webinarSurveyResponse.upsert({
+    where: { surveyId_registrationId: { surveyId, registrationId } },
+    create: { surveyId, webinarId: survey.webinarId, registrationId, answers, source },
+    update: { answers, source, submittedAt: new Date() },
+  });
 
   return NextResponse.json({ ok: true }, { status: 201, headers: CORS_HEADERS });
 }
