@@ -2,16 +2,17 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { POST as identify } from "./identify/route";
 import { POST as submit } from "./route";
 
-const { findSurvey, findRegistration, upsert } = vi.hoisted(() => ({
+const { findSurvey, findRegistration, findRegistrations, upsert } = vi.hoisted(() => ({
   findSurvey: vi.fn(),
   findRegistration: vi.fn(),
+  findRegistrations: vi.fn(),
   upsert: vi.fn(),
 }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     webinarSurvey: { findFirst: findSurvey },
-    webinarRegistration: { findFirst: findRegistration },
+    webinarRegistration: { findFirst: findRegistration, findMany: findRegistrations },
     webinarSurveyResponse: { upsert },
   },
 }));
@@ -33,6 +34,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   findSurvey.mockResolvedValue(survey);
   findRegistration.mockResolvedValue({ id: "registrant-a" });
+  findRegistrations.mockResolvedValue([{ id: "registrant-a" }]);
 });
 
 it("verifies the registration email in the same webinar and upserts the registered attendee's response", async () => {
@@ -59,6 +61,27 @@ it("does not confirm an email absent from this webinar", async () => {
   const response = await identify(request({ email: "registered-elsewhere@example.test" }), context);
   expect(await response.json()).toEqual({ found: false });
   expect(upsert).not.toHaveBeenCalled();
+});
+
+it("normalizes the phone, scopes it to the webinar, and stores the response on the same registration", async () => {
+  const response = await identify(request({ phone: "010-1234-5678" }), context);
+  const { found, ticket } = await response.json();
+  expect(found).toBe(true);
+  expect(findRegistrations).toHaveBeenCalledWith({
+    where: { webinarId: "webinar-id", phone: "01012345678" },
+    select: { id: true },
+    take: 2,
+  });
+  expect((await submit(request({ answers, ticket, source: "link" }), context)).status).toBe(201);
+  expect(upsert).toHaveBeenCalledWith(expect.objectContaining({
+    where: { surveyId_registrationId: { surveyId: "survey-a", registrationId: "registrant-a" } },
+  }));
+});
+
+it("asks for another identifier when the same phone is attached to multiple registrations", async () => {
+  findRegistrations.mockResolvedValueOnce([{ id: "registrant-a" }, { id: "registrant-b" }]);
+  const result = await identify(request({ phone: "01012345678" }), context);
+  expect(await result.json()).toEqual({ found: false });
 });
 
 it("rejects link submissions without a valid survey-scoped ticket", async () => {

@@ -40,7 +40,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   );
 }
 
-// 응답 제출 — 링크는 이메일 확인 티켓, 시청 화면은 이미 입장한 등록 정보를 사용한다.
+// 응답 제출 — 링크는 등록 확인 티켓, 시청 화면은 이미 입장한 등록 정보를 사용한다.
 export async function POST(request: Request, { params }: { params: Promise<{ slug: string; surveyId: string }> }) {
   const { slug, surveyId } = await params;
 
@@ -83,7 +83,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     select: { id: true },
   }) : null;
   if (!registration) {
-    return NextResponse.json({ error: "등록할 때 사용한 이메일을 다시 확인해주세요." }, { status: 403, headers: CORS_HEADERS });
+    return NextResponse.json({ error: "등록할 때 사용한 전화번호 또는 이메일을 다시 확인해주세요." }, { status: 403, headers: CORS_HEADERS });
   }
 
   const registrationId = registration.id;

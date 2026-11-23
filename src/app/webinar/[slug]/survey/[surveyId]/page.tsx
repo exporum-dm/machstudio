@@ -3,14 +3,14 @@
 import { use, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Loader2, Check } from "lucide-react";
 import SurveyIdentifyForm from "@/components/survey/SurveyIdentifyForm";
-import { isValidEmail, normalizeEmail } from "@/lib/webinar-config";
+import { isValidEmail, isValidPhone, normalizeEmail, normalizePhone } from "@/lib/webinar-config";
 import { buildStkCss } from "../../LiveContentStk";
 import SurveyForm, { SURVEY_FORM_CSS, clearSurveyDraft } from "../../SurveyForm";
 import { formatSurveyOpensAt, type SurveyAnswers, type SurveyQuestion } from "@/lib/webinar-survey";
 
 /**
  * 독립 설문 응답 페이지 — /webinar/[slug]/survey/[surveyId]
- * 종료 화면·이메일 링크에서 진입. 등록 이메일을 확인하고 받은 티켓으로 응답을 연결한다.
+ * 공유 링크에서 진입. 등록 전화번호나 이메일을 확인하고 받은 티켓으로 응답을 연결한다.
  */
 const PAGE_CSS = `
 .stk-live .svp-wrap { max-width:640px; margin:0 auto; padding:40px 20px 80px; }
@@ -20,6 +20,11 @@ const PAGE_CSS = `
 .stk-live .svp-card { margin-top:28px; background:var(--card); border-radius:var(--radius-lg); box-shadow:var(--card-shadow); padding:30px 26px; }
 .stk-live .svp-identify { --acc:var(--key); --survey-identify-surface:var(--card-2); --survey-identify-text:var(--text); --survey-identify-error:var(--text); --survey-identify-border:var(--line); --survey-identify-on-accent:var(--on-key); }
 .stk-live .svp-identify > form { padding:0; }
+.stk-live .svp-methods { margin-bottom:16px; display:grid; grid-template-columns:1fr 1fr; gap:4px; padding:4px; border-radius:var(--radius); background:var(--card-2); }
+.stk-live .svp-methods button { min-height:44px; border:0; border-radius:var(--radius); background:transparent; color:var(--text); font:inherit; font-size:14px; font-weight:650; cursor:pointer; }
+.stk-live .svp-methods button[aria-pressed="true"] { background:var(--key-dim); box-shadow:var(--btn-shadow); }
+.stk-live .svp-methods button:focus-visible { outline:2px solid var(--key); outline-offset:1px; }
+.stk-live .svp-methods button:disabled { cursor:default; }
 .stk-live .svp-center { min-height:60vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; color:var(--muted); text-align:center; padding:0 20px; }
 .stk-live .svp-check { width:58px; height:58px; border-radius:50%; background:color-mix(in srgb,#12B76A 14%,transparent); color:#12B76A; display:grid; place-items:center; box-shadow:0 0 0 8px color-mix(in srgb,#12B76A 6%,transparent); }
 .stk-live .svp-done-title { font-size:22px; font-weight:800; letter-spacing:-.02em; color:var(--text); margin:6px 0 0; }
@@ -54,9 +59,10 @@ function SurveyPageContent({ slug, surveyId }: { slug: string; surveyId: string 
   const [state, setState] = useState<PageState>("loading");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
-  const [email, setEmail] = useState("");
+  const [authMethod, setAuthMethod] = useState<"email" | "phone">("email");
+  const [contacts, setContacts] = useState({ email: "", phone: "" });
   const [identityError, setIdentityError] = useState("");
-  const [checkingEmail, setCheckingEmail] = useState(false);
+  const [checkingIdentity, setCheckingIdentity] = useState(false);
   const [ticket, setTicket] = useState<string | null>(null);
   const surveyPath = `/api/webinar/${slug}/survey/${surveyId}`;
 
@@ -114,35 +120,38 @@ function SurveyPageContent({ slug, surveyId }: { slug: string; surveyId: string 
 
   const identify = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (checkingEmail) return;
-    const normalized = normalizeEmail(email);
-    if (!normalized || !isValidEmail(normalized)) {
-      setIdentityError("올바른 이메일 주소를 입력해주세요.");
+    if (checkingIdentity) return;
+    const phone = authMethod === "phone";
+    const normalized = phone ? normalizePhone(contacts.phone) : normalizeEmail(contacts.email);
+    if (!normalized || !(phone ? isValidPhone(normalized) : isValidEmail(normalized))) {
+      setIdentityError(phone ? "올바른 전화번호를 입력해주세요." : "올바른 이메일 주소를 입력해주세요.");
       return;
     }
     if (new URLSearchParams(window.location.search).has("preview")) {
       setTicket("preview");
       return;
     }
-    setCheckingEmail(true);
+    setCheckingIdentity(true);
     setIdentityError("");
     try {
       const res = await fetch(`${surveyPath}/identify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: normalized }),
+        body: JSON.stringify({ [authMethod]: normalized }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) { setIdentityError(data.error ?? "이메일을 확인하지 못했어요. 다시 시도해주세요."); return; }
+      if (!res.ok) { setIdentityError(data.error ?? "등록 정보를 확인하지 못했어요. 다시 시도해주세요."); return; }
       if (data.found !== true || typeof data.ticket !== "string") {
-        setIdentityError("이 웨비나의 등록 정보를 찾지 못했어요. 등록할 때 사용한 이메일을 확인해주세요.");
+        setIdentityError(phone
+          ? "이 번호로 등록 정보를 확인하지 못했어요. 등록할 때 사용한 전화번호나 이메일로 다시 확인해주세요."
+          : "이 웨비나의 등록 정보를 찾지 못했어요. 등록할 때 사용한 이메일이나 전화번호를 확인해주세요.");
         return;
       }
       setTicket(data.ticket);
     } catch {
       setIdentityError("연결 상태를 확인하고 다시 시도해주세요.");
     } finally {
-      setCheckingEmail(false);
+      setCheckingIdentity(false);
     }
   };
 
@@ -163,7 +172,7 @@ function SurveyPageContent({ slug, surveyId }: { slug: string; surveyId: string 
         const data = await res.json().catch(() => ({}));
         if (res.status === 403) {
           setTicket(null);
-          setIdentityError(data.error ?? "등록 이메일을 다시 확인해주세요.");
+          setIdentityError(data.error ?? "등록할 때 사용한 전화번호 또는 이메일을 다시 확인해주세요.");
           return;
         }
         setSubmitError(data.error ?? "제출에 실패했어요. 잠시 후 다시 시도해주세요.");
@@ -222,9 +231,23 @@ function SurveyPageContent({ slug, surveyId }: { slug: string; surveyId: string 
               </>
             ) : (
               <div className="svp-identify">
-                <SurveyIdentifyForm emailOnly label="등록할 때 사용한 이메일" placeholder="you@example.com"
-                  value={email} onChange={(value) => { setEmail(value); setIdentityError(""); }}
-                  onSubmit={identify} busy={checkingEmail} error={identityError} submitLabel="다음" />
+                <div className="svp-methods" role="group" aria-label="등록 확인 방법">
+                  {(["phone", "email"] as const).map((method) => (
+                    <button key={method} type="button" aria-pressed={authMethod === method} disabled={checkingIdentity}
+                      onClick={() => { setAuthMethod(method); setIdentityError(""); }}>
+                      {method === "phone" ? "전화번호" : "이메일"}
+                    </button>
+                  ))}
+                </div>
+                <SurveyIdentifyForm
+                  inputType={authMethod === "phone" ? "tel" : "email"}
+                  label={authMethod === "phone" ? "등록할 때 사용한 전화번호" : "등록할 때 사용한 이메일"}
+                  placeholder={authMethod === "phone" ? "01012345678" : "you@example.com"}
+                  value={contacts[authMethod]} onChange={(value) => {
+                    setContacts((previous) => ({ ...previous, [authMethod]: authMethod === "phone" ? normalizePhone(value) ?? "" : value }));
+                    setIdentityError("");
+                  }}
+                  onSubmit={identify} busy={checkingIdentity} error={identityError} submitLabel="다음" />
               </div>
             )}
           </div>

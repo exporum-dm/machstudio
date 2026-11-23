@@ -4,7 +4,7 @@ import { useId, type FormEvent, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 
 export default function SurveyIdentifyForm({
-  label, placeholder, value, onChange, onSubmit, error, busy, submitLabel, emailOnly, intro, children,
+  label, placeholder, value, onChange, onSubmit, error, busy, submitLabel, inputType, intro, children,
 }: {
   label: string;
   placeholder: string;
@@ -14,7 +14,7 @@ export default function SurveyIdentifyForm({
   error: string;
   busy: boolean;
   submitLabel: string;
-  emailOnly?: boolean;
+  inputType?: "email" | "tel";
   intro?: ReactNode;
   children?: ReactNode;
 }) {
@@ -25,9 +25,9 @@ export default function SurveyIdentifyForm({
       <div>
         <label className="block space-y-2">
           <span className="text-sm font-semibold text-[var(--survey-identify-text,#171717)]">{label}</span>
-          <input value={value} onChange={(event) => onChange(event.target.value)} type={emailOnly ? "email" : "text"}
-            autoComplete="email" inputMode="email" placeholder={placeholder} autoCapitalize="none" spellCheck={false}
-            required={emailOnly} aria-invalid={Boolean(error)} aria-describedby={error ? errorId : undefined}
+          <input value={value} onChange={(event) => onChange(event.target.value)} type={inputType ?? "text"}
+            autoComplete={inputType ?? "email"} inputMode={inputType === "tel" ? "numeric" : "email"} placeholder={placeholder} autoCapitalize="none" spellCheck={false}
+            required={Boolean(inputType)} aria-invalid={Boolean(error)} aria-describedby={error ? errorId : undefined}
             className="h-12 w-full rounded-xl bg-[var(--survey-identify-surface,white)] px-4 text-base text-[var(--survey-identify-text,#171717)] shadow-sm ring-1 ring-[var(--survey-identify-border,#d4d4d4)] outline-none focus:ring-2 focus:ring-[var(--acc)]" />
         </label>
         {error && <p id={errorId} role="alert" className="mt-2 text-sm text-[var(--survey-identify-error,#dc2626)]">{error}</p>}
