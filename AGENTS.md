@@ -4,12 +4,38 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# 이 앱의 계층 — 워크스페이스 → 프로젝트(전시) → 메뉴
+
+사용자는 **항상 이 순서로** 화면에 도달한다:
+
+1. **워크스페이스** — 함께 쓸 사람들의 울타리. 멤버·권한·법률 문구·브랜드 기본값이 여기 붙는다. 사이드바 맨 위에서 고른다.
+2. **프로젝트(= 전시 하나)** — 그 워크스페이스 안의 전시·행사. 사이드바 프로젝트 선택기에서 고르고, `localStorage.currentProjectId` 에 남아 다음 방문에도 유지된다.
+3. **메뉴** — 등록·크리에이터 관리·광고 성과·웨비나·대회·웹사이트…. **이미 고른 프로젝트 안에서** 여는 도구다.
+
+**그래서 메뉴 화면은 프로젝트를 다시 고르게 하지 않는다.** 메뉴의 첫 화면은 `useWorkspace()` 의 `currentProject` 를 그대로 받아 바로 일을 보여준다. 프로젝트 목록을 띄우고 "열기"를 누르게 하는 건, 사용자가 사이드바에서 이미 한 선택을 두 번 시키는 것이다.
+
+```tsx
+const { workspace, currentProject, isLoading } = useWorkspace();
+if (isLoading) return <스피너 />;
+if (!currentProject) return <빈 상태: "프로젝트를 먼저 선택해주세요" />;
+// 여기서부터 currentProject 로 일한다
+```
+
+- **경로에 프로젝트 id를 끼우지 않는다.** `/creators` 가 맞고 `/creators/[projectId]` 는 틀리다. 사이드바에서 프로젝트를 바꿔도 URL은 그대로여야 하며, 화면은 `key={currentProject.id}` 로 다시 그려진다.
+- `/<메뉴>/[id]` 의 `[id]` 는 **그 메뉴가 만든 자원**(등록 폼·웨비나·대회)이지 프로젝트가 아니다. 그 상세 화면에서는 아래 ②를 따른다.
+- API는 `projectId` 를 받아 **서버에서 소속과 권한을 다시 검증한다**(`getCreatorProject` 처럼 `workspace.members.some(userId)` 까지). 클라이언트 컨텍스트는 편의일 뿐 신뢰 경계가 아니다.
+- 프로젝트를 넘나드는 비교·합산 화면(요약 대시보드)만 예외다. 그때도 "프로젝트를 고르는 화면"이 아니라 "여러 프로젝트를 한눈에 보는 화면"이어야 한다.
+
+> 2026-11-24: 크리에이터 관리를 `/creators` 에 프로젝트 목록을 띄우고 `/creators/[projectId]` 로 들어가게 만들어 이 계층을 어겼다. 사이드바에 선택기가 이미 있는데 같은 선택을 두 번 시켰다.
+
 # 새 면을 만들 때
 
 새 제품·방식·탭을 추가할 때 같은 종류의 기존 면을 먼저 열어 확인한다:
 ① 밖으로 나가는 주소(스니펫·공유 링크)는 `getPublicAppOrigin()` — `window.location.origin` 금지
 ② 상세 화면이 형제 자원을 조회·변경할 땐 사이드바 컨텍스트가 아니라 **URL 자원의 소속**을 쓰고 서버도 검증
 ③ 복사해 온 안내 문구·빈 상태가 새 면에서 참인지, 새 컬럼이 검색·CSV·상세에 등록됐는지
+④ 메뉴의 첫 화면은 사이드바의 `currentProject` 를 그대로 쓴다 — 프로젝트를 다시 고르게 하지 않는다(위 「이 앱의 계층」)
+⑤ 헤더·탭·목록 검색은 `PageHeader`/`PageTabs`/`ListSearch`(`src/components/ui/page-layout.tsx`)를 쓴다 — 메뉴마다 새로 만들지 않는다
 
 <!-- BEGIN:product-design-rules -->
 # Product UI Principles
