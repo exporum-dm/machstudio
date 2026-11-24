@@ -115,6 +115,7 @@ export const ACTIVITY_LABELS: Record<string, string> = {
   "webinar.chat_deleted": "채팅 삭제",
   "webinar.qa_deleted": "질문 삭제",
   "webinar.reminder_sent": "리마인더 발송",
+  "creator.email_sent": "크리에이터 안내 메일 발송",
   "webinar.registration_deleted": "등록자 삭제",
   "webinar.registrations_bulk_deleted": "등록자 일괄 삭제",
   "webinar.registrations.exported": "등록자 내보내기",
@@ -283,6 +284,7 @@ export function activityDetails(action: string, metaRaw: unknown): string[] {
     case "competition.entries_exported":
       out.push(count(meta.entryCount, "건"));
       break;
+    case "creator.email_sent":
     case "webinar.reminder_sent":
       out.push(join(count(meta.sent, "건 발송"), num(meta.failed) ? count(meta.failed, "건 실패") : null));
       break;

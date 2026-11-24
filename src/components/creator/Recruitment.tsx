@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { creatorUtm, platforms, type CreatorAction, type Utm } from "@/lib/creator/model";
+import { detectSocialAccounts, parseAccount } from "@/lib/creator/social";
 import type { CreatorView, CreatorProgramView } from "@/lib/creator/types";
 import { button, primary, input, panel, Empty, Field, Text, dateTime } from "./ui";
 
@@ -85,27 +86,29 @@ export function applicationText(value: unknown): string {
   return Array.isArray(value) ? value.map(applicationText).join(", ") : typeof value === "object" && value !== null ? JSON.stringify(value) : String(value ?? "");
 }
 
-function parseSocialAccount(value: string): { platform: typeof platforms[number]; handle: string } {
-  try {
-    const url = new URL(value);
-    const hostname = url.hostname.replace(/^www\./, "");
-    const platform = platforms.find((item) => hostname === item + ".com" || hostname.endsWith("." + item + ".com"));
-    return { platform: platform ?? "other", handle: url.pathname.split("/").filter(Boolean)[0] ?? "" };
-  } catch {
-    return { platform: "instagram", handle: value.trim() };
-  }
+type Account = { platform: typeof platforms[number]; handle: string };
+
+/**
+ * 신청서에서 찾아낸 계정들로 선발 화면을 미리 채운다. 발굴 후보 표에 적어 둔 계정도 함께 본다.
+ * 계정이 여럿이면 **채널마다 홍보 링크가 따로 발급된다** — 그래서 한 줄이 아니라 여러 줄이다.
+ */
+function initialAccounts(raw: Record<string, unknown>, candidateCells: Record<string, unknown>, labels: Record<string, string>): Account[] {
+  const detected = detectSocialAccounts(raw, labels);
+  const isPlatform = (value: string): value is typeof platforms[number] => platforms.some((platform) => platform === value);
+  const candidatePlatform = String(candidateCells.platform ?? "").toLowerCase().trim();
+  const candidateHandle = parseAccount(applicationText(candidateCells.handle ?? "")).handle;
+  if (candidateHandle && isPlatform(candidatePlatform) && !detected[candidatePlatform]) detected[candidatePlatform] = candidateHandle;
+  const accounts = (Object.entries(detected) as [typeof platforms[number], string][]).map(([platform, handle]) => ({ platform, handle }));
+  return accounts.length ? accounts : [{ platform: "instagram", handle: candidateHandle }];
 }
 
 function JoinApplicant({ record, candidate, selected, save, labels }: { record: App; candidate?: CreatorProgramView["candidates"][number]; selected: boolean; save: Save; labels: Record<string, string> }) {
   const raw = (record.data ?? {}) as Record<string, unknown>;
   const candidateCells = (candidate?.cells ?? {}) as Record<string, unknown>;
-  const candidatePlatform = (String(candidateCells.platform ?? "").toLowerCase().trim());
-  const isPlatform = (value: string): value is typeof platforms[number] => platforms.some((platform) => platform === value);
-  const social = parseSocialAccount(applicationText(raw.social ?? raw.handle ?? raw.instagram ?? candidateCells.handle));
   const [name, setName] = useState(applicationText(raw.name || raw.fullName || raw.full_name || raw["이름"] || candidateCells.name || ""));
-  const [platform, setPlatform] = useState(isPlatform(candidatePlatform) ? candidatePlatform : social.platform);
-  const [handle, setHandle] = useState(social.handle);
+  const [accounts, setAccounts] = useState<Account[]>(() => initialAccounts(raw, candidateCells, labels));
   const [busy, setBusy] = useState(false);
+  const filled = accounts.filter(({ handle }) => handle.trim());
 
   return <article className="grid gap-3 rounded-xl bg-muted/25 p-3 sm:p-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -120,16 +123,32 @@ function JoinApplicant({ record, candidate, selected, save, labels }: { record: 
         </div>)}
       </dl>
     </details>
-    {!selected && <form className="grid items-end gap-2 sm:grid-cols-[1fr_auto_1fr_auto]" onSubmit={async (event) => {
+    {!selected && <form className="grid gap-3" onSubmit={async (event) => {
       event.preventDefault();
       setBusy(true);
-      try { await save({ action: "select", applicationId: record.id, name, channels: handle.trim() ? { [platform]: handle.trim() } : {} }); }
-      finally { setBusy(false); }
+      try {
+        const channels: Partial<Record<typeof platforms[number], string>> = {};
+        for (const { platform, handle } of filled) channels[platform] ??= handle.trim();
+        await save({ action: "select", applicationId: record.id, name, channels });
+      } finally { setBusy(false); }
     }}>
       <Field label="운영 명단 이름"><Text required maxLength={160} value={name} onChange={(event) => setName(event.target.value)} /></Field>
-      <Field label="SNS"><select className={input} value={platform} onChange={(event) => setPlatform(event.target.value as typeof platforms[number])}>{platforms.map((item) => <option key={item}>{item}</option>)}</select></Field>
-      <Field label="계정"><Text maxLength={160} value={handle} onChange={(event) => setHandle(event.target.value)} placeholder="@계정" /></Field>
-      <button className={primary} disabled={busy}>{busy ? "저장 중…" : "선발"}</button>
+      <fieldset className="grid gap-2">
+        <legend className="mb-1 text-xs font-medium text-muted-foreground">SNS 계정 — 채널마다 홍보 링크가 따로 발급돼요</legend>
+        {accounts.map((account, index) => <div key={index} className="grid items-end gap-2 sm:grid-cols-[auto_1fr_auto]">
+          <Field label="채널"><select className={input} value={account.platform} aria-label={`${index + 1}번째 채널`}
+            onChange={(event) => setAccounts(accounts.map((item, i) => i === index ? { ...item, platform: event.target.value as typeof platforms[number] } : item))}>
+            {platforms.map((item) => <option key={item}>{item}</option>)}
+          </select></Field>
+          <Field label="계정"><Text maxLength={160} value={account.handle} placeholder="@계정 또는 채널 주소"
+            onChange={(event) => setAccounts(accounts.map((item, i) => i === index ? { ...item, handle: event.target.value } : item))} /></Field>
+          <button type="button" className={button + " text-muted-foreground"} aria-label={`${index + 1}번째 채널 삭제`}
+            onClick={() => setAccounts(accounts.length > 1 ? accounts.filter((_, i) => i !== index) : [{ platform: "instagram", handle: "" }])}>삭제</button>
+        </div>)}
+        <button type="button" className={button + " justify-self-start"} onClick={() => setAccounts([...accounts, { platform: "instagram", handle: "" }])}>채널 추가</button>
+      </fieldset>
+      {!filled.length && <p className="text-xs text-muted-foreground">계정을 비워 두면 홍보 링크가 발급되지 않아요. 선발 후 선발자 탭에서 채워도 그때 만들어져요.</p>}
+      <button className={primary + " justify-self-start"} disabled={busy}>{busy ? "저장 중…" : filled.length > 1 ? `선발 · 링크 ${filled.length}개 발급` : "선발"}</button>
     </form>}
   </article>;
 }
