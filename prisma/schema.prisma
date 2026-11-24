@@ -201,6 +201,7 @@ model Project {
   workGroups           WorkGroup[]
   contentItems         ContentItem[]
   eventTaxonomies      EventTaxonomy[]
+  creatorProgram       CreatorProgram?
 }
 
 model AdPerformanceImportBatch {
@@ -473,6 +474,8 @@ model CollectSource {
   project       Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
   workspace     Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   fieldMappings FieldMapping[]
+  creatorApplications CreatorProgram[] @relation("CreatorApplication")
+  creatorRegistrations CreatorProgram[] @relation("CreatorRegistration")
   records       CollectRecord[]
   checkIns      CollectCheckIn[]
   activityLogs  ActivityLog[]
@@ -610,6 +613,7 @@ model CollectRecord {
   workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   /// 등록 확인이 전화번호로도 조회한다 — 없으면 5만 건 풀스캔.
+  creatorParticipants CreatorParticipant[]
   checkIns         CollectCheckIn[]
   surveyResponses  SurveyResponse[]
   referredBy       CollectRecord?  @relation("CollectReferral", fields: [referredById], references: [id], onDelete: SetNull)
@@ -624,6 +628,7 @@ model CollectRecord {
   @@index([projectId, utmMedium])
   @@index([projectId, sourceId, createdAt])
   @@index([sourceId, referredById])
+  @@index([sourceId, utmId])
 }
 
 model ActivityLog {
@@ -2113,4 +2118,123 @@ model CollectCheckIn {
 model CollectRegistrationCounter {
   prefix String @id
   lastValue Int @default(0)
+}
+
+model CreatorProgram {
+  id                   String @id @default(cuid())
+  projectId            String @unique
+  name                 String
+  applicationSourceId  String?
+  registrationSourceId String?
+  columns              Json @default("[]")
+  utm                  Json @default("{}")
+  roster               Json?
+  awards               Json?
+  version              Int @default(0)
+
+  project            Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  applicationSource  CollectSource? @relation("CreatorApplication", fields: [applicationSourceId], references: [id], onDelete: SetNull)
+  registrationSource CollectSource? @relation("CreatorRegistration", fields: [registrationSourceId], references: [id], onDelete: SetNull)
+  candidates         CreatorCandidate[]
+  participants       CreatorParticipant[]
+  missions           CreatorMission[]
+
+  @@index([applicationSourceId])
+  @@index([registrationSourceId])
+}
+
+model CreatorCandidate {
+  id        String @id @default(cuid())
+  programId String
+  invite    String @unique
+  cells     Json
+  createdAt DateTime @default(now())
+
+  program CreatorProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@index([programId, createdAt])
+}
+
+model CreatorParticipant {
+  id           String @id @default(cuid())
+  programId    String
+  applicationId String?
+  token        String @unique
+  name         String
+  confirmed    Boolean @default(false)
+  profile      Json @default("{}")
+  channels     Json @default("{}")
+  feeStatus    String @default("unpaid")
+  paidOn       String?
+  owner        String @default("")
+  contact      String @default("")
+  award        String @default("")
+  awardOrder   Int @default(0)
+
+  program      CreatorProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  application  CollectRecord? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  assignments  CreatorAssignment[]
+  links        CreatorLink[]
+
+  @@unique([programId, applicationId])
+  @@index([applicationId])
+}
+
+model CreatorMission {
+  id          String @id @default(cuid())
+  programId   String
+  title       String
+  guide       String @default("")
+  startsAt    DateTime?
+  dueAt       DateTime
+  platforms   String[]
+  linkCount   Int @default(1)
+  proof       String @default("optional")
+  draft       Boolean @default(false)
+
+  program     CreatorProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  assignments CreatorAssignment[]
+
+  @@index([programId, dueAt])
+}
+
+model CreatorAssignment {
+  id            String @id @default(cuid())
+  missionId     String
+  participantId String
+  stage         String
+  status        String @default("todo")
+  history       Json @default("[]")
+  contacts      Json @default("[]")
+  version       Int @default(0)
+
+  mission      CreatorMission @relation(fields: [missionId], references: [id], onDelete: Cascade)
+  participant  CreatorParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  uploads      CreatorUpload[]
+
+  @@unique([missionId, participantId])
+  @@index([participantId])
+}
+
+model CreatorUpload {
+  id           String @id @default(cuid())
+  assignmentId String
+  path         String @unique
+  name         String
+  createdAt    DateTime @default(now())
+
+  assignment CreatorAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@index([assignmentId, createdAt])
+}
+
+model CreatorLink {
+  code          String @id
+  participantId String
+  platform      String
+  clicks        Int @default(0)
+
+  participant CreatorParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@unique([participantId, platform])
 }

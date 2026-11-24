@@ -1,0 +1,109 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { ArrowLeft, Check, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
+import { getPublicAppOrigin } from "@/lib/app-url";
+import type { CreatorView } from "@/lib/creator/types";
+import type { CreatorAction } from "@/lib/creator/model";
+import { CandidateGrid } from "./CandidateGrid";
+import { Applicants, CreatorSettings } from "./Recruitment";
+import { Announcements, People } from "./People";
+import { Dashboard, Missions } from "./Operations";
+import { button, primary, Empty, panel } from "./ui";
+
+const tabs = {
+  dashboard: "대시보드", candidates: "발굴 후보", applications: "신청서", people: "선발자",
+  missions: "미션", announcements: "발표·임베드", settings: "설정",
+} as const;
+
+export function CreatorAdmin({ projectId, projectName }: { projectId: string; projectName: string }) {
+  const [data, setData] = useState<CreatorView | null>(null);
+  const [tab, setTab] = useState<keyof typeof tabs>("dashboard");
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(0);
+  const [saved, setSaved] = useState(false);
+  const sequence = useRef(0);
+  const api = "/api/creators/" + projectId;
+  const origin = getPublicAppOrigin();
+
+  const load = useCallback(async () => {
+    const seq = ++sequence.current;
+    const response = await fetch(api, { cache: "no-store" });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "불러오지 못했어요.");
+    if (seq === sequence.current) setData(result);
+  }, [api]);
+
+  const refresh = useCallback(async () => {
+    setError("");
+    try { await load(); }
+    catch (error) { setError(error instanceof Error ? error.message : "불러오지 못했어요."); }
+  }, [load]);
+
+  useEffect(() => {
+    void Promise.resolve().then(refresh);
+  }, [refresh]);
+
+  async function save(action: CreatorAction) {
+    setPending((count) => count + 1);
+    setError("");
+    try {
+      const response = await fetch(api, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(action) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "저장하지 못했어요.");
+      setSaved(true);
+      try { await load(); }
+      catch { setError("저장했어요. 새로고침하면 최신 내용을 불러올 수 있어요."); }
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "저장하지 못했어요.";
+      setError(message);
+      toast.error(message);
+      return false;
+    } finally {
+      setPending((count) => count - 1);
+    }
+  }
+
+  function copy(value: string) {
+    void navigator.clipboard.writeText(value).then(() => toast.success("복사했어요.")).catch(() => toast.error("복사하지 못했어요."));
+  }
+
+  const program = data?.program;
+  return <div className="mx-auto grid w-full min-w-0 max-w-7xl gap-5 p-4 sm:p-8">
+    <header className="grid gap-3">
+      <Link href="/creators" className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" />크리에이터 관리</Link>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <h1 className="min-w-0 break-words text-3xl font-semibold tracking-tight">{program?.name ?? projectName}</h1>
+        {data && <div className="flex items-center gap-2" aria-live="polite">
+          <span className="text-xs text-muted-foreground">{pending ? "저장 중…" : saved ? <><Check className="mr-1 inline size-3" />저장됨</> : ""}</span>
+          <button className={button} onClick={() => void refresh()} aria-label="최신 내역 불러오기"><RefreshCw className="size-4" /></button>
+        </div>}
+      </div>
+    </header>
+    {error && <p role="alert" className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>}
+    {data && program ? <>
+      <nav aria-label="크리에이터 관리 메뉴" className="flex max-w-full gap-1 overflow-x-auto rounded-xl bg-muted/45 p-1">
+        {(Object.entries(tabs) as [keyof typeof tabs, string][]).map(([key, label]) => (
+          <button key={key} aria-pressed={tab === key} className={button + " shrink-0 " + (tab === key ? "bg-card font-semibold" : "bg-transparent text-muted-foreground shadow-none")}
+            onClick={() => setTab(key)}>{label}</button>
+        ))}
+      </nav>
+      {tab === "dashboard" && <Dashboard data={data} program={program} projectId={projectId} origin={origin} save={save} copy={copy} />}
+      {tab === "candidates" && <CandidateGrid program={program} applications={data.applications} origin={origin} save={save} copy={copy} />}
+      {tab === "applications" && <Applicants program={program} applications={data.applications} labels={data.applicationLabels} save={save} />}
+      {tab === "people" && <People program={program} applications={data.applications} labels={data.applicationLabels} origin={origin} save={save} copy={copy} />}
+      {tab === "missions" && <Missions program={program} save={save} />}
+      {tab === "announcements" && <Announcements program={program} origin={origin} save={save} copy={copy} />}
+      {tab === "settings" && <CreatorSettings key={program.applicationSourceId ?? "unlinked"} program={program} sources={data.sources} origin={origin} save={save} copy={copy} />}
+    </> : data ? <section className={panel + " grid gap-3"}>
+      <h2 className="text-xl font-semibold">크리에이터 프로그램 시작</h2>
+      <p className="text-sm text-muted-foreground">이 프로젝트에 발굴 후보 표와 활동 운영 화면을 만들어요.</p>
+      <button className={primary + " justify-self-start"} disabled={pending > 0} onClick={async () => {
+        if (await save({ action: "create" })) setTab("settings");
+      }}>프로그램 만들기</button>
+    </section> : error ? <button className={button + " justify-self-start"} onClick={() => void refresh()}>다시 불러오기</button> : <Empty>프로그램을 불러오는 중이에요.</Empty>}
+  </div>;
+}
