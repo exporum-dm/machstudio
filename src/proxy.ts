@@ -47,6 +47,9 @@ export async function proxy(request: NextRequest) {
     // 발표 화면 — 무대 노트북은 machstudio 계정으로 로그인돼 있지 않다. 링크(showToken)가 열쇠다.
     pathname.startsWith("/show/") ||
     pathname.startsWith("/api/show/") ||
+    pathname.startsWith("/creator-portal/") ||
+    pathname.startsWith("/creator-show/") ||
+    pathname.startsWith("/creator-go/") ||
     pathname.startsWith("/api/public") ||
     pathname.startsWith("/api/v1/") || // PAT Bearer 인증을 라우트 자체에서 검증하는 외부 API
     pathname === "/mcp" || pathname.startsWith("/mcp/") || // PAT Bearer 인증을 사용하는 원격 MCP 서버(프로젝트 하나로 묶인 /mcp/{projectId} 포함)

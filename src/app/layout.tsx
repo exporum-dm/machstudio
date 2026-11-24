@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Analytics } from "@vercel/analytics/next";
+import { AppAnalytics } from "@/components/layout/app-analytics";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 import { MotionProvider } from "@/components/motion-provider";
@@ -50,7 +50,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           }}
           richColors
         />
-        <Analytics />
+        <AppAnalytics />
       </body>
     </html>
   );
