@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, Check, RefreshCw } from "lucide-react";
+import { Check, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { PageHeader, PageTabs } from "@/components/ui/page-layout";
 import { getPublicAppOrigin } from "@/lib/app-url";
 import type { CreatorView } from "@/lib/creator/types";
 import type { CreatorAction } from "@/lib/creator/model";
@@ -13,14 +13,18 @@ import { Announcements, People } from "./People";
 import { Dashboard, Missions } from "./Operations";
 import { button, primary, Empty, panel } from "./ui";
 
-const tabs = {
-  dashboard: "대시보드", candidates: "발굴 후보", applications: "신청서", people: "선발자",
-  missions: "미션", announcements: "발표·임베드", settings: "설정",
-} as const;
+const tabs = [
+  { id: "dashboard", label: "대시보드" }, { id: "candidates", label: "발굴 후보" },
+  { id: "applications", label: "신청서" }, { id: "people", label: "선발자" },
+  { id: "missions", label: "미션" }, { id: "announcements", label: "발표·임베드" },
+  { id: "settings", label: "설정" },
+] as const;
+
+type Tab = (typeof tabs)[number]["id"];
 
 export function CreatorAdmin({ projectId, projectName }: { projectId: string; projectName: string }) {
   const [data, setData] = useState<CreatorView | null>(null);
-  const [tab, setTab] = useState<keyof typeof tabs>("dashboard");
+  const [tab, setTab] = useState<Tab>("dashboard");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(0);
   const [saved, setSaved] = useState(false);
@@ -73,24 +77,18 @@ export function CreatorAdmin({ projectId, projectName }: { projectId: string; pr
 
   const program = data?.program;
   return <div className="mx-auto grid w-full min-w-0 max-w-7xl gap-5 p-4 sm:p-8">
-    <header className="grid gap-3">
-      <Link href="/creators" className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" />크리에이터 관리</Link>
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <h1 className="min-w-0 break-words text-3xl font-semibold tracking-tight">{program?.name ?? projectName}</h1>
-        {data && <div className="flex items-center gap-2" aria-live="polite">
-          <span className="text-xs text-muted-foreground">{pending ? "저장 중…" : saved ? <><Check className="mr-1 inline size-3" />저장됨</> : ""}</span>
-          <button className={button} onClick={() => void refresh()} aria-label="최신 내역 불러오기"><RefreshCw className="size-4" /></button>
-        </div>}
-      </div>
-    </header>
+    <PageHeader
+      title="크리에이터 관리"
+      context={projectName}
+      description={program && program.name !== projectName ? program.name : undefined}
+      actions={data && <div className="flex items-center gap-2" aria-live="polite">
+        <span className="text-xs text-muted-foreground">{pending ? "저장 중…" : saved ? <><Check className="mr-1 inline size-3" />저장됨</> : ""}</span>
+        <button className={button} onClick={() => void refresh()} aria-label="최신 내역 불러오기"><RefreshCw className="size-4" /></button>
+      </div>}
+    />
     {error && <p role="alert" className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>}
     {data && program ? <>
-      <nav aria-label="크리에이터 관리 메뉴" className="flex max-w-full gap-1 overflow-x-auto rounded-xl bg-muted/45 p-1">
-        {(Object.entries(tabs) as [keyof typeof tabs, string][]).map(([key, label]) => (
-          <button key={key} aria-pressed={tab === key} className={button + " shrink-0 " + (tab === key ? "bg-card font-semibold" : "bg-transparent text-muted-foreground shadow-none")}
-            onClick={() => setTab(key)}>{label}</button>
-        ))}
-      </nav>
+      <PageTabs label="크리에이터 관리 메뉴" value={tab} onChange={setTab} options={tabs} />
       {tab === "dashboard" && <Dashboard data={data} program={program} projectId={projectId} origin={origin} save={save} copy={copy} />}
       {tab === "candidates" && <CandidateGrid program={program} applications={data.applications} origin={origin} save={save} copy={copy} />}
       {tab === "applications" && <Applicants program={program} applications={data.applications} labels={data.applicationLabels} save={save} />}
