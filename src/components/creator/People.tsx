@@ -6,7 +6,8 @@ import { buildPublication, platforms, profileSchema, publicationSchema, type Cre
 import type { CreatorPerson, CreatorProgramView, CreatorView } from "@/lib/creator/types";
 import { CreatorPublication } from "./Publication";
 import { applicationText } from "./Recruitment";
-import { button, primary, panel, input, Empty, Field, Text, feeNames, statusNames } from "./ui";
+import { AnnounceMail } from "./AnnounceMail";
+import { button, primary, panel, input, dateTime, Empty, Field, Text, feeNames, statusNames } from "./ui";
 
 type Save = (action: CreatorAction) => Promise<boolean>;
 type Copy = (value: string) => void;
@@ -30,7 +31,8 @@ function Person({ person, program, origin, application, labels, save, copy }: {
   return <article className={panel + " grid gap-4"}>
     <div className="flex flex-wrap items-start justify-between gap-2">
       <div><h3 className="break-words text-lg font-semibold">{person.name}</h3>
-        <p className="text-sm text-muted-foreground">{person.confirmed ? "참여 확정" : "선발 · 참여 확인 전"} · 미션 {done}/{person.assignments.length}</p></div>
+        <p className="text-sm text-muted-foreground">{person.confirmed ? "참여 확정" : "선발 · 참여 확인 전"} · 미션 {done}/{person.assignments.length}
+          {person.lastEmailedAt ? ` · 안내 메일 ${dateTime(person.lastEmailedAt)}` : ""}</p></div>
       <div className="flex flex-wrap gap-2">
         <a href={portal + "?preview=1"} className={button} target="_blank" rel="noopener noreferrer">개인 페이지 확인</a>
         {origin && <button className={button} onClick={() => copy(portal)}>개인 링크 복사</button>}
@@ -101,8 +103,8 @@ function Person({ person, program, origin, application, labels, save, copy }: {
   </article>;
 }
 
-export function People({ program, applications, labels, origin, save, copy }: {
-  program: CreatorProgramView; applications: CreatorView["applications"]; labels: Record<string, string>; origin: string; save: Save; copy: Copy;
+export function People({ program, applications, labels, origin, projectId, save, copy }: {
+  program: CreatorProgramView; applications: CreatorView["applications"]; labels: Record<string, string>; origin: string; projectId: string; save: Save; copy: Copy;
 }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
@@ -118,6 +120,7 @@ export function People({ program, applications, labels, origin, save, copy }: {
         </select>
       </div>
     </div>
+    <div className={panel}><AnnounceMail program={program} projectId={projectId} /></div>
     {people.map((person) => <Person key={person.id} person={person} program={program} application={person.applicationId ? records.get(person.applicationId) : undefined} labels={labels} origin={origin} save={save} copy={copy} />)}
     {!people.length && <Empty>{program.participants.length ? "검색 결과가 없어요." : "신청서 탭에서 크리에이터를 선발하면 여기에 표시돼요."}</Empty>}
   </section>;

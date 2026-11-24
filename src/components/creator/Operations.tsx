@@ -56,7 +56,9 @@ export function Missions({ program, save }: { program: CreatorProgramView; save:
   const [newForm, setNewForm] = useState(!program.missions.length);
   return <section className="grid gap-4">
     <div className={panel + " flex flex-wrap items-center justify-between gap-3"}>
-      <div><h2 className="text-xl font-semibold">미션</h2><p className="mt-1 text-sm text-muted-foreground">만든 미션은 선발 크리에이터들의 개인 페이지에 배정돼요.</p></div>
+      <div><h2 className="text-xl font-semibold">미션</h2>
+        <p className="mt-1 text-sm text-muted-foreground">만든 미션은 선발 크리에이터들의 개인 페이지에 배정돼요.
+          <strong className="font-medium text-foreground"> 알림은 가지 않으니</strong> 선발자 탭의 「안내 메일」로 알려 주세요.</p></div>
       <button className={primary} aria-expanded={newForm} onClick={() => setNewForm(!newForm)}>{newForm ? "추가 닫기" : "미션 추가"}</button>
     </div>
     {newForm && <MissionEditor save={save} onDone={() => setNewForm(false)} />}

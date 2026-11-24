@@ -92,7 +92,7 @@ export function CreatorAdmin({ projectId, projectName }: { projectId: string; pr
       {tab === "dashboard" && <Dashboard data={data} program={program} projectId={projectId} origin={origin} save={save} copy={copy} />}
       {tab === "candidates" && <CandidateGrid program={program} applications={data.applications} origin={origin} save={save} copy={copy} />}
       {tab === "applications" && <Applicants program={program} applications={data.applications} labels={data.applicationLabels} save={save} />}
-      {tab === "people" && <People program={program} applications={data.applications} labels={data.applicationLabels} origin={origin} save={save} copy={copy} />}
+      {tab === "people" && <People program={program} applications={data.applications} labels={data.applicationLabels} origin={origin} projectId={projectId} save={save} copy={copy} />}
       {tab === "missions" && <Missions program={program} save={save} />}
       {tab === "announcements" && <Announcements program={program} origin={origin} save={save} copy={copy} />}
       {tab === "settings" && <CreatorSettings key={program.applicationSourceId ?? "unlinked"} program={program} sources={data.sources} origin={origin} save={save} copy={copy} />}

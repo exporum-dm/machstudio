@@ -33,10 +33,14 @@ export async function getCreatorProject(projectId: string) {
       id: projectId, deletedAt: null,
       workspace: { deletedAt: null, members: { some: { userId: user.id, role: { in: ["OWNER", "ADMIN", "MEMBER"] } } } },
     },
-    select: { id: true, name: true, workspaceId: true },
+    select: {
+      id: true, name: true, workspaceId: true,
+      workspace: { select: { members: { where: { userId: user.id }, select: { role: true }, take: 1 } } },
+    },
   });
   if (!project) throw missing();
-  return { userId: user.id, project };
+  const { workspace, ...rest } = project;
+  return { userId: user.id, project: rest, role: workspace.members[0]?.role ?? "MEMBER" };
 }
 
 export async function loadCreator(projectId: string) {
