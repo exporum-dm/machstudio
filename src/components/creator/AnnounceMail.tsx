@@ -29,7 +29,7 @@ const audiences: { id: Audience; label: string }[] = [
  * 밖으로 나가는 대량 발송이라 **미리보기 → 확인 → 발송** 세 단계를 둔다(Product UI Principles:
  * 위험한 저빈도 액션은 확인 단계 뒤에).
  */
-export function AnnounceMail({ program, projectId }: { program: CreatorProgramView; projectId: string }) {
+export function AnnounceMail({ program, programId }: { program: CreatorProgramView; programId: string }) {
   const confirm = useConfirm();
   const [open, setOpen] = useState(false);
   const [audience, setAudience] = useState<Audience>("all");
@@ -40,7 +40,7 @@ export function AnnounceMail({ program, projectId }: { program: CreatorProgramVi
   const [preview, setPreview] = useState<Preview | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const api = "/api/creators/" + projectId + "/email";
+  const api = "/api/creators/" + programId + "/email";
   const payload = { subject, message, audience, includePortalLink, buttonLabel };
   const ready = Boolean(subject.trim() && message.trim());
 

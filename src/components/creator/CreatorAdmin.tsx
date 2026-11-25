@@ -11,7 +11,7 @@ import { CandidateGrid } from "./CandidateGrid";
 import { Applicants, CreatorSettings } from "./Recruitment";
 import { Announcements, People } from "./People";
 import { Dashboard, Missions } from "./Operations";
-import { button, primary, Empty, panel } from "./ui";
+import { button, Empty } from "./ui";
 
 const tabs = [
   { id: "dashboard", label: "대시보드" }, { id: "candidates", label: "발굴 후보" },
@@ -22,14 +22,14 @@ const tabs = [
 
 type Tab = (typeof tabs)[number]["id"];
 
-export function CreatorAdmin({ projectId, projectName }: { projectId: string; projectName: string }) {
+export function CreatorAdmin({ programId, projectName }: { programId: string; projectName: string }) {
   const [data, setData] = useState<CreatorView | null>(null);
   const [tab, setTab] = useState<Tab>("dashboard");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(0);
   const [saved, setSaved] = useState(false);
   const sequence = useRef(0);
-  const api = "/api/creators/" + projectId;
+  const api = "/api/creators/" + programId;
   const origin = getPublicAppOrigin();
 
   const load = useCallback(async () => {
@@ -83,9 +83,9 @@ export function CreatorAdmin({ projectId, projectName }: { projectId: string; pr
   const program = data?.program;
   return <div className="mx-auto grid w-full min-w-0 max-w-7xl gap-5 p-4 sm:p-8">
     <PageHeader
-      title="크리에이터 관리"
+      title={program?.name ?? "크리에이터 관리"}
       context={projectName}
-      description={program && program.name !== projectName ? program.name : undefined}
+      back={{ href: "/creators", label: "회차 목록" }}
       actions={data && <div className="flex items-center gap-2" aria-live="polite">
         <span className="text-xs text-muted-foreground">{pending ? "저장 중…" : saved ? <><Check className="mr-1 inline size-3" />저장됨</> : ""}</span>
         <button className={button} onClick={() => void refresh()} aria-label="최신 내역 불러오기"><RefreshCw className="size-4" /></button>
@@ -94,19 +94,14 @@ export function CreatorAdmin({ projectId, projectName }: { projectId: string; pr
     {error && <p role="alert" className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>}
     {data && program ? <>
       <PageTabs label="크리에이터 관리 메뉴" value={tab} onChange={setTab} options={tabs} />
-      {tab === "dashboard" && <Dashboard data={data} program={program} projectId={projectId} origin={origin} save={save} copy={copy} />}
+      {tab === "dashboard" && <Dashboard data={data} program={program} programId={programId} origin={origin} save={save} copy={copy} />}
       {tab === "candidates" && <CandidateGrid program={program} applications={data.applications} origin={origin} save={save} copy={copy} />}
       {tab === "applications" && <Applicants program={program} applications={data.applications} labels={data.applicationLabels} save={save} />}
-      {tab === "people" && <People program={program} applications={data.applications} labels={data.applicationLabels} origin={origin} projectId={projectId} save={save} copy={copy} />}
+      {tab === "people" && <People program={program} applications={data.applications} labels={data.applicationLabels} origin={origin} programId={programId} save={save} copy={copy} />}
       {tab === "missions" && <Missions program={program} save={save} />}
       {tab === "announcements" && <Announcements program={program} origin={origin} save={save} copy={copy} />}
       {tab === "settings" && <CreatorSettings key={program.applicationSourceId ?? "unlinked"} program={program} sources={data.sources} origin={origin} save={save} copy={copy} />}
-    </> : data ? <section className={panel + " grid gap-3"}>
-      <h2 className="text-xl font-semibold">크리에이터 프로그램 시작</h2>
-      <p className="text-sm text-muted-foreground">이 프로젝트에 발굴 후보 표와 활동 운영 화면을 만들어요.</p>
-      <button className={primary + " justify-self-start"} disabled={pending > 0} onClick={async () => {
-        if (await save({ action: "create" })) setTab("settings");
-      }}>프로그램 만들기</button>
-    </section> : error ? <button className={button + " justify-self-start"} onClick={() => void refresh()}>다시 불러오기</button> : <Empty>프로그램을 불러오는 중이에요.</Empty>}
+    </> : error ? <button className={button + " justify-self-start"} onClick={() => void refresh()}>다시 불러오기</button>
+      : <Empty>회차를 불러오는 중이에요.</Empty>}
   </div>;
 }

@@ -2,12 +2,13 @@
 
 import { Loader2, UsersRound } from "lucide-react";
 import { useWorkspace } from "@/contexts/workspace";
-import { CreatorAdmin } from "@/components/creator/CreatorAdmin";
+import { Editions } from "@/components/creator/Editions";
 
 /**
- * 크리에이터 관리는 **사이드바에서 이미 고른 프로젝트**의 메뉴다. 여기서 프로젝트를 다시
- * 고르게 하지 않는다 — 워크스페이스 → 프로젝트(전시) → 메뉴 순서가 이 앱의 계층이고,
- * 메뉴 화면은 그 마지막 칸이다(등록·웨비나·광고 성과와 같은 모양).
+ * 크리에이터 관리는 **사이드바에서 이미 고른 전시**의 메뉴다. 여기서 프로젝트를 다시 고르게 하지 않는다 —
+ * 워크스페이스 → 프로젝트(전시) → 메뉴 순서가 이 앱의 계층이고, 메뉴 화면은 그 마지막 칸이다.
+ *
+ * 전시는 매년 열리므로 이 화면은 그 전시의 **회차 목록**이다(등록 메뉴가 폼 목록을 보여 주는 자리와 같다).
  */
 export default function CreatorsPage() {
   const { currentProject, isLoading } = useWorkspace();
@@ -25,5 +26,5 @@ export default function CreatorsPage() {
     </div>;
   }
 
-  return <CreatorAdmin key={currentProject.id} projectId={currentProject.id} projectName={currentProject.name} />;
+  return <Editions key={currentProject.id} projectId={currentProject.id} projectName={currentProject.name} />;
 }

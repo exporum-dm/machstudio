@@ -201,7 +201,7 @@ model Project {
   workGroups           WorkGroup[]
   contentItems         ContentItem[]
   eventTaxonomies      EventTaxonomy[]
-  creatorProgram       CreatorProgram?
+  creatorPrograms      CreatorProgram[]
 }
 
 model AdPerformanceImportBatch {
@@ -2120,9 +2120,11 @@ model CollectRegistrationCounter {
   lastValue Int @default(0)
 }
 
+/// 크리에이터 프로그램 = **한 회차**. 전시는 매년 열리므로 프로젝트 하나에 여러 회차가 쌓인다
+/// (등록이 프로젝트 하나에 CollectSource 를 여러 개 두는 것과 같은 모양).
 model CreatorProgram {
   id                   String @id @default(cuid())
-  projectId            String @unique
+  projectId            String
   name                 String
   applicationSourceId  String?
   registrationSourceId String?
@@ -2131,6 +2133,9 @@ model CreatorProgram {
   roster               Json?
   awards               Json?
   version              Int @default(0)
+  createdAt            DateTime @default(now())
+  /// 지운 회차. 후보·선발자·제출 이력이 함께 사라지지 않도록 행은 남기고 목록에서만 감춘다.
+  deletedAt            DateTime?
 
   project            Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   applicationSource  CollectSource? @relation("CreatorApplication", fields: [applicationSourceId], references: [id], onDelete: SetNull)
@@ -2139,6 +2144,7 @@ model CreatorProgram {
   participants       CreatorParticipant[]
   missions           CreatorMission[]
 
+  @@index([projectId, createdAt])
   @@index([applicationSourceId])
   @@index([registrationSourceId])
 }
