@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ArrowDown, ArrowUp, Download, Eye, EyeOff, GripVertical, Plus, Trash2 } from "lucide-react";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { baseColumns, creatorColumns, normalizeCell, MAX_COLUMN_WIDTH, MIN_COLUMN_WIDTH, type Cells, type Column, type CreatorAction } from "@/lib/creator/model";
+import { baseColumns, creatorColumns, normalizeCell, CONTACT_LINK_SENT, CONTACT_TALKING, MAX_COLUMN_WIDTH, MIN_COLUMN_WIDTH, type Cells, type Column, type CreatorAction } from "@/lib/creator/model";
 import { candidateCsv, pasteCandidates } from "@/lib/creator/sheet";
 import type { CreatorView, CreatorProgramView } from "@/lib/creator/types";
 import { button, primary, Empty, Field, panel, input, Text } from "./ui";
@@ -98,6 +98,7 @@ export function CandidateGrid({ program, applications, origin, save, copy }: {
   const [paste, setPaste] = useState("");
   const [error, setError] = useState("");
   const [columnDraft, setColumnDraft] = useState(creatorColumns(program.columns));
+  const [dragRow, setDragRow] = useState<string | null>(null);
   const columns = creatorColumns(program.columns);
   const visible = columns.filter((column) => !column.hidden);
   const receipts = new Set(applications.map(({ utmId }) => utmId));
@@ -105,6 +106,8 @@ export function CandidateGrid({ program, applications, origin, save, copy }: {
   const filtered = rows.filter((row) => [...Object.values(row.cells as Cells), row.submitted ? "제출 완료" : "미제출"]
     .some((value) => String(value ?? "").toLowerCase().includes(search.toLowerCase())) || !search);
   const publicForm = program.applicationSourceId && origin ? origin + "/register/" + program.applicationSourceId : "";
+  // 검색으로 일부만 보일 때 끌어 놓으면 안 보이는 행들의 자리가 어긋난다 — 전부 보일 때만 허용한다.
+  const sortable = filtered.length === rows.length;
 
   async function addPaste() {
     try {
@@ -116,6 +119,31 @@ export function CandidateGrid({ program, applications, origin, save, copy }: {
 
   function editColumn(index: number, patch: Partial<Column>) {
     setColumnDraft((list) => list.map((column, slot) => slot === index ? { ...column, ...patch } : column));
+  }
+
+  /** 표 머리를 끌어 옮긴 열 순서. 보이는 열 기준으로 집고 전체 목록에서 같은 자리로 옮긴다. */
+  function moveVisibleColumn(key: string, toVisibleIndex: number) {
+    const target = visible[toVisibleIndex];
+    if (!target || target.key === key) return;
+    const list = [...columns];
+    const from = list.findIndex((column) => column.key === key);
+    const to = list.findIndex((column) => column.key === target.key);
+    if (from < 0 || to < 0) return;
+    const [moved] = list.splice(from, 1);
+    list.splice(to, 0, moved);
+    setColumnDraft(list);
+    void save({ action: "columns", columns: list });
+  }
+
+  /** 끌어 놓은 행 순서를 그대로 저장한다. 검색·정렬 중에는 일부만 보여 순서가 어긋나므로 막는다. */
+  async function moveRow(id: string, toIndex: number) {
+    const list = rows.map((row) => row.id);
+    const from = list.indexOf(id);
+    if (from < 0 || from === toIndex) return;
+    const [moved] = list.splice(from, 1);
+    list.splice(toIndex, 0, moved);
+    setDragRow(null);
+    await save({ action: "candidateReorder", ids: list });
   }
 
   /** 표에서 끌어 바꾼 너비는 그 자리에서 저장한다 — 열 설정 패널을 열지 않아도 남는다. */
@@ -225,13 +253,45 @@ export function CandidateGrid({ program, applications, origin, save, copy }: {
             <col style={{ width: "120px" }} /><col style={{ width: "200px" }} />
           </colgroup>
           <thead className="bg-muted/65 text-xs font-medium text-muted-foreground"><tr>
-            {visible.map((column) => <th key={column.key} scope="col" className="relative px-3 py-3">
-              <span className="block truncate" title={column.label}>{column.label}</span>
+            <th scope="col" className="w-9 px-1 py-3"><span className="sr-only">행 순서</span></th>
+            {visible.map((column, index) => <th key={column.key} scope="col" className="relative px-3 py-3"
+              onDragOver={(event) => { if (event.dataTransfer.types.includes("application/x-creator-column")) event.preventDefault(); }}
+              onDrop={(event) => {
+                event.preventDefault();
+                const key = event.dataTransfer.getData("application/x-creator-column");
+                if (key && key !== column.key) moveVisibleColumn(key, index);
+              }}>
+              <span draggable className="block cursor-grab truncate active:cursor-grabbing" title={column.label + " — 끌어서 순서 이동"}
+                onDragStart={(event) => {
+                  event.dataTransfer.setData("application/x-creator-column", column.key);
+                  event.dataTransfer.effectAllowed = "move";
+                }}>{column.label}</span>
               <ColumnResizer column={column} onResize={resizeColumn} />
             </th>)}
             <th scope="col" className="px-3 py-3">신청서 제출</th><th scope="col" className="px-3 py-3">작업</th>
           </tr></thead>
-          <tbody>{filtered.map((row) => <tr className="border-t border-border/50" key={row.id}>
+          <tbody>{filtered.map((row, index) => <tr className={"border-t border-border/50 " + (dragRow === row.id ? "opacity-40" : "")} key={row.id}
+            onDragOver={(event) => { if (sortable && event.dataTransfer.types.includes("application/x-creator-row")) event.preventDefault(); }}
+            onDrop={(event) => {
+              if (!sortable) return;
+              event.preventDefault();
+              const id = event.dataTransfer.getData("application/x-creator-row");
+              if (id && id !== row.id) void moveRow(id, index);
+            }}>
+            <td className="px-1 py-2 align-middle">
+              <span draggable={sortable} aria-hidden={!sortable}
+                title={sortable ? "끌어서 행 순서 이동" : "검색·정렬 중에는 순서를 바꿀 수 없어요"}
+                className={"flex justify-center " + (sortable ? "cursor-grab text-muted-foreground active:cursor-grabbing" : "cursor-not-allowed text-muted-foreground/30")}
+                onDragStart={(event) => {
+                  if (!sortable) return;
+                  event.dataTransfer.setData("application/x-creator-row", row.id);
+                  event.dataTransfer.effectAllowed = "move";
+                  setDragRow(row.id);
+                }}
+                onDragEnd={() => setDragRow(null)}>
+                <GripVertical className="size-4" />
+              </span>
+            </td>
             {visible.map((column) => {
               const value = (row.cells as Cells)[column.key];
               return <td key={column.key} className="min-w-32 px-2 py-2"><EditorCell key={String(value)} column={column} value={value}
@@ -240,8 +300,8 @@ export function CandidateGrid({ program, applications, origin, save, copy }: {
             <td className="px-3 py-2"><span className={row.submitted ? "font-semibold" : "text-muted-foreground"}>{row.submitted ? "제출 완료" : "미제출"}</span></td>
             <td className="px-3 py-2"><div className="flex gap-2">
               {publicForm && !row.submitted && <button className={button} onClick={() => copy(publicForm + "?utm_id=" + row.invite)}>신청 링크 복사</button>}
-              {publicForm && !row.submitted && (row.cells as Cells).interest === "참여 의향 있음" && <button className={button} onClick={() => void save({
-                action: "candidateEdit", id: row.id, key: "interest", value: "신청 링크 발송",
+              {publicForm && !row.submitted && (row.cells as Cells).interest === CONTACT_TALKING && <button className={button} onClick={() => void save({
+                action: "candidateEdit", id: row.id, key: "interest", value: CONTACT_LINK_SENT,
               })}>발송 기록</button>}
               <button className={button + " text-destructive"} aria-label="후보 삭제" onClick={async () => {
                 if (await confirm({ title: "이 후보를 삭제할까요?", description: "발굴 후보 표에서 삭제돼요.", tone: "danger" })) await save({ action: "candidateDelete", id: row.id });

@@ -105,7 +105,7 @@ export async function loadCreator(projectId: string, programId: string) {
       include: {
         applicationSource: { select: { formConfig: true } },
         _count: { select: { participants: true } },
-        candidates: { orderBy: { createdAt: "asc" } },
+        candidates: { orderBy: [{ position: "asc" }, { createdAt: "asc" }] },
         missions: { orderBy: [{ dueAt: { sort: "asc", nulls: "last" } }, { id: "asc" }] },
         participants: {
           where: { withdrawnAt: null },
@@ -227,8 +227,13 @@ export async function applyCreatorAction(auth: Awaited<ReturnType<typeof getCrea
       }
       case "candidateAdd": {
         const columns = creatorColumns(program.columns);
+        // 새 행은 표 맨 아래로 — 끌어서 정해 둔 순서 위로 끼어들지 않게 한다.
+        const last = await tx.creatorCandidate.aggregate({ where: { programId }, _max: { position: true } });
+        const start = (last._max.position ?? 0) + 1;
         await tx.creatorCandidate.createMany({
-          data: action.rows.map((row) => ({ programId, invite: code("ca_"), cells: candidateCells(columns, row) })),
+          data: action.rows.map((row, index) => ({
+            programId, invite: code("ca_"), position: start + index, cells: candidateCells(columns, row),
+          })),
         });
         break;
       }
@@ -247,6 +252,16 @@ export async function applyCreatorAction(auth: Awaited<ReturnType<typeof getCrea
       case "candidateDelete": {
         const result = await tx.creatorCandidate.deleteMany({ where: { id: action.id, programId } });
         if (!result.count) throw missing();
+        break;
+      }
+      case "candidateReorder": {
+        // 화면이 보낸 순서대로 자리를 매긴다. 이 회차의 행만 — 남의 회차 id 가 섞여 와도 건너뛴다.
+        const mine = await tx.creatorCandidate.findMany({ where: { programId, id: { in: action.ids } }, select: { id: true } });
+        const allowed = new Set(mine.map(({ id }) => id));
+        const ordered = action.ids.filter((id) => allowed.has(id));
+        if (!ordered.length) throw missing();
+        await Promise.all(ordered.map((id, index) =>
+          tx.creatorCandidate.update({ where: { id }, data: { position: index + 1 } })));
         break;
       }
       case "select": {

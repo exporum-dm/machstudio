@@ -2155,9 +2155,12 @@ model CreatorCandidate {
   invite    String @unique
   cells     Json
   createdAt DateTime @default(now())
+  /// 표에서 끌어 놓은 행 순서. 같은 값이면 들어온 순서(createdAt)로 이어 붙인다.
+  position  Int @default(0)
 
   program CreatorProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
 
+  @@index([programId, position, createdAt])
   @@index([programId, createdAt])
 }
 

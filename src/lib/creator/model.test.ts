@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { creatorAccessEmail, creatorDriveFile, creatorDriveFolder, baseColumns, buildPublication, creatorColumns, defaultUtm, missionSchema, normalizeCell, removePublishedCreator, reviewState, trackingUrl, workQueue } from "./model";
+import { creatorAccessEmail, creatorDriveFile, creatorDriveFolder, baseColumns, buildPublication, CONTACT_LINK_SENT, CONTACT_TALKING, creatorColumns, defaultUtm, missionSchema, normalizeCell, removePublishedCreator, reviewState, trackingUrl, workQueue } from "./model";
 import { candidateCsv, pasteCandidates } from "./sheet";
 
 describe("creator operations", () => {
@@ -81,6 +81,17 @@ describe("creator operations", () => {
     // 아직 한 번도 저장하지 않았으면 기본 열로 시작한다.
     expect(creatorColumns([])).toEqual(baseColumns);
     expect(creatorColumns(null)).toEqual(baseColumns);
+  });
+
+  it("연락 상태 기본 보기는 단계 순서대로이고 운영 버튼과 같은 이름을 쓴다", () => {
+    const interest = baseColumns.find(({ key }) => key === "interest")!;
+    expect(interest.type).toBe("select");
+    expect(interest.options).toEqual(["연락 전", "소통 중", "신청 링크 발송", "연락 완료", "연락 끊김"]);
+    // 표의 "발송 기록" 버튼이 쓰는 두 단계가 실제 보기 안에 있어야 한다 — 없으면 저장이 거절된다.
+    expect(interest.options).toContain(CONTACT_TALKING);
+    expect(interest.options).toContain(CONTACT_LINK_SENT);
+    expect(normalizeCell(interest, CONTACT_LINK_SENT)).toBe(CONTACT_LINK_SENT);
+    expect(() => normalizeCell(interest, "참여 의향 있음")).toThrow();
   });
 
   it("열 너비는 범위 안에서만 저장된다", () => {

@@ -21,6 +21,18 @@ export const columnSchema = z.object({
 export type Column = z.infer<typeof columnSchema>;
 export type Cells = z.infer<typeof cells>;
 
+/**
+ * 연락 상태 기본 보기 — 한 사람이 거쳐 가는 단계 순서대로.
+ *
+ * 예전 보기(미연락·DM 발송·답변 대기·참여 의향 있음·참여 의향 없음)는 "무엇을 했나"와
+ * "상대가 어떻게 답했나"가 섞여 있어 고를 때마다 헷갈렸다. 지금은 **지금 어디까지 왔나** 하나로
+ * 읽는다. 회차마다 열 설정에서 보기를 바꿀 수 있다.
+ */
+export const contactStages = ["연락 전", "소통 중", "신청 링크 발송", "연락 완료", "연락 끊김"] as const;
+/** 운영 흐름에서 "신청 링크를 보낼 때가 된" 단계. 표의 발송 기록 버튼이 이때 나온다. */
+export const CONTACT_TALKING = contactStages[1];
+export const CONTACT_LINK_SENT = contactStages[2];
+
 export const baseColumns: Column[] = [
   { key: "name", label: "이름", type: "text" },
   { key: "platform", label: "SNS", type: "text" },
@@ -29,7 +41,7 @@ export const baseColumns: Column[] = [
   { key: "followers", label: "팔로워", type: "number" },
   { key: "avgViews", label: "평균 조회수", type: "number" },
   { key: "dmOn", label: "DM 발송일", type: "date" },
-  { key: "interest", label: "연락 상태", type: "select", options: ["미연락", "DM 발송", "답변 대기", "참여 의향 있음", "신청 링크 발송", "참여 의향 없음"] },
+  { key: "interest", label: "연락 상태", type: "select", options: [...contactStages] },
   { key: "owner", label: "담당자", type: "text" },
   { key: "rank", label: "우선순위", type: "text" },
   { key: "memo", label: "메모", type: "text" },
@@ -130,6 +142,7 @@ export const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("candidateAdd"), rows: z.array(cells).min(1).max(250) }),
   z.object({ action: z.literal("candidateEdit"), id, key: z.string(), value: cell }),
   z.object({ action: z.literal("candidateDelete"), id }),
+  z.object({ action: z.literal("candidateReorder"), ids: z.array(id).min(1).max(2000) }),
   z.object({ action: z.literal("select"), applicationId: id, name: label, channels: z.partialRecord(platform, z.string().trim().max(160)) }),
   z.object({ action: z.literal("participant"), id, patch: z.object({
     name: label.optional(), confirmed: z.boolean().optional(), channels: z.partialRecord(platform, z.string().trim().max(160)).optional(),
