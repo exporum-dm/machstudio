@@ -1,6 +1,6 @@
 import { after, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { creatorUtm, trackingUrl, webUrl } from "@/lib/creator/model";
+import { creatorUtm, creatorUtmDestination, trackingUrl, webUrl } from "@/lib/creator/model";
 import { getPublicAppOrigin } from "@/lib/app-url";
 import { getClientIp, rateLimitAsync } from "@/lib/ratelimit";
 import { isBotUserAgent } from "@/lib/brief/click";
@@ -13,7 +13,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ code
     where: { code },
     select: { platform: true, participant: { select: {
       name: true, channels: true, withdrawnAt: true, program: { select: {
-        name: true, utm: true, project: { select: { deletedAt: true, workspace: { select: { deletedAt: true } } } },
+        name: true, utm: true, deletedAt: true, project: { select: { deletedAt: true, workspace: { select: { deletedAt: true } } } },
         registrationSource: { select: { id: true, isActive: true, deletedAt: true, mode: true, siteUrl: true } },
       } },
     } } },
@@ -22,10 +22,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ code
   const program = person?.program;
   const form = program?.registrationSource;
   const handle = link && person && (person.channels as Record<string, string>)[link.platform];
-  if (!link || !person || person.withdrawnAt || !program || !form?.isActive || form.deletedAt || program.project.deletedAt || program.project.workspace.deletedAt || !handle) return new Response(null, { status: 404 });
+  if (!link || !person || person.withdrawnAt || !program || program.deletedAt || program.project.deletedAt || program.project.workspace.deletedAt || !handle) return new Response(null, { status: 404 });
   const origin = getPublicAppOrigin() || (process.env.NODE_ENV === "development" ? new URL(request.url).origin : "");
-  const site = webUrl.safeParse(form.siteUrl);
-  const destination = site.success ? site.data : form.mode === "builder" && origin ? origin + "/register/" + form.id : "";
+  const site = webUrl.safeParse(form?.siteUrl);
+  const fallback = form?.isActive && !form.deletedAt
+    ? site.success ? site.data : form.mode === "builder" && origin ? origin + "/register/" + form.id : ""
+    : "";
+  const destination = creatorUtmDestination(program.utm) || fallback;
   if (!destination) return new Response(null, { status: 404 });
   const url = trackingUrl(destination, creatorUtm(program.utm), { code, platform: link.platform, creator: person.name, program: program.name, handle });
   const preview = isPreviewUrl(new URL(request.url));

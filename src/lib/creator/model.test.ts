@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { creatorAccessEmail, creatorDriveFile, creatorDriveFolder, baseColumns, buildPublication, CONTACT_LINK_SENT, CONTACT_TALKING, creatorColumns, defaultUtm, missionSchema, missionSubmissionFields, normalizeCell, removePublishedCreator, reviewState, trackingUrl, validateMissionSubmission, workQueue } from "./model";
+import { creatorAccessEmail, creatorDriveFile, creatorDriveFolder, baseColumns, buildPublication, CONTACT_LINK_SENT, CONTACT_TALKING, creatorColumns, creatorDestinationUrl, creatorPromotionUrl, defaultUtm, missionSchema, missionSubmissionFields, normalizeCell, removePublishedCreator, reviewState, trackingUrl, validateMissionSubmission, workQueue } from "./model";
 import { candidateCsv, pasteCandidates } from "./sheet";
 
 describe("creator operations", () => {
@@ -14,6 +14,22 @@ describe("creator operations", () => {
     expect(second.searchParams.get("utm_content")).toBeNull();
     expect(second.searchParams.get("lang")).toBe("ko");
     expect(second.hash).toBe("#form");
+  });
+
+  it("copies a direct promotion URL for an explicitly configured destination and preserves older links", () => {
+    const context = { code: "cr_test", platform: "instagram", handle: "@creator", creator: "Creator", program: "Education Korea" };
+    const legacy = "https://mach.example.test/creator-go/cr_test";
+    const destination = "https://www.educationkorea.kr/registration?lang=ko#form";
+    const url = new URL(creatorPromotionUrl({ ...defaultUtm, destination }, context, legacy));
+    expect(url.origin + url.pathname).toBe("https://www.educationkorea.kr/registration");
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      lang: "ko", utm_source: "ambassador", utm_medium: "instagram", utm_campaign: "Education Korea",
+      utm_term: "@creator", utm_id: "cr_test",
+    });
+    expect(url.hash).toBe("#form");
+    expect(creatorPromotionUrl(defaultUtm, context, legacy)).toBe(legacy);
+    expect(creatorDestinationUrl.safeParse("https://user:password@example.test").success).toBe(false);
+    expect(creatorDestinationUrl.safeParse("javascript:alert(0)").success).toBe(false);
   });
 
   it("keeps work awaiting review outside the reminder queues and requires final review", () => {

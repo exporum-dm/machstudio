@@ -128,7 +128,24 @@ export function creatorUtm(raw: unknown) {
   const validated = utmSchema.safeParse(raw);
   return validated.success ? validated.data : defaultUtm;
 }
-export function trackingUrl(destination: string, utm: Utm, link: { code: string; platform: string; handle: string; creator: string; program: string }) {
+export const creatorDestinationUrl = z.string().trim().pipe(webUrl).refine((value) => {
+  const url = new URL(value);
+  return !url.username && !url.password;
+}, "http 또는 https로 시작하는 등록 페이지 주소를 입력해 주세요.");
+
+export function creatorUtmDestination(raw: unknown) {
+  if (!raw || typeof raw !== "object" || !("destination" in raw)) return "";
+  return creatorDestinationUrl.safeParse(raw.destination).data ?? "";
+}
+
+type TrackingLink = { code: string; platform: string; handle: string; creator: string; program: string };
+
+export function creatorPromotionUrl(utm: unknown, link: TrackingLink, legacyUrl: string) {
+  const destination = creatorUtmDestination(utm);
+  return destination ? trackingUrl(destination, creatorUtm(utm), link).href : legacyUrl;
+}
+
+export function trackingUrl(destination: string, utm: Utm, link: TrackingLink) {
   const url = new URL(destination);
   const fields = ["source", "medium", "campaign", "term", "content"] as const;
   for (const field of fields) {
@@ -181,7 +198,7 @@ export const missionSchema = z.object({
 
 export const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("createApplicationForm") }),
-  z.object({ action: z.literal("settings"), name: label, applicationSourceId: id.nullable(), registrationSourceId: id.nullable(), utm: utmSchema }),
+  z.object({ action: z.literal("settings"), name: label, applicationSourceId: id.nullable(), registrationSourceId: id.nullable(), utm: utmSchema, destination: creatorDestinationUrl.nullable().optional() }),
   z.object({ action: z.literal("columns"), columns: z.array(columnSchema).max(80) }),
   z.object({ action: z.literal("candidateAdd"), rows: z.array(cells).min(1).max(250) }),
   z.object({ action: z.literal("candidateEdit"), id, key: z.string(), value: cell }),
