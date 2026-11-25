@@ -37,6 +37,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     const people = await prisma.creatorParticipant.findMany({
       where: {
         programId: program.id,
+        withdrawnAt: null,
         ...(audience === "confirmed" ? { confirmed: true } : audience === "unconfirmed" ? { confirmed: false } : {}),
         ...(audience === "selected" ? { id: { in: participantIds ?? [] } } : {}),
       },

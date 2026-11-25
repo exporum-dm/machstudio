@@ -4,7 +4,7 @@ import { Prisma } from "@/generated/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { localize, normalizeCollectForm } from "@/lib/collect-form-config";
-import { buildPublication, creatorColumns, normalizeCell, reviewState, webUrl, type Cells, type CreatorAction, type HistoryEntry } from "./model";
+import { buildPublication, creatorColumns, normalizeCell, removePublishedCreator, reviewState, webUrl, type Cells, type CreatorAction, type HistoryEntry } from "./model";
 
 export class CreatorError extends Error {
   constructor(message: string, readonly status = 400) { super(message); }
@@ -53,9 +53,11 @@ export async function loadCreator(projectId: string) {
       where: { projectId },
       include: {
         applicationSource: { select: { formConfig: true } },
+        _count: { select: { participants: true } },
         candidates: { orderBy: { createdAt: "asc" } },
         missions: { orderBy: { dueAt: "asc" } },
         participants: {
+          where: { withdrawnAt: null },
           orderBy: { name: "asc" },
           include: { links: true, assignments: { include: { uploads: { select: { id: true, name: true } } } } },
         },
@@ -78,7 +80,7 @@ export async function loadCreator(projectId: string) {
       FROM "CollectRecord" r
       JOIN "CreatorLink" l ON l.code = r."utmId"
       JOIN "CreatorParticipant" p ON p.id = l."participantId"
-      WHERE r."projectId" = ${projectId} AND r."sourceId" = ${program.registrationSourceId} AND p."programId" = ${program.id}
+      WHERE r."projectId" = ${projectId} AND r."sourceId" = ${program.registrationSourceId} AND p."programId" = ${program.id} AND p."withdrawnAt" IS NULL
       GROUP BY r."utmId", day
     ` : [],
   ]);
@@ -217,10 +219,16 @@ export async function applyCreatorAction(auth: Awaited<ReturnType<typeof getCrea
         }) : null;
         const ownerCell = (candidate?.cells as Cells | undefined)?.owner;
         const owner = typeof ownerCell === "string" ? ownerCell.slice(0, 160) : "";
+        const where = { programId_applicationId: { programId, applicationId: action.applicationId } };
+        const previous = await tx.creatorParticipant.findUnique({ where });
         const participant = await tx.creatorParticipant.upsert({
-          where: { programId_applicationId: { programId, applicationId: action.applicationId } },
+          where,
           create: { programId, applicationId: action.applicationId, token: code("cp_"), name: action.name, channels: action.channels, owner },
-          update: {},
+          update: previous?.withdrawnAt ? {
+            withdrawnAt: null,
+            name: action.name,
+            channels: { ...(previous.channels as Record<string, string>), ...action.channels },
+          } : {},
         });
         await ensureLinks(tx, participant.id, participant.channels as Record<string, string>);
         const missions = await tx.creatorMission.findMany({ where: { programId }, select: { id: true, draft: true } });
@@ -230,14 +238,36 @@ export async function applyCreatorAction(auth: Awaited<ReturnType<typeof getCrea
         });
         break;
       }
+      case "unselect": {
+        const locked = await tx.creatorProgram.update({
+          where: { id: programId }, data: { version: { increment: 1 } },
+          select: { roster: true, awards: true, applicationSourceId: true },
+        });
+        const person = await tx.creatorParticipant.findFirst({
+          where: { id: action.id, programId, withdrawnAt: null, application: { sourceId: locked.applicationSourceId ?? "", projectId: project.id } },
+          select: { id: true, name: true, profile: true, award: true },
+        });
+        if (!person) throw missing();
+        const result = await tx.creatorParticipant.updateMany({
+          where: { id: person.id, token: action.token, withdrawnAt: null },
+          data: { withdrawnAt: new Date(), confirmed: false, token: code("cp_") },
+        });
+        if (!result.count) throw conflict();
+        const roster = removePublishedCreator(locked.roster, person);
+        const awards = removePublishedCreator(locked.awards, person);
+        if (roster || awards) await tx.creatorProgram.update({
+          where: { id: programId }, data: { roster, awards },
+        });
+        break;
+      }
       case "participant": {
-        const result = await tx.creatorParticipant.updateMany({ where: { id: action.id, programId }, data: action.patch });
+        const result = await tx.creatorParticipant.updateMany({ where: { id: action.id, programId, withdrawnAt: null }, data: action.patch });
         if (!result.count) throw missing();
         if (action.patch.channels) await ensureLinks(tx, action.id, action.patch.channels);
         break;
       }
       case "rotateAccess": {
-        const result = await tx.creatorParticipant.updateMany({ where: { id: action.id, programId }, data: { token: code("cp_") } });
+        const result = await tx.creatorParticipant.updateMany({ where: { id: action.id, programId, withdrawnAt: null }, data: { token: code("cp_") } });
         if (!result.count) throw missing();
         break;
       }
@@ -256,7 +286,7 @@ export async function applyCreatorAction(auth: Awaited<ReturnType<typeof getCrea
           });
           break;
         }
-        const participants = await tx.creatorParticipant.findMany({ where: { programId }, select: { id: true } });
+        const participants = await tx.creatorParticipant.findMany({ where: { programId, withdrawnAt: null }, select: { id: true } });
         await tx.creatorAssignment.createMany({
           data: participants.map(({ id }) => ({ participantId: id, missionId: mission.id, stage: mission.draft ? "draft" : "final" })),
           skipDuplicates: true,
@@ -270,14 +300,14 @@ export async function applyCreatorAction(auth: Awaited<ReturnType<typeof getCrea
           SET contacts = a.contacts || ${JSON.stringify(contacts)}::jsonb
           FROM "CreatorMission" m, "CreatorParticipant" p
           WHERE a.id = ${action.id} AND a."missionId" = m.id AND a."participantId" = p.id
-            AND m."programId" = ${programId} AND p."programId" = ${programId}
+            AND m."programId" = ${programId} AND p."programId" = ${programId} AND p."withdrawnAt" IS NULL
         `;
         if (!count) throw missing();
         break;
       }
       case "review": {
         const assignment = await tx.creatorAssignment.findFirst({
-          where: { id: action.id, mission: { programId }, participant: { programId } },
+          where: { id: action.id, mission: { programId }, participant: { programId, withdrawnAt: null } },
         });
         if (!assignment) throw missing();
         const at = new Date().toISOString();
@@ -285,7 +315,7 @@ export async function applyCreatorAction(auth: Awaited<ReturnType<typeof getCrea
         if (!state || assignment.version !== action.version) throw conflict();
         if (!action.approved && !action.feedback.trim()) throw new CreatorError("수정할 내용을 입력해 주세요.");
         const result = await tx.creatorAssignment.updateMany({
-          where: { id: assignment.id, version: assignment.version },
+          where: { id: assignment.id, version: assignment.version, participant: { withdrawnAt: null } },
           data: { ...state, version: { increment: 1 }, history: [
             ...jsonHistory<HistoryEntry>(assignment.history),
             { kind: action.approved ? "approved" : "revision", stage: assignment.stage, at, feedback: action.feedback.trim() },
@@ -295,8 +325,9 @@ export async function applyCreatorAction(auth: Awaited<ReturnType<typeof getCrea
         break;
       }
       case "publish": {
+        await tx.creatorProgram.update({ where: { id: programId }, data: { version: { increment: 1 } } });
         const people = action.theme ? await tx.creatorParticipant.findMany({
-          where: { programId }, select: { name: true, award: true, awardOrder: true, profile: true },
+          where: { programId, withdrawnAt: null }, select: { id: true, name: true, award: true, awardOrder: true, profile: true },
         }) : [];
         const snapshot = action.theme ? buildPublication(action.kind, action.theme, people) : null;
         if (snapshot && !snapshot.entries.length) throw new CreatorError("공개할 크리에이터를 먼저 추가해 주세요.");

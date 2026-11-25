@@ -12,7 +12,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ code
   const link = await prisma.creatorLink.findUnique({
     where: { code },
     select: { platform: true, participant: { select: {
-      name: true, channels: true, program: { select: {
+      name: true, channels: true, withdrawnAt: true, program: { select: {
         name: true, utm: true, project: { select: { deletedAt: true, workspace: { select: { deletedAt: true } } } },
         registrationSource: { select: { id: true, isActive: true, deletedAt: true, mode: true, siteUrl: true } },
       } },
@@ -22,7 +22,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ code
   const program = person?.program;
   const form = program?.registrationSource;
   const handle = link && person && (person.channels as Record<string, string>)[link.platform];
-  if (!link || !person || !program || !form?.isActive || form.deletedAt || program.project.deletedAt || program.project.workspace.deletedAt || !handle) return new Response(null, { status: 404 });
+  if (!link || !person || person.withdrawnAt || !program || !form?.isActive || form.deletedAt || program.project.deletedAt || program.project.workspace.deletedAt || !handle) return new Response(null, { status: 404 });
   const origin = getPublicAppOrigin() || (process.env.NODE_ENV === "development" ? new URL(request.url).origin : "");
   const site = webUrl.safeParse(form.siteUrl);
   const destination = site.success ? site.data : form.mode === "builder" && origin ? origin + "/register/" + form.id : "";
@@ -38,7 +38,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ code
       after(async () => {
         try {
           const limit = await rateLimitAsync("creator-click:" + code + ":" + ip, { limit: 120, windowMs: 60000 });
-          if (limit.allowed) await prisma.creatorLink.updateMany({ where: { code }, data: { clicks: { increment: 1 } } });
+          if (limit.allowed) await prisma.creatorLink.updateMany({ where: { code, participant: { withdrawnAt: null } }, data: { clicks: { increment: 1 } } });
         } catch {
           console.warn("[creator] click count could not be updated");
         }

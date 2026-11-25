@@ -20,7 +20,7 @@ const assignmentSelect = {
 export async function loadPortal(token: string) {
   if (!/^cp_[A-Za-z0-9_-]{32}$/.test(token)) return null;
   const person = await prisma.creatorParticipant.findFirst({
-    where: { token, program: activeProgram },
+    where: { token, withdrawnAt: null, program: activeProgram },
     select: {
       name: true, confirmed: true, feeStatus: true, paidOn: true, channels: true,
       program: { select: { name: true, registrationSource: { select: { isActive: true, deletedAt: true } } } },
@@ -35,7 +35,7 @@ export type PortalData = NonNullable<Awaited<ReturnType<typeof loadPortal>>>;
 
 function secureAssignment(token: string, assignmentId: string) {
   return prisma.creatorAssignment.findFirst({
-    where: { id: assignmentId, participant: { token, confirmed: true, program: activeProgram } },
+    where: { id: assignmentId, participant: { token, confirmed: true, withdrawnAt: null, program: activeProgram } },
     include: { mission: true },
   });
 }
@@ -49,7 +49,7 @@ function canSubmit(assignment: { stage: string; status: string; mission: { start
 
 export async function confirmParticipation(token: string) {
   const updated = await prisma.creatorParticipant.updateMany({
-    where: { token, program: activeProgram }, data: { confirmed: true },
+    where: { token, withdrawnAt: null, program: activeProgram }, data: { confirmed: true },
   });
   if (!updated.count) throw missing();
 }
@@ -77,7 +77,7 @@ export async function submitCreatorWork(token: string, assignmentId: string, inp
     }
   }
   const update = await prisma.creatorAssignment.updateMany({
-    where: { id: assignment.id, version: assignment.version, participant: { token, confirmed: true, program: activeProgram } },
+    where: { id: assignment.id, version: assignment.version, participant: { token, confirmed: true, withdrawnAt: null, program: activeProgram } },
     data: { status: "review", version: { increment: 1 }, history: [
       ...jsonHistory<HistoryEntry>(assignment.history),
       { kind: "submission", at: new Date().toISOString(), stage: assignment.stage, platform: input.platform, links, files, note: input.note },

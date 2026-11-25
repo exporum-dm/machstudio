@@ -93,7 +93,7 @@ export const profileSchema = z.object({
 });
 export const themeSchema = z.object({ title: label, background: hex, accent: hex });
 export const publicationSchema = themeSchema.extend({
-  entries: z.array(profileSchema.extend({ name: label, award: z.string().max(160).optional() })),
+  entries: z.array(profileSchema.extend({ name: label, award: z.string().max(160).optional(), participantId: id.optional() })),
 });
 export type Publication = z.infer<typeof publicationSchema>;
 export const missionSchema = z.object({
@@ -119,6 +119,7 @@ export const actionSchema = z.discriminatedUnion("action", [
     award: z.string().trim().max(160).optional(), awardOrder: z.number().int().min(0).max(10000).optional(),
   }) }),
   z.object({ action: z.literal("rotateAccess"), id }),
+  z.object({ action: z.literal("unselect"), id, token: z.string().regex(/^cp_[A-Za-z0-9_-]{32}$/) }),
   z.object({ action: z.literal("mission"), id: id.optional(), mission: missionSchema }),
   z.object({ action: z.literal("review"), id, version: z.number().int(), approved: z.boolean(), feedback: details }),
   z.object({ action: z.literal("contact"), id, channel: z.string().trim().min(1).max(50) }),
@@ -150,13 +151,30 @@ export function workQueue(assignment: { status: string; mission: { dueAt: string
 }
 
 export function buildPublication(kind: "roster" | "awards", theme: z.infer<typeof themeSchema>, people: {
-  name: string; award: string; awardOrder: number; profile: unknown;
+  id?: string; name: string; award: string; awardOrder: number; profile: unknown;
 }[]): Publication {
   const entries = people.filter((person) => kind === "roster" || person.award)
     .sort((a, b) => (kind === "awards" ? a.awardOrder - b.awardOrder : 0) || a.name.localeCompare(b.name, "ko"))
     .map((person) => ({
       ...profileSchema.parse(person.profile), name: person.name,
       ...(kind === "awards" ? { award: person.award } : {}),
+      ...(person.id ? { participantId: person.id } : {}),
     }));
   return { ...theme, entries };
+}
+
+export function removePublishedCreator(raw: unknown, person: { id: string; name: string; profile: unknown; award: string }): Publication | undefined {
+  const parsed = publicationSchema.safeParse(raw);
+  if (!parsed.success) return;
+  const { entries } = parsed.data;
+  const tagged = entries.findIndex((entry) => entry.participantId === person.id);
+  if (tagged >= 0) return { ...parsed.data, entries: entries.filter((_, index) => index !== tagged) };
+
+  // Older snapshots can only be matched against the public name and profile.
+  const profile = profileSchema.safeParse(person.profile);
+  if (!profile.success) return;
+  const matches = entries.flatMap((entry, index) => !entry.participantId && entry.name === person.name &&
+    (!entry.award || entry.award === person.award) &&
+    profileSchema.keyof().options.every((key) => (entry[key] ?? "") === (profile.data[key] ?? "")) ? [index] : []);
+  if (matches.length === 1) return { ...parsed.data, entries: entries.filter((_, index) => index !== matches[0]) };
 }

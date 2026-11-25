@@ -2162,6 +2162,7 @@ model CreatorParticipant {
   token        String @unique
   name         String
   confirmed    Boolean @default(false)
+  withdrawnAt  DateTime?
   profile      Json @default("{}")
   channels     Json @default("{}")
   feeStatus    String @default("unpaid")

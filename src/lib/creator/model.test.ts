@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { baseColumns, buildPublication, creatorColumns, defaultUtm, missionSchema, normalizeCell, reviewState, trackingUrl, workQueue } from "./model";
+import { baseColumns, buildPublication, creatorColumns, defaultUtm, missionSchema, normalizeCell, removePublishedCreator, reviewState, trackingUrl, workQueue } from "./model";
 import { candidateCsv, pasteCandidates } from "./sheet";
 
 describe("creator operations", () => {
@@ -39,6 +39,20 @@ describe("creator operations", () => {
     expect(roster.entries.find(({ name }) => name === "하진")).toEqual({ name: "하진", region: "서울" });
     expect(roster.entries.every(({ award }) => !award)).toBe(true);
     expect(buildPublication("awards", theme, participants).entries).toEqual([{ name: "유진", award: "최우수상" }]);
+  });
+
+  it("removes only the withdrawn creator from tagged and older published rosters", () => {
+    const theme = { title: "선발 발표", background: "#ffffff", accent: "#4338ca" };
+    const first = { id: "first", name: "유진", award: "", awardOrder: 0, profile: { region: "서울" } };
+    const second = { ...first, id: "second", profile: { region: "도쿄" } };
+    const published = buildPublication("roster", theme, [first, second]);
+    expect(removePublishedCreator(published, { ...first, name: "새 이름" })?.entries).toEqual([published.entries[1]]);
+    const legacy = { ...published, entries: published.entries.map(({ participantId, ...entry }) => {
+      expect(participantId).toBeTruthy();
+      return entry;
+    }) };
+    expect(removePublishedCreator(legacy, first)?.entries).toEqual([legacy.entries[1]]);
+    expect(removePublishedCreator({ ...legacy, entries: [legacy.entries[0], legacy.entries[0]] }, first)).toBeUndefined();
   });
 
   it("validates tab-separated Excel data and protects CSV cells", () => {
