@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { creatorEntryPath } from "@/lib/creator/entry";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { buildPublication, platforms, profileSchema, publicationSchema, type CreatorAction } from "@/lib/creator/model";
+import { buildPublication, creatorDriveFolder, platforms, publicationSchema, type CreatorAction } from "@/lib/creator/model";
 import type { CreatorPerson, CreatorProgramView, CreatorView } from "@/lib/creator/types";
 import { CreatorPublication } from "./Publication";
 import { applicationText } from "./Recruitment";
@@ -17,7 +17,7 @@ function Person({ person, program, origin, application, labels, save, copy }: {
   person: CreatorPerson; program: CreatorProgramView; origin: string; application?: CreatorView["applications"][number]; labels: Record<string, string>; save: Save; copy: Copy;
 }) {
   const confirm = useConfirm();
-  const [profile, setProfile] = useState(profileSchema.parse(person.profile));
+  const [folderError, setFolderError] = useState("");
   const [channels, setChannels] = useState(person.channels as Partial<Record<typeof platforms[number], string>>);
   const [busy, setBusy] = useState(false);
   const [confirmationPending, setConfirmationPending] = useState(false);
@@ -25,10 +25,7 @@ function Person({ person, program, origin, application, labels, save, copy }: {
   const portal = origin + "/creator-portal/" + person.token;
   const answers = Object.entries((application?.data ?? {}) as Record<string, unknown>).filter(([key]) => !key.startsWith("__"));
   const done = person.assignments.filter(({ status }) => status === "done").length;
-  const profileFields = {
-    image: "사진 URL", bio: "소개", region: "활동 지역", languages: "사용 언어", interests: "관심사",
-    publicContact: "공개 연락처", social: "공개 SNS URL",
-  } as const;
+  const publishedFolder = person.driveFolder;
 
   return <article className={panel + " grid gap-4"}>
     <div className="flex flex-wrap items-start justify-between gap-2">
@@ -36,7 +33,7 @@ function Person({ person, program, origin, application, labels, save, copy }: {
         <p className="text-sm text-muted-foreground">{person.confirmed ? "참여 확정" : "선발 · 참여 확인 전"} · 미션 {done}/{person.assignments.length}
           {person.lastEmailedAt ? ` · 안내 메일 ${dateTime(person.lastEmailedAt)}` : ""}</p></div>
       <div className="flex flex-wrap gap-2">
-        <a href={portal + "?preview=1"} className={button} target="_blank" rel="noopener noreferrer">개인 페이지 확인</a>
+        <a href={portal + "?preview=1"} className={button} target="_blank" rel="noopener noreferrer">이 선발자의 활동 화면</a>
         {origin && <button className={button} onClick={() => copy(origin + creatorEntryPath(program.id))}>공통 활동 링크 복사</button>}
         <button className={button + " text-muted-foreground"} onClick={async () => {
           if (await confirm({ title: "개인 링크를 다시 발급할까요?", description: "해당 크리에이터에게 새 링크를 전달해야 해요.", tone: "danger" })) {
@@ -49,16 +46,34 @@ function Person({ person, program, origin, application, labels, save, copy }: {
       event.preventDefault();
       const form = new FormData(event.currentTarget);
       const value = (key: string) => String(form.get(key) ?? "");
+      const driveFolder = value("driveFolder").trim();
+      if (driveFolder && !creatorDriveFolder.safeParse(driveFolder).success) {
+        setFolderError("Google Drive 폴더 주소를 입력해 주세요.");
+        event.currentTarget.querySelector<HTMLInputElement>('[name="driveFolder"]')?.focus();
+        return;
+      }
+      setFolderError("");
       setBusy(true);
       try {
         await save({ action: "participant", id: person.id, patch: {
           name: value("name"), owner: value("owner"), contact: value("contact"),
-          accessEmail: value("accessEmail").trim() || null, driveFolder: value("driveFolder").trim() || null,
+          accessEmail: value("accessEmail").trim() || null, driveFolder: driveFolder || null,
           feeStatus: value("fee") as "unpaid" | "scheduled" | "paid", paidOn: value("paidOn") || null,
-          award: value("award"), awardOrder: Number(value("awardOrder")), channels, profile,
+          award: value("award"), awardOrder: Number(value("awardOrder")), channels,
         } });
       } finally { setBusy(false); }
     }}>
+      <div className="grid gap-2 rounded-xl bg-muted/35 p-3">
+        <Field label="원본 영상용 개인 Google Drive 폴더"><Text name="driveFolder" type="url" maxLength={2048}
+          defaultValue={publishedFolder ?? ""} placeholder="https://drive.google.com/drive/folders/…"
+          aria-invalid={Boolean(folderError)} onChange={() => setFolderError("")} />
+          {folderError && <span role="alert" className="text-xs text-destructive">{folderError}</span>}
+        </Field>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span>저장하면 활동 화면에 표시돼요. Drive에서 선발자 이메일에 편집자 권한을 주세요.</span>
+          {publishedFolder && <a href={publishedFolder} target="_blank" rel="noopener noreferrer" className="font-medium underline underline-offset-2">저장된 폴더 열기</a>}
+        </div>
+      </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Field label="이름"><Text name="name" required maxLength={160} defaultValue={person.name} /></Field>
         <Field label="담당자"><Text name="owner" maxLength={160} defaultValue={person.owner} /></Field>
@@ -72,9 +87,6 @@ function Person({ person, program, origin, application, labels, save, copy }: {
         <Field label="활동 확인 이메일"><Text name="accessEmail" type="email" maxLength={254} defaultValue={person.accessEmail ?? ""} placeholder={application?.emailNormalized ?? "name@gmail.com"} />
           <span className="text-xs text-muted-foreground">비워 두면 신청서 이메일을 사용해요.</span>
         </Field>
-        <Field label="개인 Google Drive 업로드 폴더"><Text name="driveFolder" type="url" maxLength={2048} defaultValue={person.driveFolder ?? ""} placeholder="https://drive.google.com/drive/folders/…" />
-          <span className="text-xs text-muted-foreground">Drive에서 이 이메일에 편집자 권한을 주세요.</span>
-        </Field>
         <Field label="활동비 상태"><select className={input} name="fee" defaultValue={person.feeStatus}>{Object.entries(feeNames).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></Field>
         <Field label="지급일 또는 예정일"><Text name="paidOn" type="date" defaultValue={person.paidOn ?? ""} /></Field>
         <Field label="우수자 상명"><Text name="award" maxLength={160} defaultValue={person.award} placeholder="예. 최우수상" /></Field>
@@ -83,12 +95,6 @@ function Person({ person, program, origin, application, labels, save, copy }: {
       <fieldset className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4"><legend className="mb-2 font-medium">홍보 계정</legend>
         {platforms.map((platform) => <Field key={platform} label={platform}>
           <Text value={channels[platform] ?? ""} maxLength={160} placeholder="@계정" onChange={(event) => setChannels({ ...channels, [platform]: event.target.value })} />
-        </Field>)}
-      </fieldset>
-      <fieldset className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4"><legend className="mb-2 font-medium">발표에 사용할 공개 프로필</legend>
-        {(Object.entries(profileFields) as [keyof typeof profile, string][]).map(([key, label]) => <Field key={key} label={label}>
-          {key === "bio" || key === "interests" ? <textarea className={input} rows={2} value={profile[key] ?? ""} onChange={(event) => setProfile({ ...profile, [key]: event.target.value })} />
-            : <Text type={key === "image" || key === "social" ? "url" : "text"} value={profile[key] ?? ""} onChange={(event) => setProfile({ ...profile, [key]: event.target.value })} />}
         </Field>)}
       </fieldset>
       <button className={primary + " justify-self-start"} disabled={busy}>{busy ? "저장 중…" : "크리에이터 저장"}</button>
@@ -149,12 +155,14 @@ export function People({ program, applications, labels, origin, programId, save,
 type AnnouncementProps = {
   program: Pick<CreatorProgramView, "id" | "roster" | "awards"> & { participants: Parameters<typeof buildPublication>[2] };
   projectName: string;
+  labels?: Record<string, string>;
+  applications?: CreatorView["applications"];
   origin: string;
   save: Save;
   copy: Copy;
 };
 
-function PublicationEditor({ kind, program, projectName, origin, save, copy }: AnnouncementProps & { kind: "roster" | "awards" }) {
+function PublicationEditor({ kind, program, projectName, labels = {}, applications = [], origin, save, copy }: AnnouncementProps & { kind: "roster" | "awards" }) {
   const confirm = useConfirm();
   const stored = publicationSchema.safeParse(program[kind]);
   const published = Boolean(stored.data?.entries.length);
@@ -164,7 +172,12 @@ function PublicationEditor({ kind, program, projectName, origin, save, copy }: A
   const [theme, setTheme] = useState({ title: initial.title, background: initial.background, accent: initial.accent });
   const [region, setRegion] = useState("");
   const previewRef = useRef<HTMLDivElement>(null);
-  const preview = buildPublication(kind, theme, program.participants);
+  const [applicationFields, setApplicationFields] = useState(stored.data?.applicationFields ?? []);
+  const records = new Map(applications.map(({ id, data }) => [id, data]));
+  const people = program.participants.map((person) => ({
+    ...person, applicationData: person.applicationId ? records.get(person.applicationId) : undefined,
+  }));
+  const preview = buildPublication(kind, theme, people, applicationFields, labels);
   const regionOf = (entry: (typeof preview.entries)[number]) => entry.region?.trim() || projectName;
   const regions = awards ? Array.from(new Set(preview.entries.map(regionOf))).sort((a, b) => a.localeCompare(b, "ko")) : [];
   const activeRegion = regions.includes(region) ? region : "";
@@ -182,6 +195,17 @@ function PublicationEditor({ kind, program, projectName, origin, save, copy }: A
       <Field label="배경 색상"><input className="h-9 w-20 rounded-lg bg-muted p-1" type="color" value={theme.background} onChange={(event) => setTheme({ ...theme, background: event.target.value })} /></Field>
       <Field label="버튼 색상"><input className="h-9 w-20 rounded-lg bg-muted p-1" type="color" value={theme.accent} onChange={(event) => setTheme({ ...theme, accent: event.target.value })} /></Field>
     </div>
+    {Object.keys(labels).length > 0 && <fieldset className="grid gap-2">
+      <legend className="mb-1 font-medium">공개할 신청서 항목</legend>
+      <p className="text-xs text-muted-foreground">이름{awards ? "과 상명" : ""}은 기본으로 표시돼요. 선택한 응답은 공개 페이지와 아임웹 코드에 포함돼요.</p>
+      <div className="flex flex-wrap gap-x-5 gap-y-2">{Object.entries(labels).map(([key, label]) =>
+        <label key={key} className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={applicationFields.includes(key)} onChange={(event) => {
+            const checked = event.target.checked;
+            setApplicationFields((fields) => checked ? [...fields, key] : fields.filter((field) => field !== key));
+          }} />{label}
+        </label>)}</div>
+    </fieldset>}
     <div className="flex flex-wrap items-end justify-between gap-3">
       {regions.length > 1 && <Field label="코드블럭 지역">
         <select className={input} value={activeRegion} onChange={(event) => setRegion(event.target.value)}>
@@ -202,7 +226,7 @@ function PublicationEditor({ kind, program, projectName, origin, save, copy }: A
     <div className="flex flex-wrap gap-2">
       <button className={button} disabled={!preview.entries.length || !theme.title.trim()} onClick={async () => {
         if (await confirm({ title: label + "를 공개할까요?", description: "이 회차의 전체 명단과 색상이 마하 공개 페이지에 게시돼요." })) {
-          await save({ action: "publish", kind, theme });
+          await save({ action: "publish", kind, theme, applicationFields: preview.applicationFields });
         }
       }}>{published ? "마하 공개 페이지 갱신" : "마하 공개 페이지 발행"}</button>
       {published && origin && <>

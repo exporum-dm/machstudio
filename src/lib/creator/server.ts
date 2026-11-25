@@ -94,6 +94,13 @@ export async function listCreatorPrograms(projectId: string) {
   return programs.map((program) => ({ ...program, participants: people.get(program.id) ?? 0 }));
 }
 
+function creatorApplicationLabels(config: unknown) {
+  const form = normalizeCollectForm(config);
+  return Object.fromEntries([...form.fields, ...form.branch.groups.flatMap((group) => group.fields)]
+    .filter(({ key }) => !key.startsWith("__"))
+    .map(({ key, label }) => [key, localize(label, form.defaultLocale) || key]));
+}
+
 export async function loadCreator(projectId: string, programId: string) {
   const [sources, program] = await Promise.all([
     prisma.collectSource.findMany({
@@ -117,9 +124,7 @@ export async function loadCreator(projectId: string, programId: string) {
   ]);
   if (!program) return { sources, program: null, applications: [], applicationLabels: {}, registrations: [] };
   const { applicationSource, ...programView } = program;
-  const form = normalizeCollectForm(applicationSource?.formConfig);
-  const applicationLabels = Object.fromEntries([...form.fields, ...form.branch.groups.flatMap((group) => group.fields)]
-    .map(({ key, label }) => [key, localize(label, form.defaultLocale) || key]));
+  const applicationLabels = creatorApplicationLabels(applicationSource?.formConfig);
   const [applications, registrations] = await Promise.all([
     program.applicationSourceId ? prisma.collectRecord.findMany({
       where: { projectId, sourceId: program.applicationSourceId },
@@ -419,9 +424,20 @@ export async function applyCreatorAction(auth: Awaited<ReturnType<typeof getCrea
       case "publish": {
         await tx.creatorProgram.update({ where: { id: programId }, data: { version: { increment: 1 } } });
         const people = action.theme ? await tx.creatorParticipant.findMany({
-          where: { programId, withdrawnAt: null }, select: { id: true, name: true, award: true, awardOrder: true, profile: true },
+          where: { programId, withdrawnAt: null },
+          select: { id: true, name: true, award: true, awardOrder: true, profile: true, applicationId: true,
+            application: { select: { sourceId: true, projectId: true, data: true } } },
         }) : [];
-        const snapshot = action.theme ? buildPublication(action.kind, action.theme, people) : null;
+        const source = action.theme && program.applicationSourceId ? await tx.collectSource.findFirst({
+          where: { id: program.applicationSourceId, projectId: project.id, deletedAt: null },
+          select: { formConfig: true },
+        }) : null;
+        const labels = source ? creatorApplicationLabels(source.formConfig) : {};
+        const scopedPeople = people.map(({ application, ...person }) => ({
+          ...person, applicationData: application && application.sourceId === program.applicationSourceId &&
+            application.projectId === project.id ? application.data : undefined,
+        }));
+        const snapshot = action.theme ? buildPublication(action.kind, action.theme, scopedPeople, action.applicationFields, labels) : null;
         if (snapshot && !snapshot.entries.length) throw new CreatorError("공개할 크리에이터를 먼저 추가해 주세요.");
         await tx.creatorProgram.update({ where: { id: programId }, data: { [action.kind]: snapshot ?? Prisma.DbNull } });
         break;

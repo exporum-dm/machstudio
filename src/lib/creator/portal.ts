@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimitAsync } from "@/lib/ratelimit";
 import type { Prisma } from "@/generated/prisma";
 import { code, conflict, CreatorError, jsonHistory, missing } from "./server";
-import type { HistoryEntry, submissionSchema } from "./model";
+import { missionSubmissionFields, validateMissionSubmission, type HistoryEntry, type submissionSchema } from "./model";
 import type { z } from "zod";
 
 export const PROOF_BUCKET = "creator-proof";
@@ -65,12 +65,9 @@ export async function submitCreatorWork(token: string, assignmentId: string, inp
   const files = [...new Set(input.files)];
   if (!mission.platforms.includes(input.platform)) throw new CreatorError("게시 채널을 확인해 주세요.");
   if (input.driveUrl && !assignment.participant?.driveFolder) throw new CreatorError("운영자에게 원본 업로드 폴더를 요청해 주세요.");
-  if (input.driveUrl && mission.driveProof === "off") throw new CreatorError("이 미션은 Drive 파일 링크를 받지 않아요.");
-  if (assignment.stage === "final" && mission.driveProof === "required" && !input.driveUrl) throw new CreatorError("Drive 원본 영상 링크를 입력해 주세요.");
-  if (assignment.stage === "draft" && !links.length && !files.length && !input.driveUrl) throw new CreatorError("초안 링크 또는 증빙 파일을 추가해 주세요.");
-  if (assignment.stage === "final" && links.length < mission.linkCount) throw new CreatorError("제출해야 하는 링크 수를 확인해 주세요.");
-  if (assignment.stage === "final" && mission.proof === "required" && !files.length) throw new CreatorError("증빙 파일을 첨부해 주세요.");
-  if (assignment.stage === "final" && mission.proof === "off" && files.length) throw new CreatorError("이 미션은 최종 증빙 첨부를 받지 않아요.");
+  const errors = validateMissionSubmission(missionSubmissionFields(assignment.stage, mission, assignment.history), input);
+  const invalid = Object.values(errors)[0];
+  if (invalid) throw new CreatorError(invalid);
   if (files.length) {
     const uploads = await prisma.creatorUpload.findMany({ where: { id: { in: files }, assignmentId } });
     if (uploads.length !== files.length) throw missing();
@@ -109,7 +106,7 @@ export async function signCreatorUpload(token: string, assignmentId: string, inp
   const assignment = await secureAssignment(token, assignmentId);
   if (!assignment) throw missing();
   canSubmit(assignment);
-  if (assignment.stage === "final" && assignment.mission.proof === "off") throw missing();
+  if (missionSubmissionFields(assignment.stage, assignment.mission, assignment.history).proof === "off") throw missing();
   if (!proofTypes.includes(input.type) || input.size < 1 || input.size > MAX_PROOF_SIZE) throw new CreatorError("지원하는 50MB 이하 파일을 선택해 주세요.");
   const limit = await rateLimitAsync("creator-upload:" + assignment.id, { limit: 15, windowMs: 600000 });
   if (!limit.allowed) throw new CreatorError("잠시 후에 파일을 다시 올려 주세요.", 429);

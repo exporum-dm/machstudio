@@ -21,18 +21,19 @@ function missionDate(value: FormDataEntryValue | null) {
 
 function MissionEditor({ mission, save, onDone }: { mission?: CreatorMissionView; save: Save; onDone?: () => void }) {
   const confirm = useConfirm();
-  const chosen = (mission?.platforms ?? ["instagram", "tiktok"]) as (typeof platforms[number])[];
+  const chosen = (mission?.platforms ?? ["instagram"]) as (typeof platforms[number])[];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [draft, setDraft] = useState(mission?.draft ?? false);
   return <form className={panel + " grid gap-4"} onSubmit={async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const parsed = missionSchema.safeParse({
       title: String(form.get("title")), guide: String(form.get("guide")),
       startsAt: missionDate(form.get("startsAt")), dueAt: missionDate(form.get("dueAt")),
-      published: form.get("published") === "on", driveProof: form.get("driveProof"),
-      linkCount: Number(form.get("linkCount")), draft: form.get("draft") === "on",
-      proof: form.get("proof"), platforms: form.getAll("platform"),
+      published: form.get("published") === "on", driveProof: draft ? "off" : form.get("driveProof"),
+      linkCount: Number(form.get("linkCount")), draft,
+      proof: draft ? "off" : form.get("proof"), platforms: form.getAll("platform"),
     });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? "미션 설정을 확인해 주세요.");
@@ -53,14 +54,17 @@ function MissionEditor({ mission, save, onDone }: { mission?: CreatorMissionView
       <Field label="미션 이름"><Text name="title" required maxLength={160} defaultValue={mission?.title ?? ""} /></Field>
       <Field label="게시 시작 (KST)"><Text name="startsAt" type="datetime-local" defaultValue={mission?.startsAt ? kstDateTimeLocalInput(mission.startsAt) : ""} /></Field>
       <Field label="제출 마감 (KST)"><Text name="dueAt" type="datetime-local" defaultValue={mission?.dueAt ? kstDateTimeLocalInput(mission.dueAt) : ""} /></Field>
-      <Field label="필수 게시 링크 수"><Text name="linkCount" type="number" min={0} max={10} defaultValue={mission?.linkCount ?? 1} required /></Field>
+      <Field label="필수 게시 링크 수"><Text name="linkCount" type="number" min={draft ? 1 : 0} max={10} defaultValue={mission?.linkCount ?? 1} required /></Field>
+      <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={draft}
+        onChange={(event) => setDraft(event.target.checked)} />게시 전 초안 검수</label>
+      {draft ? <p className="self-end pb-2 text-xs text-muted-foreground">초안은 Drive 영상 링크와 캡션을 받고, 승인 후 게시 링크를 받아요.</p> : <>
       <Field label="최종 제출 증빙 파일"><select className={input} name="proof" defaultValue={mission?.proof ?? "optional"}>
         <option value="off">사용 안 함</option><option value="optional">선택</option><option value="required">필수</option>
       </select></Field>
       <Field label="Drive 원본 영상 파일 링크"><select className={input} name="driveProof" defaultValue={mission?.driveProof ?? "off"}>
         <option value="off">사용 안 함</option><option value="optional">선택</option><option value="required">필수</option>
       </select></Field>
-      <label className="flex items-end gap-2 self-end pb-2 text-sm"><input className="mb-1" type="checkbox" name="draft" defaultChecked={mission?.draft ?? false} />게시 전 초안 검수</label>
+      </>}
     </div>
     <Field label="미션 가이드"><textarea className={input} name="guide" rows={3} defaultValue={mission?.guide ?? ""} maxLength={10000} /></Field>
     <fieldset className="flex flex-wrap gap-3"><legend className="mb-2 text-xs font-medium text-muted-foreground">허용 채널</legend>
