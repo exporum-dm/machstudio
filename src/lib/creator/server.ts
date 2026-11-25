@@ -425,7 +425,7 @@ export async function applyCreatorAction(auth: Awaited<ReturnType<typeof getCrea
         await tx.creatorProgram.update({ where: { id: programId }, data: { version: { increment: 1 } } });
         const people = action.theme ? await tx.creatorParticipant.findMany({
           where: { programId, withdrawnAt: null },
-          select: { id: true, name: true, award: true, awardOrder: true, profile: true, applicationId: true,
+          select: { id: true, name: true, award: true, awardSelected: true, awardOrder: true, profile: true, applicationId: true,
             application: { select: { sourceId: true, projectId: true, data: true } } },
         }) : [];
         const source = action.theme && program.applicationSourceId ? await tx.collectSource.findFirst({
