@@ -2173,6 +2173,7 @@ model CreatorParticipant {
   token        String @unique
   name         String
   confirmed    Boolean @default(false)
+  completed    Boolean @default(false)
   withdrawnAt  DateTime?
   accessEmail  String?
   driveFolder  String?
@@ -2183,6 +2184,7 @@ model CreatorParticipant {
   owner        String @default("")
   contact      String @default("")
   award        String @default("")
+  awardSelected Boolean? @default(false)
   awardOrder   Int @default(0)
   /// 마지막으로 안내 메일을 보낸 시각 — 선발 wave 가 나뉠 때 누구에게 이미 보냈는지 화면에서 보여 준다.
   lastEmailedAt DateTime?

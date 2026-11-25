@@ -4,7 +4,7 @@ import { Fragment, useState, type ReactNode } from "react";
 import { creatorEntryPath } from "@/lib/creator/entry";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
-  applyGridLayout, creatorDriveFolder, creatorGridLayout, platforms, type CreatorAction,
+  applyGridLayout, creatorDriveFolder, creatorGridLayout, isCreatorAwarded, platforms, type CreatorAction,
 } from "@/lib/creator/model";
 import type { CreatorPerson, CreatorProgramView, CreatorView } from "@/lib/creator/types";
 import { applicationText } from "./Recruitment";
@@ -86,6 +86,28 @@ const peopleColumns: PeopleColumn[] = [
         const confirmed = event.target.checked;
         setBusy(true);
         try { await save({ action: "participant", id: person.id, patch: { confirmed } }); }
+        finally { setBusy(false); }
+      }} />,
+  },
+  {
+    key: "completed", label: "수료", width: 80,
+    cell: ({ person, save, busy, setBusy }) => <input type="checkbox" aria-label={person.name + " 수료"}
+      checked={person.completed} disabled={busy}
+      onChange={async (event) => {
+        const completed = event.target.checked;
+        setBusy(true);
+        try { await save({ action: "participant", id: person.id, patch: { completed } }); }
+        finally { setBusy(false); }
+      }} />,
+  },
+  {
+    key: "awardSelected", label: "우수자", width: 80,
+    cell: ({ person, save, busy, setBusy }) => <input type="checkbox" aria-label={person.name + " 우수자 선정"}
+      checked={isCreatorAwarded(person)} disabled={busy}
+      onChange={async (event) => {
+        const awardSelected = event.target.checked;
+        setBusy(true);
+        try { await save({ action: "participant", id: person.id, patch: { awardSelected } }); }
         finally { setBusy(false); }
       }} />,
   },
@@ -239,7 +261,12 @@ export function PeopleTable({ program, applications, labels, origin, save, copy 
   const visible = columns.filter((column) => !column.hidden);
   const records = new Map(applications.map((record) => [record.id, record]));
   const people = program.participants.filter((person) =>
-    (filter === "all" || (filter === "confirmed" ? person.confirmed : filter === "unconfirmed" ? !person.confirmed : !!person.award))
+    (filter === "all"
+      || (filter === "confirmed" ? person.confirmed
+        : filter === "unconfirmed" ? !person.confirmed
+          : filter === "completed" ? person.completed
+            : filter === "incomplete" ? !person.completed
+              : isCreatorAwarded(person)))
     && [person.name, person.owner, person.contact, person.award, JSON.stringify(person.channels)]
       .some((value) => String(value).toLowerCase().includes(search.toLowerCase())));
 
@@ -264,13 +291,14 @@ export function PeopleTable({ program, applications, labels, origin, save, copy 
       <div>
         <h2 className="text-xl font-semibold">선발 크리에이터</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          {program.participants.length}명 선발 · {program.participants.filter(({ confirmed }) => confirmed).length}명 참여 확정 · 행을 펼치면 프로필과 신청서 답변이 나와요
+          {program.participants.length}명 선발 · {program.participants.filter(({ confirmed }) => confirmed).length}명 참여 확정 · {program.participants.filter(({ completed }) => completed).length}명 수료 · {program.participants.filter(isCreatorAwarded).length}명 우수자 · 행을 펼치면 프로필과 답변이 나와요
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
         <Text aria-label="크리에이터 검색" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="이름, 담당자, 계정 검색" />
         <select className={input} aria-label="크리에이터 상태" value={filter} onChange={(event) => setFilter(event.target.value)}>
-          <option value="all">전체</option><option value="confirmed">참여 확정</option><option value="unconfirmed">참여 확인 전</option><option value="award">우수자</option>
+          <option value="all">전체</option><option value="confirmed">참여 확정</option><option value="unconfirmed">참여 확인 전</option>
+          <option value="completed">수료</option><option value="incomplete">미수료</option><option value="award">우수자</option>
         </select>
         <button className={button} aria-expanded={showColumns} onClick={() => setShowColumns(!showColumns)}>열 설정</button>
       </div>

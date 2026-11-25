@@ -93,7 +93,7 @@ function PublicationEditor({ kind, program, projectName, labels = {}, applicatio
     </div>
     {exportPreview.entries.length ? <div ref={previewRef} className="min-w-0 overflow-hidden rounded-2xl">
       <CreatorPublication publication={exportPreview} kicker={activeRegion || (regions.length === 1 ? regions[0] : projectName)} awards={awards} />
-    </div> : <Empty>{awards ? "선발 크리에이터에게 상명을 입력하면 우수자 코드블럭이 생성돼요." : "크리에이터를 선발하면 소개 코드블럭이 생성돼요."}</Empty>}
+    </div> : <Empty>{awards ? "선발자 탭에서 우수자 선정을 체크하면 코드블럭이 생성돼요." : "크리에이터를 선발하면 소개 코드블럭이 생성돼요."}</Empty>}
     <div className="flex flex-wrap gap-2">
       <button className={button} disabled={!preview.entries.length || !theme.title.trim()} onClick={async () => {
         if (await confirm({ title: label + "를 공개할까요?", description: "이 회차의 전체 명단과 색상이 마하 공개 페이지에 게시돼요." })) {

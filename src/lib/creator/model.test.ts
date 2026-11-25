@@ -39,6 +39,12 @@ describe("creator operations", () => {
     expect(roster.entries.find(({ name }) => name === "하진")).toEqual({ name: "하진", region: "서울" });
     expect(roster.entries.every(({ award }) => !award)).toBe(true);
     expect(buildPublication("awards", theme, participants).entries).toEqual([{ name: "유진", award: "최우수상" }]);
+    const explicit = [
+      { name: "선정", award: "", awardSelected: true, awardOrder: 0, profile: {}, completed: false },
+      { name: "선정 취소", award: "최우수상", awardSelected: false, awardOrder: 1, profile: {}, completed: true },
+    ];
+    expect(buildPublication("awards", theme, explicit).entries).toEqual([{ name: "선정", award: "우수자" }]);
+    expect(buildPublication("roster", theme, explicit).entries).toEqual([{ name: "선정" }, { name: "선정 취소" }]);
   });
 
   it("removes only the withdrawn creator from tagged and older published rosters", () => {

@@ -191,6 +191,7 @@ export const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("select"), applicationId: id, name: label, channels: z.partialRecord(platform, z.string().trim().max(160)) }),
   z.object({ action: z.literal("participant"), id, patch: z.object({
     name: label.optional(), confirmed: z.boolean().optional(), channels: z.partialRecord(platform, z.string().trim().max(160)).optional(),
+    completed: z.boolean().optional(), awardSelected: z.boolean().optional(),
     profile: profileSchema.optional(), feeStatus: z.enum(["unpaid", "scheduled", "paid"]).optional(), paidOn: date.nullable().optional(),
     owner: z.string().trim().max(160).optional(), contact: z.string().trim().max(400).optional(),
     accessEmail: creatorAccessEmail.nullable().optional(), driveFolder: creatorDriveFolder.nullable().optional(),
@@ -257,12 +258,17 @@ export function workQueue(assignment: { status: string; mission: { dueAt: string
   return remaining <= 86400000 ? "soon" : null;
 }
 
+export function isCreatorAwarded(person: { award: string; awardSelected?: boolean | null }) {
+  // Existing awards used the presence of an award title as the selection flag.
+  return person.awardSelected ?? Boolean(person.award.trim());
+}
+
 export function buildPublication(kind: "roster" | "awards", theme: z.infer<typeof themeSchema>, people: {
-  id?: string; name: string; award: string; awardOrder: number; profile: unknown;
+  id?: string; name: string; award: string; awardSelected?: boolean | null; awardOrder: number; profile: unknown;
   applicationId?: string | null; applicationData?: unknown;
 }[], selected: string[] = [], labels: Record<string, string> = {}): Publication {
   const applicationFields = [...new Set(selected)].filter((key) => !key.startsWith("__") && Object.hasOwn(labels, key));
-  const entries = people.filter((person) => kind === "roster" || person.award)
+  const entries = people.filter((person) => kind === "roster" || isCreatorAwarded(person))
     .sort((a, b) => (kind === "awards" ? a.awardOrder - b.awardOrder : 0) || a.name.localeCompare(b.name, "ko"))
     .map((person) => {
       const data = person.applicationData as Record<string, unknown> | undefined;
@@ -276,7 +282,7 @@ export function buildPublication(kind: "roster" | "awards", theme: z.infer<typeo
       return {
         ...(person.applicationId ? { answers } : profileSchema.parse(person.profile)),
         name: person.name,
-        ...(kind === "awards" ? { award: person.award } : {}),
+        ...(kind === "awards" ? { award: person.award.trim() || "우수자" } : {}),
         ...(person.id ? { participantId: person.id } : {}),
       };
     });
