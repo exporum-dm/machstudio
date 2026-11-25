@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { baseColumns, buildPublication, creatorColumns, defaultUtm, missionSchema, normalizeCell, removePublishedCreator, reviewState, trackingUrl, workQueue } from "./model";
+import { creatorAccessEmail, creatorDriveFile, creatorDriveFolder, baseColumns, buildPublication, creatorColumns, defaultUtm, missionSchema, normalizeCell, removePublishedCreator, reviewState, trackingUrl, workQueue } from "./model";
 import { candidateCsv, pasteCandidates } from "./sheet";
 
 describe("creator operations", () => {
@@ -88,6 +88,22 @@ describe("creator operations", () => {
     expect(withWidth[0].width).toBe(240);
     // 범위를 벗어난 값은 형식 오류라 저장분 전체가 무시되고 기본 열로 돌아간다 — 깨진 표를 그리지 않는다.
     expect(creatorColumns([{ key: "memo", label: "메모", type: "text", width: 5000 }])).toEqual(baseColumns);
+  });
+
+  it("keeps the creator folder and the submitted Drive file distinct", () => {
+    expect(creatorAccessEmail.parse("  Creator@GMAIL.COM ")).toBe("creator@gmail.com");
+    const folder = "https://drive.google.com/drive/u/0/folders/abc-123";
+    const file = "https://drive.google.com/file/d/abc-123/view";
+    expect(creatorDriveFolder.safeParse(folder).success).toBe(true);
+    expect(creatorDriveFile.safeParse(folder).success).toBe(false);
+    expect(creatorDriveFolder.safeParse(file).success).toBe(false);
+    expect(creatorDriveFile.safeParse(file).success).toBe(true);
+    expect(creatorDriveFile.safeParse("https://drive.google.com.bad.test/file/d/abc-123/view").success).toBe(false);
+
+    const draft = { title: "원본 제출", guide: "", startsAt: null, dueAt: null, published: false, platforms: ["instagram"],
+      linkCount: 0, proof: "off", driveProof: "required", draft: true };
+    expect(missionSchema.safeParse(draft).success).toBe(true);
+    expect(missionSchema.safeParse({ ...draft, driveProof: "optional" }).success).toBe(false);
   });
 
   it("validates posting windows and supports evidence-only missions", () => {

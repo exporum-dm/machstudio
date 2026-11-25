@@ -5,7 +5,7 @@ import { errorResponse } from "@/lib/creator/server";
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string; token: string }> }) {
   try {
     const { id, token } = await params;
-    const destination = await downloadProof({ id, assignment: { participant: { token, withdrawnAt: null, program: { project: { deletedAt: null, workspace: { deletedAt: null } } } } } });
+    const destination = await downloadProof({ id, assignment: { mission: { archivedAt: null, published: true }, participant: { token, withdrawnAt: null, program: { deletedAt: null, project: { deletedAt: null, workspace: { deletedAt: null } } } } } });
     return NextResponse.redirect(destination, { headers: { "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer" } });
   } catch (error) { return errorResponse(error); }
 }

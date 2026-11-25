@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { webUrl, platforms, workQueue, type CreatorAction } from "@/lib/creator/model";
+import Link from "next/link";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { creatorEntryPath } from "@/lib/creator/entry";
+import { webUrl, platforms, missionSchema, workQueue, type CreatorAction } from "@/lib/creator/model";
 import { kstDateString, kstDateTimeLocalInput, kstDateTimeLocalToIso } from "@/lib/datetime";
 import type { CreatorContact, CreatorMissionView, CreatorPerson, CreatorProgramView, CreatorView } from "@/lib/creator/types";
 import { History } from "./CreatorPortal";
@@ -17,29 +20,44 @@ function missionDate(value: FormDataEntryValue | null) {
 }
 
 function MissionEditor({ mission, save, onDone }: { mission?: CreatorMissionView; save: Save; onDone?: () => void }) {
+  const confirm = useConfirm();
   const chosen = (mission?.platforms ?? ["instagram", "tiktok"]) as (typeof platforms[number])[];
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   return <form className={panel + " grid gap-4"} onSubmit={async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const parsed = missionSchema.safeParse({
+      title: String(form.get("title")), guide: String(form.get("guide")),
+      startsAt: missionDate(form.get("startsAt")), dueAt: missionDate(form.get("dueAt")),
+      published: form.get("published") === "on", driveProof: form.get("driveProof"),
+      linkCount: Number(form.get("linkCount")), draft: form.get("draft") === "on",
+      proof: form.get("proof"), platforms: form.getAll("platform"),
+    });
+    if (!parsed.success) {
+      setError(parsed.error.issues[0]?.message ?? "미션 설정을 확인해 주세요.");
+      return;
+    }
+    setError("");
     setBusy(true);
     try {
-      if (await save({ action: "mission", id: mission?.id, mission: {
-        title: String(form.get("title")), guide: String(form.get("guide")),
-        startsAt: missionDate(form.get("startsAt")), dueAt: missionDate(form.get("dueAt")) ?? "",
-        linkCount: Number(form.get("linkCount")), draft: form.get("draft") === "on",
-        proof: form.get("proof") as "off" | "optional" | "required",
-        platforms: form.getAll("platform") as typeof chosen,
-      } })) onDone?.();
+      if (await save({ action: "mission", id: mission?.id, mission: parsed.data })) onDone?.();
+      else setError("저장하지 못했어요. 입력 내용을 확인하고 다시 시도해 주세요.");
     } finally { setBusy(false); }
   }}>
-    {!mission && <h3 className="text-lg font-semibold">미션 추가</h3>}
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <h3 className="text-lg font-semibold">{mission?.title ?? "미션 추가"}</h3>
+      {mission && <span className="text-xs font-medium text-muted-foreground">{mission.published ? "게시 중" : "초안"}</span>}
+    </div>
     <div className="grid gap-3 lg:grid-cols-3">
       <Field label="미션 이름"><Text name="title" required maxLength={160} defaultValue={mission?.title ?? ""} /></Field>
       <Field label="게시 시작 (KST)"><Text name="startsAt" type="datetime-local" defaultValue={mission?.startsAt ? kstDateTimeLocalInput(mission.startsAt) : ""} /></Field>
-      <Field label="제출 마감 (KST)"><Text name="dueAt" type="datetime-local" required defaultValue={mission?.dueAt ? kstDateTimeLocalInput(mission.dueAt) : ""} /></Field>
+      <Field label="제출 마감 (KST)"><Text name="dueAt" type="datetime-local" defaultValue={mission?.dueAt ? kstDateTimeLocalInput(mission.dueAt) : ""} /></Field>
       <Field label="필수 게시 링크 수"><Text name="linkCount" type="number" min={0} max={10} defaultValue={mission?.linkCount ?? 1} required /></Field>
       <Field label="최종 제출 증빙 파일"><select className={input} name="proof" defaultValue={mission?.proof ?? "optional"}>
+        <option value="off">사용 안 함</option><option value="optional">선택</option><option value="required">필수</option>
+      </select></Field>
+      <Field label="Drive 원본 영상 파일 링크"><select className={input} name="driveProof" defaultValue={mission?.driveProof ?? "off"}>
         <option value="off">사용 안 함</option><option value="optional">선택</option><option value="required">필수</option>
       </select></Field>
       <label className="flex items-end gap-2 self-end pb-2 text-sm"><input className="mb-1" type="checkbox" name="draft" defaultChecked={mission?.draft ?? false} />게시 전 초안 검수</label>
@@ -48,21 +66,53 @@ function MissionEditor({ mission, save, onDone }: { mission?: CreatorMissionView
     <fieldset className="flex flex-wrap gap-3"><legend className="mb-2 text-xs font-medium text-muted-foreground">허용 채널</legend>
       {platforms.map((platform) => <label key={platform} className="flex items-center gap-1.5 text-sm"><input type="checkbox" name="platform" value={platform} defaultChecked={chosen.includes(platform)} />{platform}</label>)}
     </fieldset>
-    <button className={primary + " justify-self-start"} disabled={busy}>{busy ? "저장 중…" : mission ? "미션 저장" : "미션 만들기"}</button>
+    {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center gap-4">
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="published" defaultChecked={mission?.published ?? true} />크리에이터에게 게시</label>
+        <button className={primary} disabled={busy}>{busy ? "저장 중…" : mission ? "미션 저장" : "미션 만들기"}</button>
+      </div>
+      {mission && <button type="button" className={button + " text-destructive"} disabled={busy} onClick={async () => {
+        if (!(await confirm({ title: "미션을 삭제할까요?", description: "활동 페이지에서 내려가고 제출 이력은 보관돼요. 삭제한 미션 목록에서 복구할 수 있어요.", confirmLabel: "미션 삭제", tone: "danger" }))) return;
+        setBusy(true);
+        try { await save({ action: "archiveMission", id: mission.id, archived: true }); }
+        finally { setBusy(false); }
+      }}>미션 삭제</button>}
+    </div>
   </form>;
 }
 
-export function Missions({ program, save }: { program: CreatorProgramView; save: Save }) {
-  const [newForm, setNewForm] = useState(!program.missions.length);
+export function Missions({ program, save, origin, copy }: { program: CreatorProgramView; save: Save; origin: string; copy: Copy }) {
+  const active = program.missions.filter((mission) => !mission.archivedAt);
+  const archived = program.missions.filter((mission) => mission.archivedAt);
+  const [newForm, setNewForm] = useState(!active.length);
+  const [restoring, setRestoring] = useState<string | null>(null);
   return <section className="grid gap-4">
     <div className={panel + " flex flex-wrap items-center justify-between gap-3"}>
       <div><h2 className="text-xl font-semibold">미션</h2>
-        <p className="mt-1 text-sm text-muted-foreground">만든 미션은 선발 크리에이터들의 개인 페이지에 배정돼요.
-          <strong className="font-medium text-foreground"> 알림은 가지 않으니</strong> 선발자 탭의 「안내 메일」로 알려 주세요.</p></div>
-      <button className={primary} aria-expanded={newForm} onClick={() => setNewForm(!newForm)}>{newForm ? "추가 닫기" : "미션 추가"}</button>
+        <p className="mt-1 text-sm text-muted-foreground">게시한 미션은 선발자의 활동 페이지에 나타나요.</p></div>
+      <div className="flex flex-wrap gap-2">
+        <Link href={"/creators/" + program.id + "/preview"} target="_blank" rel="noopener noreferrer" className={button}>활동 화면 미리보기</Link>
+        <a href={(origin || "") + creatorEntryPath(program.id)} target="_blank" rel="noopener noreferrer" className={button}>공통 활동 페이지 열기</a>
+        {origin && <button className={button} onClick={() => copy(origin + creatorEntryPath(program.id))}>공통 활동 링크 복사</button>}
+        <button className={primary} aria-expanded={newForm} onClick={() => setNewForm(!newForm)}>{newForm ? "추가 닫기" : "미션 추가"}</button>
+      </div>
     </div>
     {newForm && <MissionEditor save={save} onDone={() => setNewForm(false)} />}
-    {program.missions.map((mission) => <MissionEditor key={mission.id} mission={mission} save={save} />)}
+    {active.map((mission) => <div className="grid gap-1" key={mission.id}>
+      <p className="pl-1 text-xs text-muted-foreground">선발자 배정 {program.participants.filter((person) => person.assignments.some((assignment) => assignment.missionId === mission.id)).length}명</p>
+      <MissionEditor mission={mission} save={save} />
+    </div>)}
+    {archived.length > 0 && <details className={panel}>
+      <summary className="cursor-pointer font-medium">삭제한 미션 {archived.length}개</summary>
+      <ul className="mt-3 grid gap-2">{archived.map((mission) => <li key={mission.id} className="flex flex-wrap items-center justify-between gap-2">
+        <span>{mission.title}</span><button className={button} disabled={restoring !== null} onClick={async () => {
+          setRestoring(mission.id);
+          try { await save({ action: "archiveMission", id: mission.id, archived: false }); }
+          finally { setRestoring(null); }
+        }}>{restoring === mission.id ? "복구 중…" : "복구"}</button>
+      </li>)}</ul>
+    </details>}
   </section>;
 }
 
@@ -92,7 +142,7 @@ function QueueItem({ work, group, programId, origin, save, copy }: { work: Work;
     <div className="flex flex-wrap items-start justify-between gap-2">
       <div className="min-w-0">
         <h3 className="break-words font-semibold">{person.name} <span className="font-normal text-muted-foreground">· {mission.title}</span></h3>
-        <p className="mt-1 text-xs text-muted-foreground">{assignment.stage === "draft" ? "초안" : "최종"} · 마감 {dateTime(mission.dueAt)} (KST) · 담당 {person.owner || "미지정"}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{assignment.stage === "draft" ? "초안" : "최종"} · {mission.dueAt ? "마감 " + dateTime(mission.dueAt) + " (KST)" : "마감일 미정"} · 담당 {person.owner || "미지정"}</p>
       </div>
       <span className="text-xs text-muted-foreground">{last ? "최근 연락 " + dateTime(last.at) + " · " + last.channel : "연락 기록 없음"}</span>
     </div>
@@ -106,7 +156,7 @@ function QueueItem({ work, group, programId, origin, save, copy }: { work: Work;
     </> : <div className="flex flex-wrap items-center gap-2">
       <button className={primary} disabled={!origin} onClick={() => copy(
         person.name + "님, 안녕하세요! " + mission.title + " 미션의 " + (assignment.stage === "draft" ? "초안" : "최종") +
-        (assignment.status === "revision" ? " 수정 후 다시 제출" : " 제출") + "을 부탁드려요. 마감은 " + dateTime(mission.dueAt) + " (KST)입니다.\n개인 활동 링크 " + origin + "/creator-portal/" + person.token,
+        (assignment.status === "revision" ? " 수정 후 다시 제출" : " 제출") + "을 부탁드려요." + (mission.dueAt ? " 마감은 " + dateTime(mission.dueAt) + " (KST)입니다." : "") + "\n활동 페이지 " + origin + creatorEntryPath(programId),
       )}>리마인드 복사</button>
       {contactUrl ? <a className={button} href={contactUrl} target="_blank" rel="noopener noreferrer">연락 열기</a> :
         contact && <span className="break-all text-xs text-muted-foreground">{contact}</span>}
@@ -163,12 +213,13 @@ export function Dashboard({ data, program, programId, origin, save, copy }: {
 }) {
   const [group, setGroup] = useState<Queue>("soon");
   const [now] = useState(() => Date.now());
-  const missions = new Map(program.missions.map((mission) => [mission.id, mission]));
+  const visibleMissions = program.missions.filter((mission) => mission.published && !mission.archivedAt);
+  const missions = new Map(visibleMissions.map((mission) => [mission.id, mission]));
   const applicants = new Map(data.applications.map(({ id, emailNormalized, phoneE164 }) => [id, emailNormalized || phoneE164]));
   const work: Work[] = program.participants.flatMap((person) => person.assignments.flatMap((assignment) => {
     const mission = missions.get(assignment.missionId);
     return mission ? [{ person, assignment, mission, contact: person.contact || (person.applicationId ? applicants.get(person.applicationId) : "") || "" }] : [];
-  })).sort((a, b) => a.mission.dueAt.localeCompare(b.mission.dueAt));
+  })).sort((a, b) => (a.mission.dueAt ?? "\uffff").localeCompare(b.mission.dueAt ?? "\uffff"));
   const queues = Object.fromEntries((Object.keys(groups) as Queue[]).map((key) => [key, work.filter(({ mission, assignment }) => workQueue({ ...assignment, mission }, now) === key)])) as Record<Queue, Work[]>;
 
   return <div className="grid gap-5">
@@ -188,7 +239,7 @@ export function Dashboard({ data, program, programId, origin, save, copy }: {
     </section>
     <section className={panel + " grid gap-4"}>
       <h2 className="text-xl font-semibold">미션 완료율</h2>
-      {program.missions.length ? <ul className="grid gap-3">{program.missions.map((mission) => {
+      {visibleMissions.length ? <ul className="grid gap-3">{visibleMissions.map((mission) => {
         const assigned = work.filter((item) => item.mission.id === mission.id);
         const done = assigned.filter(({ assignment }) => assignment.status === "done").length;
         return <li key={mission.id} className="grid gap-1">

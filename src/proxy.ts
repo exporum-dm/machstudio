@@ -47,6 +47,7 @@ export async function proxy(request: NextRequest) {
     // 발표 화면 — 무대 노트북은 machstudio 계정으로 로그인돼 있지 않다. 링크(showToken)가 열쇠다.
     pathname.startsWith("/show/") ||
     pathname.startsWith("/api/show/") ||
+    pathname.startsWith("/creator-entry/") ||
     pathname.startsWith("/creator-portal/") ||
     pathname.startsWith("/creator-show/") ||
     pathname.startsWith("/creator-go/") ||
