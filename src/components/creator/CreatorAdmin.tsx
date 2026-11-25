@@ -99,7 +99,7 @@ export function CreatorAdmin({ programId, projectName }: { programId: string; pr
       {tab === "applications" && <Applicants program={program} applications={data.applications} labels={data.applicationLabels} save={save} />}
       {tab === "people" && <People program={program} applications={data.applications} labels={data.applicationLabels} origin={origin} programId={programId} save={save} copy={copy} />}
       {tab === "missions" && <Missions program={program} save={save} origin={origin} copy={copy} />}
-      {tab === "announcements" && <Announcements program={program} origin={origin} save={save} copy={copy} />}
+      {tab === "announcements" && <Announcements program={program} projectName={projectName} origin={origin} save={save} copy={copy} />}
       {tab === "settings" && <CreatorSettings key={program.applicationSourceId ?? "unlinked"} program={program} sources={data.sources} origin={origin} save={save} copy={copy} />}
     </> : error ? <button className={button + " justify-self-start"} onClick={() => void refresh()}>다시 불러오기</button>
       : <Empty>회차를 불러오는 중이에요.</Empty>}
