@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { creatorEntryPath } from "@/lib/creator/entry";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { buildPublication, creatorDriveFolder, platforms, publicationSchema, type CreatorAction } from "@/lib/creator/model";
+import { buildPublication, creatorDriveFolder, isCreatorAwarded, platforms, publicationSchema, type CreatorAction } from "@/lib/creator/model";
 import type { CreatorPerson, CreatorProgramView, CreatorView } from "@/lib/creator/types";
 import { CreatorPublication } from "./Publication";
 import { applicationText } from "./Recruitment";
@@ -20,7 +20,7 @@ function Person({ person, program, origin, application, labels, save, copy }: {
   const [folderError, setFolderError] = useState("");
   const [channels, setChannels] = useState(person.channels as Partial<Record<typeof platforms[number], string>>);
   const [busy, setBusy] = useState(false);
-  const [confirmationPending, setConfirmationPending] = useState(false);
+  const [statusPending, setStatusPending] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
   const portal = origin + "/creator-portal/" + person.token;
   const answers = Object.entries((application?.data ?? {}) as Record<string, unknown>).filter(([key]) => !key.startsWith("__"));
@@ -42,6 +42,24 @@ function Person({ person, program, origin, application, labels, save, copy }: {
         }}>링크 재발급</button>
       </div>
     </div>
+    <fieldset className="flex flex-wrap gap-x-6 gap-y-2 rounded-xl bg-muted/35 p-3" disabled={statusPending || withdrawing}>
+      <legend className="px-1 text-sm font-medium">활동 상태</legend>
+      {([
+        { field: "confirmed", label: "참여 확정", checked: person.confirmed },
+        { field: "completed", label: "수료", checked: person.completed },
+        { field: "awardSelected", label: "우수자 선정", checked: isCreatorAwarded(person) },
+      ] as const).map(({ field, label, checked }) => (
+        <label key={field} className="flex min-h-8 items-center gap-2 text-sm">
+          <input type="checkbox" checked={checked} onChange={async (event) => {
+            const value = event.target.checked;
+            setStatusPending(true);
+            try { await save({ action: "participant", id: person.id, patch: { [field]: value } }); }
+            finally { setStatusPending(false); }
+          }} />
+          {label}
+        </label>
+      ))}
+    </fieldset>
     <form className="grid gap-4" onSubmit={async (event) => {
       event.preventDefault();
       const form = new FormData(event.currentTarget);
@@ -78,12 +96,6 @@ function Person({ person, program, origin, application, labels, save, copy }: {
         <Field label="이름"><Text name="name" required maxLength={160} defaultValue={person.name} /></Field>
         <Field label="담당자"><Text name="owner" maxLength={160} defaultValue={person.owner} /></Field>
         <Field label="운영 연락처 또는 DM URL"><Text name="contact" maxLength={400} defaultValue={person.contact} placeholder={application?.emailNormalized ?? "이메일 또는 URL"} /></Field>
-        <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={person.confirmed} disabled={confirmationPending} onChange={async (event) => {
-          const confirmed = event.target.checked;
-          setConfirmationPending(true);
-          try { await save({ action: "participant", id: person.id, patch: { confirmed } }); }
-          finally { setConfirmationPending(false); }
-        }} />참여 확정</label>
         <Field label="활동 확인 이메일"><Text name="accessEmail" type="email" maxLength={254} defaultValue={person.accessEmail ?? ""} placeholder={application?.emailNormalized ?? "name@gmail.com"} />
           <span className="text-xs text-muted-foreground">비워 두면 신청서 이메일을 사용해요.</span>
         </Field>
@@ -115,7 +127,7 @@ function Person({ person, program, origin, application, labels, save, copy }: {
         </li>)}</ul>}
       </div>
     </details>}
-    {application && <button type="button" className={button + " justify-self-start text-destructive"} disabled={withdrawing || busy || confirmationPending}
+    {application && <button type="button" className={button + " justify-self-start text-destructive"} disabled={withdrawing || busy || statusPending}
       onClick={async () => {
         if (!(await confirm({
           title: person.name + "님의 선발을 취소할까요?",
@@ -135,14 +147,23 @@ export function People({ program, applications, labels, origin, programId, save,
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const records = new Map(applications.map((record) => [record.id, record]));
-  const people = program.participants.filter((person) => (filter === "all" || (filter === "confirmed" ? person.confirmed : filter === "unconfirmed" ? !person.confirmed : !!person.award))
+  const filters = {
+    all: () => true,
+    confirmed: (person: CreatorPerson) => person.confirmed,
+    unconfirmed: (person: CreatorPerson) => !person.confirmed,
+    completed: (person: CreatorPerson) => person.completed,
+    incomplete: (person: CreatorPerson) => !person.completed,
+    award: isCreatorAwarded,
+  };
+  const people = program.participants.filter((person) => filters[filter as keyof typeof filters](person)
     && [person.name, person.owner, person.contact, person.award, JSON.stringify(person.channels)].some((value) => value.toLowerCase().includes(search.toLowerCase())));
   return <section className="grid gap-4">
     <div className={panel + " flex flex-wrap items-center justify-between gap-3"}>
-      <div><h2 className="text-xl font-semibold">선발 크리에이터</h2><p className="mt-1 text-sm text-muted-foreground">{program.participants.length}명 선발 · {program.participants.filter(({ confirmed }) => confirmed).length}명 참여 확정</p></div>
+      <div><h2 className="text-xl font-semibold">선발 크리에이터</h2><p className="mt-1 text-sm text-muted-foreground">{program.participants.length}명 선발 · {program.participants.filter(({ confirmed }) => confirmed).length}명 참여 확정 · {program.participants.filter(({ completed }) => completed).length}명 수료 · {program.participants.filter(isCreatorAwarded).length}명 우수자</p></div>
       <div className="flex flex-wrap gap-2"><Text aria-label="크리에이터 검색" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="이름, 담당자, 계정 검색" />
         <select className={input} aria-label="크리에이터 상태" value={filter} onChange={(event) => setFilter(event.target.value)}>
           <option value="all">전체</option><option value="confirmed">참여 확정</option><option value="unconfirmed">참여 확인 전</option><option value="award">우수자</option>
+          <option value="completed">수료</option><option value="incomplete">미수료</option>
         </select>
       </div>
     </div>
@@ -222,7 +243,7 @@ function PublicationEditor({ kind, program, projectName, labels = {}, applicatio
     </div>
     {exportPreview.entries.length ? <div ref={previewRef} className="min-w-0 overflow-hidden rounded-2xl">
       <CreatorPublication publication={exportPreview} kicker={activeRegion || (regions.length === 1 ? regions[0] : projectName)} awards={awards} />
-    </div> : <Empty>{awards ? "선발 크리에이터에게 상명을 입력하면 우수자 코드블럭이 생성돼요." : "크리에이터를 선발하면 소개 코드블럭이 생성돼요."}</Empty>}
+    </div> : <Empty>{awards ? "선발자 탭에서 우수자 선정을 체크하면 코드블럭이 생성돼요." : "크리에이터를 선발하면 소개 코드블럭이 생성돼요."}</Empty>}
     <div className="flex flex-wrap gap-2">
       <button className={button} disabled={!preview.entries.length || !theme.title.trim()} onClick={async () => {
         if (await confirm({ title: label + "를 공개할까요?", description: "이 회차의 전체 명단과 색상이 마하 공개 페이지에 게시돼요." })) {
