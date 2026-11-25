@@ -10,5 +10,5 @@ export default async function PublicCreatorAnnouncement({ params }: { params: Pr
   if (!isPublicationKind(kind)) notFound();
   const publication = await loadPublication(id, kind);
   if (!publication) return <ReportFrameHeight empty />;
-  return <><CreatorPublication publication={publication} /><ReportFrameHeight /></>;
+  return <><CreatorPublication publication={publication} awards={kind === "awards"} /><ReportFrameHeight /></>;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { creatorEntryPath } from "@/lib/creator/entry";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { buildPublication, platforms, profileSchema, publicationSchema, type CreatorAction } from "@/lib/creator/model";
@@ -146,43 +146,77 @@ export function People({ program, applications, labels, origin, programId, save,
   </section>;
 }
 
-function PublicationEditor({ kind, program, origin, save, copy }: { kind: "roster" | "awards"; program: CreatorProgramView; origin: string; save: Save; copy: Copy }) {
+type AnnouncementProps = {
+  program: Pick<CreatorProgramView, "id" | "roster" | "awards"> & { participants: Parameters<typeof buildPublication>[2] };
+  projectName: string;
+  origin: string;
+  save: Save;
+  copy: Copy;
+};
+
+function PublicationEditor({ kind, program, projectName, origin, save, copy }: AnnouncementProps & { kind: "roster" | "awards" }) {
   const confirm = useConfirm();
   const stored = publicationSchema.safeParse(program[kind]);
   const published = Boolean(stored.data?.entries.length);
   const label = kind === "roster" ? "선발 크리에이터 소개" : "우수 크리에이터 발표";
-  const initial = stored.data ?? { title: label, background: "#ffffff", accent: "#4338ca" };
+  const awards = kind === "awards";
+  const initial = stored.data ?? { title: label, background: awards ? "#fff6fa" : "#fff9f6", accent: awards ? "#a63167" : "#bf3b20" };
   const [theme, setTheme] = useState({ title: initial.title, background: initial.background, accent: initial.accent });
+  const [region, setRegion] = useState("");
+  const previewRef = useRef<HTMLDivElement>(null);
   const preview = buildPublication(kind, theme, program.participants);
+  const regionOf = (entry: (typeof preview.entries)[number]) => entry.region?.trim() || projectName;
+  const regions = awards ? Array.from(new Set(preview.entries.map(regionOf))).sort((a, b) => a.localeCompare(b, "ko")) : [];
+  const activeRegion = regions.includes(region) ? region : "";
+  const exportPreview = activeRegion ? { ...preview, entries: preview.entries.filter((entry) => regionOf(entry) === activeRegion) } : preview;
   const path = "/creator-show/" + program.id;
-  const snippet = origin ? '<script async src="' + origin + path + '/embed/' + kind + '"></script>' : "";
+  const linkedSnippet = origin ? '<script async src="' + origin + path + '/embed/' + kind + '"></script>' : "";
+  const canCopy = exportPreview.entries.length > 0 && Boolean(theme.title.trim());
 
   return <article className={panel + " grid gap-4"}>
     <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-lg font-semibold">{label}</h3>
-      <span className={"rounded-full px-3 py-1 text-xs font-semibold " + (published ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{published ? "공개 중" : "비공개"}</span>
+      <span className={"rounded-full px-3 py-1 text-xs font-semibold " + (published ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{published ? "마하 공개 중" : "마하 비공개"}</span>
     </div>
     <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
       <Field label="제목"><Text value={theme.title} maxLength={160} onChange={(event) => setTheme({ ...theme, title: event.target.value })} /></Field>
       <Field label="배경 색상"><input className="h-9 w-20 rounded-lg bg-muted p-1" type="color" value={theme.background} onChange={(event) => setTheme({ ...theme, background: event.target.value })} /></Field>
       <Field label="버튼 색상"><input className="h-9 w-20 rounded-lg bg-muted p-1" type="color" value={theme.accent} onChange={(event) => setTheme({ ...theme, accent: event.target.value })} /></Field>
     </div>
-    {preview.entries.length ? <CreatorPublication publication={preview} /> : <Empty>{kind === "awards" ? "선발 크리에이터에게 상명을 입력하면 미리볼 수 있어요." : "크리에이터를 선발하면 미리볼 수 있어요."}</Empty>}
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      {regions.length > 1 && <Field label="코드블럭 지역">
+        <select className={input} value={activeRegion} onChange={(event) => setRegion(event.target.value)}>
+          <option value="">전체 지역</option>
+          {regions.map((name) => <option key={name} value={name}>{name}</option>)}
+        </select>
+      </Field>}
+      <div className="grid gap-1">
+        <button type="button" className={primary + " justify-self-start"} disabled={!canCopy} onClick={() => {
+          if (previewRef.current) copy(previewRef.current.innerHTML);
+        }}>아임웹 코드블럭 복사{canCopy && " · " + exportPreview.entries.length + "명"}</button>
+        {canCopy && <p className="text-xs text-muted-foreground">명단이 바뀌면 다시 복사해 아임웹에서 교체하세요.</p>}
+      </div>
+    </div>
+    {exportPreview.entries.length ? <div ref={previewRef} className="min-w-0 overflow-hidden rounded-2xl">
+      <CreatorPublication publication={exportPreview} kicker={activeRegion || (regions.length === 1 ? regions[0] : projectName)} awards={awards} />
+    </div> : <Empty>{awards ? "선발 크리에이터에게 상명을 입력하면 우수자 코드블럭이 생성돼요." : "크리에이터를 선발하면 소개 코드블럭이 생성돼요."}</Empty>}
     <div className="flex flex-wrap gap-2">
-      <button className={primary} disabled={!preview.entries.length || !theme.title.trim()} onClick={async () => {
-        if (await confirm({ title: label + "를 공개할까요?", description: "미리보기에 포함된 공개 프로필과 색상이 게시돼요." })) {
+      <button className={button} disabled={!preview.entries.length || !theme.title.trim()} onClick={async () => {
+        if (await confirm({ title: label + "를 공개할까요?", description: "이 회차의 전체 명단과 색상이 마하 공개 페이지에 게시돼요." })) {
           await save({ action: "publish", kind, theme });
         }
-      }}>{published ? "변경사항 발행" : "공개하기"}</button>
-      {snippet && <button className={button} onClick={() => copy(snippet)}>아임웹 코드 복사</button>}
-      {published && <><a className={button} href={origin + path + "/" + kind} target="_blank" rel="noopener noreferrer">공개 페이지 열기</a>
-        <button className={button + " text-muted-foreground"} onClick={async () => {
-          if (await confirm({ title: "발표를 비공개로 전환할까요?", description: "공개 페이지와 아임웹 임베드에서 목록이 숨겨져요." })) await save({ action: "publish", kind, theme: null });
-        }}>비공개 전환</button></>}
+      }}>{published ? "마하 공개 페이지 갱신" : "마하 공개 페이지 발행"}</button>
+      {published && origin && <>
+        <a className={button} href={origin + path + "/" + kind} target="_blank" rel="noopener noreferrer">공개 페이지 열기</a>
+        <button className={button} onClick={() => copy(linkedSnippet)}>연동 코드 복사</button>
+      </>}
+      {published && <button className={button + " text-muted-foreground"} onClick={async () => {
+        if (await confirm({ title: "발표를 비공개로 전환할까요?", description: "마하 공개 페이지와 연동 코드를 사용한 곳에서 목록이 숨겨져요." })) await save({ action: "publish", kind, theme: null });
+      }}>비공개 전환</button>}
     </div>
   </article>;
 }
 
-export function Announcements(props: { program: CreatorProgramView; origin: string; save: Save; copy: Copy }) {
+export function Announcements(props: AnnouncementProps) {
   return <section className="grid gap-4">
     <PublicationEditor kind="roster" {...props} />
     <PublicationEditor kind="awards" {...props} />
