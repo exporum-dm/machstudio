@@ -1,9 +1,10 @@
+import { getPublicAppOrigin } from "@/lib/app-url";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimitAsync } from "@/lib/ratelimit";
 import type { Prisma } from "@/generated/prisma";
 import { code, conflict, CreatorError, jsonHistory, missing } from "./server";
-import { missionSubmissionFields, validateMissionSubmission, type HistoryEntry, type submissionSchema } from "./model";
+import { creatorPromotionUrl, missionSubmissionFields, validateMissionSubmission, type HistoryEntry, type submissionSchema } from "./model";
 import type { z } from "zod";
 
 export const PROOF_BUCKET = "creator-proof";
@@ -24,12 +25,23 @@ export async function loadPortal(token: string, programId?: string) {
     where: { token, programId, withdrawnAt: null, program: activeProgram },
     select: {
       name: true, confirmed: true, feeStatus: true, paidOn: true, channels: true, driveFolder: true,
-      program: { select: { name: true, registrationSource: { select: { isActive: true, deletedAt: true } } } },
+      program: { select: { name: true, utm: true, registrationSource: { select: { isActive: true, deletedAt: true } } } },
       links: { select: { code: true, platform: true } },
       assignments: { where: { mission: visibleMission }, select: assignmentSelect, orderBy: { mission: { dueAt: "asc" } } },
     },
   });
-  return person && { ...person, serverNow: Date.now() };
+  if (!person) return null;
+  const { program, channels, links, ...view } = person;
+  const origin = getPublicAppOrigin();
+  const form = program.registrationSource;
+  const promotionLinks = links.flatMap((link) => {
+    const handle = (channels as Record<string, string>)[link.platform];
+    if (!handle) return [];
+    const legacyUrl = origin && form?.isActive && !form.deletedAt ? origin + "/creator-go/" + link.code : "";
+    const url = creatorPromotionUrl(program.utm, { ...link, creator: person.name, program: program.name, handle }, legacyUrl);
+    return url ? [{ platform: link.platform, url }] : [];
+  });
+  return { ...view, program: { name: program.name }, promotionLinks, serverNow: Date.now() };
 }
 
 export type PortalData = NonNullable<Awaited<ReturnType<typeof loadPortal>>>;

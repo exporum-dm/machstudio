@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { CreatorPortalView } from "@/lib/creator/types";
 import { creatorDriveFile, missionSubmissionFields, validateMissionSubmission, webUrl, type HistoryEntry } from "@/lib/creator/model";
+import { useCreatorRefresh } from "./useCreatorRefresh";
 import { button, primary, Field, Text, input, Empty, dateTime, statusNames, feeNames } from "./ui";
 
 const card = "min-w-0 rounded-2xl bg-[var(--card)] p-5 shadow-[var(--card-shadow)] sm:p-7";
@@ -136,7 +137,7 @@ function MissionForm({ assignment, api, driveFolder, preview }: {
   </form>;
 }
 
-export function CreatorPortal({ token, data, origin, preview }: { token: string; data: CreatorPortalView; origin: string; preview: boolean }) {
+export function CreatorPortal({ token, data, preview }: { token: string; data: CreatorPortalView; preview: boolean }) {
   const router = useRouter();
   const hydrated = useSyncExternalStore(subscribeToHydration, () => true, () => false);
   const [openAssignment, setOpenAssignment] = useState("");
@@ -144,8 +145,7 @@ export function CreatorPortal({ token, data, origin, preview }: { token: string;
   const [busy, setBusy] = useState(false);
   const api = "/api/public/creator/" + token;
   const counts = Object.fromEntries(Object.keys(statusNames).map((status) => [status, data.assignments.filter((assignment) => assignment.status === status).length]));
-  const activeRegistrations = data.program.registrationSource?.isActive && !data.program.registrationSource.deletedAt;
-  const links = data.links.filter(({ platform }) => Boolean((data.channels as Record<string, string>)[platform]));
+  useCreatorRefresh(router.refresh, !preview && !busy, counts.review > 0 ? 12_000 : null);
 
   async function confirm() {
     setBusy(true);
@@ -209,14 +209,13 @@ export function CreatorPortal({ token, data, origin, preview }: { token: string;
       </section>;
     })}
     {!data.assignments.length && <Empty>배정된 미션이 생기면 여기에 표시돼요.</Empty>}
-    {activeRegistrations && links.length > 0 && <section className={card}>
+    {data.promotionLinks.length > 0 && <section className={card}>
       <h2 className="mb-3 text-lg font-semibold">내 등록 홍보 링크</h2>
-      <ul className="grid gap-3">{links.map((link) => {
-        const url = origin + "/creator-go/" + link.code;
-        return <li key={link.code} className="grid min-w-0 gap-2 sm:grid-cols-[auto_1fr_auto] sm:items-center">
-          <span className="text-sm font-semibold">{link.platform}</span>
+      <ul className="grid gap-3">{data.promotionLinks.map(({ platform, url }) => {
+        return <li key={platform} className="grid min-w-0 gap-2 sm:grid-cols-[auto_1fr_auto] sm:items-center">
+          <span className="text-sm font-semibold">{platform}</span>
           <span className="break-all text-sm">{url}</span>
-          {!preview && origin && <button type="button" className={button} onClick={() => void navigator.clipboard.writeText(url).then(() => setMessage("홍보 링크를 복사했어요.")).catch(() => setMessage("주소를 직접 복사해 주세요."))}>복사</button>}
+          {!preview && <button type="button" className={button} onClick={() => void navigator.clipboard.writeText(url).then(() => setMessage("홍보 링크를 복사했어요.")).catch(() => setMessage("주소를 직접 복사해 주세요."))}>복사</button>}
         </li>;
       })}</ul>
     </section>}

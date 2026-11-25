@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { creatorUtm, platforms, type CreatorAction, type Utm } from "@/lib/creator/model";
+import { creatorDestinationUrl, creatorUtm, creatorUtmDestination, platforms, type CreatorAction, type Utm } from "@/lib/creator/model";
 import { detectSocialAccounts, parseAccount } from "@/lib/creator/social";
 import type { CreatorView, CreatorProgramView } from "@/lib/creator/types";
 import { button, primary, input, panel, Field, Text } from "./ui";
@@ -21,6 +21,8 @@ export function CreatorSettings({ program, sources, origin, save, copy }: {
   const [registration, setRegistration] = useState(program.registrationSourceId ?? "");
   const [utm, setUtm] = useState(creatorUtm(program.utm));
   const [saving, setSaving] = useState(false);
+  const [destination, setDestination] = useState(creatorUtmDestination(program.utm));
+  const [destinationError, setDestinationError] = useState("");
   const id = program.applicationSourceId;
   const registrationForm = sources.find((source) => source.id === registration);
   const url = id ? origin + "/register/" + id : "";
@@ -30,8 +32,15 @@ export function CreatorSettings({ program, sources, origin, save, copy }: {
     <div><h2 className="text-xl font-semibold">폼과 홍보 링크 연결</h2><p className="mt-1 text-sm text-muted-foreground">이 프로젝트의 신청서와 방문객 등록 폼을 연결하세요.</p></div>
     <form className="grid gap-4" onSubmit={async (event) => {
       event.preventDefault();
+      const address = destination.trim();
+      if (address && !creatorDestinationUrl.safeParse(address).success) {
+        setDestinationError("http 또는 https로 시작하는 등록 페이지 주소를 입력해 주세요.");
+        event.currentTarget.querySelector<HTMLInputElement>('[name="destination"]')?.focus();
+        return;
+      }
+      setDestinationError("");
       setSaving(true);
-      try { await save({ action: "settings", name, applicationSourceId: application || null, registrationSourceId: registration || null, utm }); }
+      try { await save({ action: "settings", name, applicationSourceId: application || null, registrationSourceId: registration || null, utm, destination: address || null }); }
       finally { setSaving(false); }
     }}>
       <div className="grid gap-3 lg:grid-cols-3">
@@ -51,7 +60,17 @@ export function CreatorSettings({ program, sources, origin, save, copy }: {
         </Field>
       </div>
       <fieldset className="grid gap-2">
-        <legend className="mb-2 font-semibold">채널별 UTM 생성 규칙</legend>
+        <legend className="mb-2 font-semibold">홍보 링크와 UTM</legend>
+        <Field label="홍보 링크 목적지">
+          <Text name="destination" type="text" inputMode="url" autoComplete="url" maxLength={2048}
+            value={destination} placeholder={registrationForm?.siteUrl || "https://example.com/registration"}
+            aria-invalid={Boolean(destinationError)} onChange={(event) => {
+              setDestination(event.target.value);
+              setDestinationError("");
+            }} />
+          {destinationError ? <span role="alert" className="text-xs text-destructive">{destinationError}</span> :
+            <span>크리에이터가 프로필에 넣을 등록 페이지 주소예요. 비워 두면 연결된 등록 폼 주소를 사용해요.</span>}
+        </Field>
         {(Object.keys(utm) as (keyof Utm)[]).map((key) => (
           <div key={key} className="grid items-center gap-2 rounded-lg bg-muted/25 px-3 py-2 sm:grid-cols-[9rem_11rem_1fr]">
             <span className="font-mono text-sm">utm_{key}</span>

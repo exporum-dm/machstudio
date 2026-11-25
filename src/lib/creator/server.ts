@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { localize, normalizeCollectForm } from "@/lib/collect-form-config";
 import { creatorEmailMatch } from "./entry";
-import { buildPublication, creatorColumns, normalizeCell, removePublishedCreator, reviewState, webUrl, type Cells, type CreatorAction, type HistoryEntry } from "./model";
+import { buildPublication, creatorColumns, creatorUtmDestination, normalizeCell, removePublishedCreator, reviewState, webUrl, type Cells, type CreatorAction, type HistoryEntry } from "./model";
 
 export class CreatorError extends Error {
   constructor(message: string, readonly status = 400) { super(message); }
@@ -204,10 +204,11 @@ export async function applyCreatorAction(auth: Awaited<ReturnType<typeof getCrea
         if (ids.some((id) => !sources.some((source) => source.id === id) && id !== program.applicationSourceId && id !== program.registrationSourceId)) throw missing();
         if (sources.find(({ id }) => id === applicationSourceId)?.mode === "capture") throw new CreatorError("크리에이터 모집에는 등록 폼 빌더를 선택해 주세요.");
         const registration = sources.find(({ id }) => id === registrationSourceId);
-        if (registration?.mode === "capture" && !webUrl.safeParse(registration.siteUrl).success) throw new CreatorError("외부 등록 폼에 사이트 주소를 설정해 주세요.");
+        const destination = action.destination === undefined ? creatorUtmDestination(program.utm) : action.destination;
+        if (!destination && registration?.mode === "capture" && !webUrl.safeParse(registration.siteUrl).success) throw new CreatorError("외부 등록 폼이나 홍보 링크에 사이트 주소를 설정해 주세요.");
         const updated = await tx.creatorProgram.updateMany({
           where: { id: programId, version: program.version },
-          data: { name: action.name, applicationSourceId, registrationSourceId, utm: action.utm, version: { increment: 1 } },
+          data: { name: action.name, applicationSourceId, registrationSourceId, utm: { ...action.utm, destination }, version: { increment: 1 } },
         });
         if (!updated.count) throw conflict();
         break;

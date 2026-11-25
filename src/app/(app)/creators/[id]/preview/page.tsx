@@ -20,9 +20,9 @@ export default async function CreatorPreviewPage({ params }: { params: Promise<{
   return <div className="stk-live bg-[var(--card-2)] p-4 sm:p-8">
     <style>{buildStkCss("#4338ca", "#171729", "#ffffff")}</style>
     <div className="mx-auto mb-4 max-w-3xl"><Link href={"/creators/" + id} className={button}>회차로 돌아가기</Link></div>
-    <CreatorPortal token="" origin="" preview data={{
-      name: "테스트 크리에이터", confirmed: true, feeStatus: "unpaid", paidOn: null, channels: {}, driveFolder: null,
-      program: { name: program.name, registrationSource: null }, links: [], serverNow: 0,
+    <CreatorPortal token="" preview data={{
+      name: "테스트 크리에이터", confirmed: true, feeStatus: "unpaid", paidOn: null, driveFolder: null,
+      program: { name: program.name }, promotionLinks: [], serverNow: 0,
       assignments: program.missions.map((mission) => ({
         id: mission.id, stage: mission.draft ? "draft" : "final", status: "todo", version: 0, history: [], uploads: [],
         mission: { ...mission, startsAt: mission.startsAt?.toISOString() ?? null, dueAt: mission.dueAt?.toISOString() ?? null },

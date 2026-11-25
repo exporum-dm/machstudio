@@ -12,6 +12,7 @@ import { CreatorSettings } from "./Recruitment";
 import { ApplicantsTable } from "./ApplicantsTable";
 import { Announcements, People } from "./People";
 import { Dashboard, Missions } from "./Operations";
+import { useCreatorRefresh } from "./useCreatorRefresh";
 import { button, Empty } from "./ui";
 
 const tabs = [
@@ -40,6 +41,8 @@ export function CreatorAdmin({ programId, projectName }: { programId: string; pr
     if (!response.ok) throw new Error(result.error || "불러오지 못했어요.");
     if (seq === sequence.current) setData(result);
   }, [api]);
+
+  useCreatorRefresh(load, tab === "dashboard" && pending === 0, 8_000);
 
   const refresh = useCallback(async () => {
     setError("");

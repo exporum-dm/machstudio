@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { creatorEntryPath } from "@/lib/creator/entry";
-import { webUrl, platforms, missionSchema, workQueue, type CreatorAction } from "@/lib/creator/model";
+import { creatorUtmDestination, webUrl, platforms, missionSchema, workQueue, type CreatorAction } from "@/lib/creator/model";
 import { kstDateString, kstDateTimeLocalInput, kstDateTimeLocalToIso } from "@/lib/datetime";
 import type { CreatorContact, CreatorMissionView, CreatorPerson, CreatorProgramView, CreatorView } from "@/lib/creator/types";
 import { History } from "./CreatorPortal";
@@ -175,6 +175,7 @@ function QueueItem({ work, group, programId, origin, save, copy }: { work: Work;
 function ConversionMetrics({ program, registrations }: { program: CreatorProgramView; registrations: CreatorView["registrations"] }) {
   const [range, setRange] = useState(14);
   const [now] = useState(() => Date.now());
+  const usesDirectLinks = Boolean(creatorUtmDestination(program.utm));
   const links = program.participants.flatMap((person) => person.links.map((link) => ({ ...link, person: person.name })));
   const totals = new Map<string, number>();
   const daily = new Map<string, number>();
@@ -191,7 +192,7 @@ function ConversionMetrics({ program, registrations }: { program: CreatorProgram
   return <section className={panel + " grid gap-4"}>
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div><h2 className="text-xl font-semibold">방문객 등록 성과</h2>
-        {program.registrationSourceId && <p className="mt-1 text-sm text-muted-foreground">등록 {registered.toLocaleString()}건 · 링크 클릭 {links.reduce((sum, link) => sum + link.clicks, 0).toLocaleString()}회</p>}
+        {program.registrationSourceId && <p className="mt-1 text-sm text-muted-foreground">등록 {registered.toLocaleString()}건 · {usesDirectLinks ? "기존 링크 클릭" : "링크 클릭"} {links.reduce((sum, link) => sum + link.clicks, 0).toLocaleString()}회</p>}
       </div>
       {program.registrationSourceId && <select aria-label="일별 등록 기간" className={input} value={range} onChange={(event) => setRange(Number(event.target.value))}><option value={14}>최근 14일</option><option value={30}>최근 30일</option></select>}
     </div>
@@ -203,7 +204,7 @@ function ConversionMetrics({ program, registrations }: { program: CreatorProgram
       </ol>
       <div className="-mt-3 flex justify-between text-xs text-muted-foreground"><span>{days[0]?.day}</span><span>{days.at(-1)?.day}</span></div>
       {links.length ? <div className="overflow-x-auto"><table className="w-full min-w-72 text-sm">
-        <thead className="text-left text-xs text-muted-foreground"><tr><th className="py-2">크리에이터</th><th>채널</th><th className="text-right">클릭</th><th className="text-right">등록</th></tr></thead>
+        <thead className="text-left text-xs text-muted-foreground"><tr><th className="py-2">크리에이터</th><th>채널</th><th className="text-right">{usesDirectLinks ? "기존 링크 클릭" : "클릭"}</th><th className="text-right">등록</th></tr></thead>
         <tbody>{links.sort((a, b) => (totals.get(b.code) ?? 0) - (totals.get(a.code) ?? 0)).map((link) => <tr key={link.code} className="border-t border-border/50">
           <td className="py-2">{link.person}</td><td>{link.platform}</td><td className="text-right tabular-nums">{link.clicks}</td><td className="text-right font-semibold tabular-nums">{totals.get(link.code) ?? 0}</td>
         </tr>)}</tbody>
@@ -228,7 +229,7 @@ export function Dashboard({ data, program, programId, origin, save, copy }: {
 
   return <div className="grid gap-5">
     <section className={panel + " grid gap-4"}>
-      <div><h2 className="text-xl font-semibold">지금 처리할 일</h2><p className="mt-1 text-sm text-muted-foreground">미제출자에게 연락하고 들어온 게시물과 초안을 검수하세요.</p></div>
+      <div><h2 className="text-xl font-semibold">지금 처리할 일</h2><p className="mt-1 text-sm text-muted-foreground">새 제출은 대시보드를 열어두면 자동으로 표시돼요.</p></div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="할 일 유형">
         {(Object.entries(groups) as [Queue, string][]).map(([key, label]) => (
           <button key={key} type="button" aria-pressed={group === key} className={"grid gap-1 rounded-xl p-3 text-left shadow-sm transition hover:shadow-md focus-visible:outline-2 focus-visible:outline-ring motion-reduce:transition-none " +

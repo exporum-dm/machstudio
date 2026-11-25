@@ -4,7 +4,7 @@ import { Fragment, useState, type ReactNode } from "react";
 import { creatorEntryPath } from "@/lib/creator/entry";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
-  applyGridLayout, creatorDriveFolder, creatorGridLayout, isCreatorAwarded, platforms, type CreatorAction,
+  applyGridLayout, creatorDriveFolder, creatorGridLayout, creatorPromotionUrl, isCreatorAwarded, platforms, type CreatorAction,
 } from "@/lib/creator/model";
 import type { CreatorPerson, CreatorProgramView, CreatorView } from "@/lib/creator/types";
 import { applicationText } from "./Recruitment";
@@ -206,10 +206,13 @@ function PersonDetail({ person, program, application, labels, origin, save, copy
     <div className="flex flex-wrap gap-2">
       <a href={portal + "?preview=1"} className={button} target="_blank" rel="noopener noreferrer">이 선발자의 활동 화면</a>
       {origin && <button className={button} onClick={() => copy(origin + creatorEntryPath(program.id))}>공통 활동 링크 복사</button>}
-      {program.registrationSourceId && links.map((link) =>
-        <button key={link.code} className={button} disabled={!origin} onClick={() => copy(origin + "/creator-go/" + link.code)}>
-          {link.platform} 홍보 링크 복사
-        </button>)}
+      {links.map((link) => {
+        const legacyUrl = origin && program.registrationSourceId ? origin + "/creator-go/" + link.code : "";
+        const url = creatorPromotionUrl(program.utm, {
+          ...link, creator: person.name, program: program.name, handle: (person.channels as Record<string, string>)[link.platform],
+        }, legacyUrl);
+        return url && <button key={link.code} className={button} onClick={() => copy(url)}>{link.platform} 홍보 링크 복사</button>;
+      })}
       <button className={button + " text-muted-foreground"} onClick={async () => {
         if (await confirm({ title: "개인 링크를 다시 발급할까요?", description: "해당 크리에이터에게 새 링크를 전달해야 해요.", tone: "danger" })) {
           await save({ action: "rotateAccess", id: person.id });
