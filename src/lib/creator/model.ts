@@ -10,9 +10,13 @@ const urlOrEmpty = z.union([webUrl, z.literal("")]);
 const cell = z.union([z.string().max(4000), z.number().finite(), z.boolean(), z.null()]);
 const cells = z.record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,64}$/), cell);
 const type = z.enum(["text", "number", "date", "select", "checkbox", "url"]);
+export const MIN_COLUMN_WIDTH = 80;
+export const MAX_COLUMN_WIDTH = 720;
 export const columnSchema = z.object({
   key: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,64}$/), label, type, hidden: z.boolean().optional(),
   options: z.array(label).max(50).optional(),
+  /** 표에서 이 열이 차지할 픽셀 너비. 지정하지 않으면 내용에 맞춘다. */
+  width: z.number().int().min(MIN_COLUMN_WIDTH).max(MAX_COLUMN_WIDTH).optional(),
 });
 export type Column = z.infer<typeof columnSchema>;
 export type Cells = z.infer<typeof cells>;
@@ -31,14 +35,16 @@ export const baseColumns: Column[] = [
   { key: "memo", label: "메모", type: "text" },
 ];
 
+/**
+ * 저장된 열 구성을 그대로 쓴다. 한 번 저장하고 나면 **기본 열도 지우고 이름을 바꿀 수 있다** —
+ * 예전에는 저장 목록에 없는 기본 열을 뒤에 다시 붙여서, 지워도 되살아났다.
+ *
+ * 아직 한 번도 저장하지 않았으면(빈 배열·형식 오류) 기본 열로 시작한다.
+ * 열을 지워도 `cells` 의 값은 남아 있어, 같은 key 로 열을 다시 만들면 값이 그대로 보인다.
+ */
 export function creatorColumns(raw: unknown): Column[] {
   const stored = z.array(columnSchema).safeParse(raw);
-  if (!stored.success) return baseColumns;
-  const columns = stored.data.map((column) => {
-    const base = baseColumns.find(({ key }) => key === column.key);
-    return base ? { ...base, hidden: column.hidden } : column;
-  });
-  return [...columns, ...baseColumns.filter(({ key }) => !columns.some((column) => column.key === key))];
+  return stored.success && stored.data.length ? stored.data : baseColumns;
 }
 
 export function normalizeCell(column: Column, value: unknown) {

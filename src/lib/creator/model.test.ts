@@ -56,7 +56,9 @@ describe("creator operations", () => {
   });
 
   it("validates tab-separated Excel data and protects CSV cells", () => {
-    const columns = creatorColumns([{ key: "checked", label: "확인", type: "checkbox" }, { ...baseColumns[0], hidden: true }]);
+    // 저장된 구성을 그대로 쓰므로 쓰려는 열을 모두 적는다 — 기본 열이 뒤에 저절로 붙지 않는다.
+    const followers = baseColumns.find(({ key }) => key === "followers")!;
+    const columns = creatorColumns([{ ...baseColumns[0], hidden: true }, followers, { key: "checked", label: "확인", type: "checkbox" }]);
     const rows = pasteCandidates('이름\t팔로워\t확인\r\n"유진, 하진"\t1,024\t예', columns);
     expect(rows).toEqual([{ name: "유진, 하진", followers: 1024, checked: true }]);
     expect(columns.find(({ key }) => key === "name")?.hidden).toBe(true);
@@ -65,6 +67,27 @@ describe("creator operations", () => {
     expect(pasteCandidates(exported, columns)[0]).toMatchObject(rows[0]);
     expect(() => normalizeCell({ key: "url", label: "링크", type: "url" }, "javascript:alert(1)")).toThrow();
     expect(normalizeCell({ key: "url", label: "링크", type: "url" }, "https://example.test")).toBe("https://example.test");
+  });
+
+  it("저장한 열 구성을 그대로 쓴다 — 기본 열도 지울 수 있다", () => {
+    // 예전에는 저장 목록에 없는 기본 열을 뒤에 다시 붙여서, 지워도 되살아났다.
+    const kept = creatorColumns([{ key: "handle", label: "계정", type: "text" }]);
+    expect(kept.map(({ key }) => key)).toEqual(["handle"]);
+
+    // 기본 열의 이름과 형식도 마음대로 바꿀 수 있다.
+    const renamed = creatorColumns([{ key: "memo", label: "비고", type: "text" }]);
+    expect(renamed[0]).toMatchObject({ key: "memo", label: "비고" });
+
+    // 아직 한 번도 저장하지 않았으면 기본 열로 시작한다.
+    expect(creatorColumns([])).toEqual(baseColumns);
+    expect(creatorColumns(null)).toEqual(baseColumns);
+  });
+
+  it("열 너비는 범위 안에서만 저장된다", () => {
+    const withWidth = creatorColumns([{ key: "memo", label: "메모", type: "text", width: 240 }]);
+    expect(withWidth[0].width).toBe(240);
+    // 범위를 벗어난 값은 형식 오류라 저장분 전체가 무시되고 기본 열로 돌아간다 — 깨진 표를 그리지 않는다.
+    expect(creatorColumns([{ key: "memo", label: "메모", type: "text", width: 5000 }])).toEqual(baseColumns);
   });
 
   it("validates posting windows and supports evidence-only missions", () => {
