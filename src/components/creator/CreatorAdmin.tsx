@@ -58,8 +58,13 @@ export function CreatorAdmin({ projectId, projectName }: { projectId: string; pr
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "저장하지 못했어요.");
       setSaved(true);
-      try { await load(); }
-      catch { setError("저장했어요. 새로고침하면 최신 내용을 불러올 수 있어요."); }
+      try {
+        await load();
+        if (action.action === "unselect") {
+          setTab("applications");
+          toast.success("신청서 목록으로 돌려보냈어요.");
+        }
+      } catch { setError("저장했어요. 새로고침하면 최신 내용을 불러올 수 있어요."); }
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : "저장하지 못했어요.";

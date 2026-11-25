@@ -20,6 +20,7 @@ function Person({ person, program, origin, application, labels, save, copy }: {
   const [channels, setChannels] = useState(person.channels as Partial<Record<typeof platforms[number], string>>);
   const [busy, setBusy] = useState(false);
   const [confirmationPending, setConfirmationPending] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
   const portal = origin + "/creator-portal/" + person.token;
   const answers = Object.entries((application?.data ?? {}) as Record<string, unknown>).filter(([key]) => !key.startsWith("__"));
   const done = person.assignments.filter(({ status }) => status === "done").length;
@@ -100,6 +101,17 @@ function Person({ person, program, origin, application, labels, save, copy }: {
         </li>)}</ul>}
       </div>
     </details>}
+    {application && <button type="button" className={button + " justify-self-start text-destructive"} disabled={withdrawing || busy || confirmationPending}
+      onClick={async () => {
+        if (!(await confirm({
+          title: person.name + "님의 선발을 취소할까요?",
+          description: "신청서 탭에서 다시 선발할 수 있어요. 지금 보낸 개인 링크는 만료되고, 기존 미션과 활동비 기록은 보관돼요.",
+          confirmLabel: "선발 취소", tone: "danger",
+        }))) return;
+        setWithdrawing(true);
+        try { await save({ action: "unselect", id: person.id, token: person.token }); }
+        finally { setWithdrawing(false); }
+      }}>{withdrawing ? "처리 중…" : "선발 취소"}</button>}
   </article>;
 }
 
@@ -129,7 +141,7 @@ export function People({ program, applications, labels, origin, projectId, save,
 function PublicationEditor({ kind, program, origin, save, copy }: { kind: "roster" | "awards"; program: CreatorProgramView; origin: string; save: Save; copy: Copy }) {
   const confirm = useConfirm();
   const stored = publicationSchema.safeParse(program[kind]);
-  const published = stored.success;
+  const published = Boolean(stored.data?.entries.length);
   const label = kind === "roster" ? "선발 크리에이터 소개" : "우수 크리에이터 발표";
   const initial = stored.data ?? { title: label, background: "#ffffff", accent: "#4338ca" };
   const [theme, setTheme] = useState({ title: initial.title, background: initial.background, accent: initial.accent });

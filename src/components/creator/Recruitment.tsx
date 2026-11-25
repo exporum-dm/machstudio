@@ -37,7 +37,7 @@ export function CreatorSettings({ program, sources, origin, save, copy }: {
       <div className="grid gap-3 lg:grid-cols-3">
         <Field label="프로그램 이름"><Text required value={name} onChange={(event) => setName(event.target.value)} /></Field>
         <Field label="크리에이터 모집 폼">
-          <select className={input} value={application} onChange={(event) => setApplication(event.target.value)} disabled={program.participants.length > 0}>
+          <select className={input} value={application} onChange={(event) => setApplication(event.target.value)} disabled={program._count.participants > 0}>
             <option value="">연결 안 함</option>{sources.filter(({ mode }) => mode === "builder").map((source) => <option value={source.id} key={source.id}>{source.name}</option>)}
             {application && !sources.some(({ id }) => id === application) && <option value={application}>중지된 폼</option>}
           </select>
