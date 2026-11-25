@@ -2169,6 +2169,8 @@ model CreatorParticipant {
   name         String
   confirmed    Boolean @default(false)
   withdrawnAt  DateTime?
+  accessEmail  String?
+  driveFolder  String?
   profile      Json @default("{}")
   channels     Json @default("{}")
   feeStatus    String @default("unpaid")
@@ -2195,7 +2197,10 @@ model CreatorMission {
   title       String
   guide       String @default("")
   startsAt    DateTime?
-  dueAt       DateTime
+  dueAt       DateTime?
+  published   Boolean @default(true)
+  archivedAt  DateTime?
+  driveProof  String @default("off")
   platforms   String[]
   linkCount   Int @default(1)
   proof       String @default("optional")

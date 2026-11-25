@@ -102,12 +102,26 @@ export const publicationSchema = themeSchema.extend({
   entries: z.array(profileSchema.extend({ name: label, award: z.string().max(160).optional(), participantId: id.optional() })),
 });
 export type Publication = z.infer<typeof publicationSchema>;
+export const creatorAccessEmail = z.string().trim().toLowerCase().pipe(z.email().max(254));
+export const creatorDriveFolder = webUrl.refine((value) => {
+  const url = new URL(value);
+  return url.protocol === "https:" && !url.username && !url.password && url.hostname === "drive.google.com" && /^\/(?:drive\/(?:u\/\d+\/)?)?folders\/[\w-]+\/?$/.test(url.pathname);
+}, "Google Drive 폴더 주소를 입력해 주세요.");
+export const creatorDriveFile = webUrl.refine((value) => {
+  const url = new URL(value);
+  return url.protocol === "https:" && !url.username && !url.password && url.hostname === "drive.google.com" && (/^\/file\/d\/[\w-]+(?:\/|$)/.test(url.pathname) ||
+    (["/open", "/uc"].includes(url.pathname) && /^[\w-]+$/.test(url.searchParams.get("id") ?? "")));
+}, "Google Drive에 올린 영상의 파일 링크를 입력해 주세요.");
+
 export const missionSchema = z.object({
-  title: label, guide: details, startsAt: z.iso.datetime().nullable(), dueAt: z.iso.datetime(),
+  title: label, guide: details, startsAt: z.iso.datetime().nullable(), dueAt: z.iso.datetime().nullable(),
+  published: z.boolean().default(true), driveProof: z.enum(["off", "optional", "required"]).default("off"),
   platforms: z.array(platform).min(1).max(platforms.length), linkCount: z.number().int().min(0).max(10),
   proof: z.enum(["off", "optional", "required"]), draft: z.boolean(),
-}).refine((mission) => (!mission.startsAt || mission.startsAt < mission.dueAt) && (mission.linkCount > 0 || mission.proof === "required"),
-  "마감은 시작 이후여야 하며 제출 링크나 필수 증빙이 있어야 합니다.");
+}).refine((mission) => !mission.startsAt || !mission.dueAt || mission.startsAt < mission.dueAt,
+  { path: ["dueAt"], message: "마감은 게시 시작 이후로 설정해 주세요." })
+  .refine((mission) => mission.linkCount > 0 || mission.proof === "required" || mission.driveProof === "required",
+    { path: ["linkCount"], message: "게시 링크, 원본 링크, 증빙 파일 중 필수 항목을 하나 이상 설정해 주세요." });
 
 export const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("createApplicationForm") }),
@@ -121,11 +135,13 @@ export const actionSchema = z.discriminatedUnion("action", [
     name: label.optional(), confirmed: z.boolean().optional(), channels: z.partialRecord(platform, z.string().trim().max(160)).optional(),
     profile: profileSchema.optional(), feeStatus: z.enum(["unpaid", "scheduled", "paid"]).optional(), paidOn: date.nullable().optional(),
     owner: z.string().trim().max(160).optional(), contact: z.string().trim().max(400).optional(),
+    accessEmail: creatorAccessEmail.nullable().optional(), driveFolder: creatorDriveFolder.nullable().optional(),
     award: z.string().trim().max(160).optional(), awardOrder: z.number().int().min(0).max(10000).optional(),
   }) }),
   z.object({ action: z.literal("rotateAccess"), id }),
   z.object({ action: z.literal("unselect"), id, token: z.string().regex(/^cp_[A-Za-z0-9_-]{32}$/) }),
   z.object({ action: z.literal("mission"), id: id.optional(), mission: missionSchema }),
+  z.object({ action: z.literal("archiveMission"), id, archived: z.boolean() }),
   z.object({ action: z.literal("review"), id, version: z.number().int(), approved: z.boolean(), feedback: details }),
   z.object({ action: z.literal("contact"), id, channel: z.string().trim().min(1).max(50) }),
   z.object({ action: z.literal("publish"), kind: z.enum(["roster", "awards"]), theme: themeSchema.nullable() }),
@@ -133,12 +149,12 @@ export const actionSchema = z.discriminatedUnion("action", [
 export type CreatorAction = z.infer<typeof actionSchema>;
 
 export const submissionSchema = z.object({
-  version: z.number().int(), platform, links: z.array(webUrl).max(10), files: z.array(id).max(5), note: details,
+  version: z.number().int(), platform, links: z.array(webUrl).max(10), driveUrl: creatorDriveFile.optional(), files: z.array(id).max(5), note: details,
 });
 
 export type HistoryEntry =
-  | { kind: "submission"; stage: string; at: string; platform: string; links: string[]; files: string[]; note: string }
-  | { kind: "approved" | "revision"; stage: string; at: string; feedback: string };
+  | { kind: "submission"; stage: string; at: string; platform: string; links: string[]; driveUrl?: string; files: string[]; note: string }
+  | { kind: "approved" | "revision" | "withdrawn"; stage: string; at: string; feedback: string };
 
 export function reviewState(assignment: { stage: string; status: string }, approved: boolean) {
   if (assignment.status !== "review") return null;
@@ -146,10 +162,10 @@ export function reviewState(assignment: { stage: string; status: string }, appro
   return assignment.stage === "draft" ? { stage: "final", status: "todo" } : { stage: "final", status: "done" };
 }
 
-export function workQueue(assignment: { status: string; mission: { dueAt: string | Date } }, now: number) {
+export function workQueue(assignment: { status: string; mission: { dueAt: string | Date | null } }, now: number) {
   if (assignment.status === "review") return "review";
   if (assignment.status === "done") return null;
-  const remaining = new Date(assignment.mission.dueAt).getTime() - now;
+  const remaining = assignment.mission.dueAt === null ? Infinity : new Date(assignment.mission.dueAt).getTime() - now;
   if (remaining < 0) return "overdue";
   if (assignment.status === "revision") return "revision";
   return remaining <= 86400000 ? "soon" : null;

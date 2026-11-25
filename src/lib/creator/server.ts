@@ -4,6 +4,7 @@ import { Prisma } from "@/generated/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { localize, normalizeCollectForm } from "@/lib/collect-form-config";
+import { creatorEmailMatch } from "./entry";
 import { buildPublication, creatorColumns, normalizeCell, removePublishedCreator, reviewState, webUrl, type Cells, type CreatorAction, type HistoryEntry } from "./model";
 
 export class CreatorError extends Error {
@@ -81,7 +82,7 @@ export async function listCreatorPrograms(projectId: string) {
     orderBy: { createdAt: "desc" },
     select: {
       id: true, name: true, createdAt: true, applicationSourceId: true, registrationSourceId: true,
-      _count: { select: { candidates: true, missions: true } },
+      _count: { select: { candidates: true, missions: { where: { archivedAt: null } } } },
     },
   });
   const counts = await prisma.creatorParticipant.groupBy({
@@ -105,7 +106,7 @@ export async function loadCreator(projectId: string, programId: string) {
         applicationSource: { select: { formConfig: true } },
         _count: { select: { participants: true } },
         candidates: { orderBy: { createdAt: "asc" } },
-        missions: { orderBy: { dueAt: "asc" } },
+        missions: { orderBy: [{ dueAt: { sort: "asc", nulls: "last" } }, { id: "asc" }] },
         participants: {
           where: { withdrawnAt: null },
           orderBy: { name: "asc" },
@@ -275,7 +276,7 @@ export async function applyCreatorAction(auth: Awaited<ReturnType<typeof getCrea
           } : {},
         });
         await ensureLinks(tx, participant.id, participant.channels as Record<string, string>);
-        const missions = await tx.creatorMission.findMany({ where: { programId }, select: { id: true, draft: true } });
+        const missions = await tx.creatorMission.findMany({ where: { programId, archivedAt: null }, select: { id: true, draft: true } });
         await tx.creatorAssignment.createMany({
           data: missions.map((mission) => ({ participantId: participant.id, missionId: mission.id, stage: mission.draft ? "draft" : "final" })),
           skipDuplicates: true,
@@ -305,7 +306,22 @@ export async function applyCreatorAction(auth: Awaited<ReturnType<typeof getCrea
         break;
       }
       case "participant": {
-        const result = await tx.creatorParticipant.updateMany({ where: { id: action.id, programId, withdrawnAt: null }, data: action.patch });
+        if (action.patch.accessEmail) {
+          await tx.creatorProgram.update({ where: { id: programId }, data: { version: { increment: 1 } } });
+          const duplicate = await tx.creatorParticipant.findFirst({
+            where: { ...creatorEmailMatch(programId, action.patch.accessEmail), id: { not: action.id } },
+            select: { id: true },
+          });
+          if (duplicate) throw new CreatorError("같은 이메일을 쓰는 선발자가 있어요. 다른 이메일을 지정해 주세요.");
+        }
+        const where = { id: action.id, programId, withdrawnAt: null };
+        const current = action.patch.accessEmail === undefined ? null : await tx.creatorParticipant.findFirst({
+          where, select: { accessEmail: true },
+        });
+        const result = await tx.creatorParticipant.updateMany({
+          where,
+          data: { ...action.patch, ...(current && current.accessEmail !== action.patch.accessEmail ? { token: code("cp_") } : {}) },
+        });
         if (!result.count) throw missing();
         if (action.patch.channels) await ensureLinks(tx, action.id, action.patch.channels);
         break;
@@ -318,7 +334,7 @@ export async function applyCreatorAction(auth: Awaited<ReturnType<typeof getCrea
       case "mission": {
         await tx.creatorProgram.update({ where: { id: programId }, data: { version: { increment: 1 } } });
         const mission = action.id
-          ? await tx.creatorMission.update({ where: { id: action.id, programId }, data: action.mission })
+          ? await tx.creatorMission.update({ where: { id: action.id, programId, archivedAt: null }, data: action.mission })
           : await tx.creatorMission.create({ data: { ...action.mission, programId } });
         if (action.id) {
           await tx.creatorAssignment.updateMany({
@@ -337,6 +353,23 @@ export async function applyCreatorAction(auth: Awaited<ReturnType<typeof getCrea
         });
         break;
       }
+      case "archiveMission": {
+        await tx.creatorProgram.update({ where: { id: programId }, data: { version: { increment: 1 } } });
+        const result = await tx.creatorMission.updateMany({
+          where: { id: action.id, programId, archivedAt: action.archived ? null : { not: null } },
+          data: { archivedAt: action.archived ? new Date() : null },
+        });
+        if (!result.count) throw missing();
+        if (!action.archived) {
+          const active = await tx.creatorParticipant.findMany({ where: { programId, withdrawnAt: null }, select: { id: true } });
+          const mission = await tx.creatorMission.findUniqueOrThrow({ where: { id: action.id }, select: { draft: true } });
+          await tx.creatorAssignment.createMany({
+            data: active.map(({ id }) => ({ participantId: id, missionId: action.id, stage: mission.draft ? "draft" : "final" })),
+            skipDuplicates: true,
+          });
+        }
+        break;
+      }
       case "contact": {
         const contacts: ContactEntry[] = [{ at: new Date().toISOString(), userId, channel: action.channel }];
         const count = await tx.$executeRaw`
@@ -344,14 +377,14 @@ export async function applyCreatorAction(auth: Awaited<ReturnType<typeof getCrea
           SET contacts = a.contacts || ${JSON.stringify(contacts)}::jsonb
           FROM "CreatorMission" m, "CreatorParticipant" p
           WHERE a.id = ${action.id} AND a."missionId" = m.id AND a."participantId" = p.id
-            AND m."programId" = ${programId} AND p."programId" = ${programId} AND p."withdrawnAt" IS NULL
+            AND m."programId" = ${programId} AND m."archivedAt" IS NULL AND m.published AND p."programId" = ${programId} AND p."withdrawnAt" IS NULL
         `;
         if (!count) throw missing();
         break;
       }
       case "review": {
         const assignment = await tx.creatorAssignment.findFirst({
-          where: { id: action.id, mission: { programId }, participant: { programId, withdrawnAt: null } },
+          where: { id: action.id, mission: { programId, archivedAt: null, published: true }, participant: { programId, withdrawnAt: null } },
         });
         if (!assignment) throw missing();
         const at = new Date().toISOString();
@@ -359,7 +392,7 @@ export async function applyCreatorAction(auth: Awaited<ReturnType<typeof getCrea
         if (!state || assignment.version !== action.version) throw conflict();
         if (!action.approved && !action.feedback.trim()) throw new CreatorError("수정할 내용을 입력해 주세요.");
         const result = await tx.creatorAssignment.updateMany({
-          where: { id: assignment.id, version: assignment.version, participant: { withdrawnAt: null } },
+          where: { id: assignment.id, version: assignment.version, mission: { archivedAt: null, published: true }, participant: { withdrawnAt: null } },
           data: { ...state, version: { increment: 1 }, history: [
             ...jsonHistory<HistoryEntry>(assignment.history),
             { kind: action.approved ? "approved" : "revision", stage: assignment.stage, at, feedback: action.feedback.trim() },
@@ -401,7 +434,7 @@ export async function createCreatorProgram(
   const source = input.copyFrom
     ? await prisma.creatorProgram.findFirst({
         where: { id: input.copyFrom, projectId: project.id, deletedAt: null },
-        include: { missions: { orderBy: { dueAt: "asc" } } },
+        include: { missions: { where: { archivedAt: null }, orderBy: { dueAt: "asc" } } },
       })
     : null;
   if (input.copyFrom && !source) throw missing();
@@ -424,6 +457,7 @@ export async function createCreatorProgram(
         data: source.missions.map((mission) => ({
           programId: created.id, title: mission.title, guide: mission.guide,
           startsAt: mission.startsAt, dueAt: mission.dueAt, platforms: mission.platforms,
+          driveProof: mission.driveProof, published: mission.published,
           linkCount: mission.linkCount, proof: mission.proof, draft: mission.draft,
         })),
       });

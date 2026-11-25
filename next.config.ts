@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: "/creator-portal/:path*",
+        source: "/:creatorPath(creator-portal|creator-entry)/:path*",
         headers: [
           { key: "Cache-Control", value: "private, no-store" },
           { key: "Referrer-Policy", value: "no-referrer" },

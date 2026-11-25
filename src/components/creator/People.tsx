@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { creatorEntryPath } from "@/lib/creator/entry";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { buildPublication, platforms, profileSchema, publicationSchema, type CreatorAction } from "@/lib/creator/model";
 import type { CreatorPerson, CreatorProgramView, CreatorView } from "@/lib/creator/types";
@@ -36,7 +37,7 @@ function Person({ person, program, origin, application, labels, save, copy }: {
           {person.lastEmailedAt ? ` · 안내 메일 ${dateTime(person.lastEmailedAt)}` : ""}</p></div>
       <div className="flex flex-wrap gap-2">
         <a href={portal + "?preview=1"} className={button} target="_blank" rel="noopener noreferrer">개인 페이지 확인</a>
-        {origin && <button className={button} onClick={() => copy(portal)}>개인 링크 복사</button>}
+        {origin && <button className={button} onClick={() => copy(origin + creatorEntryPath(program.id))}>공통 활동 링크 복사</button>}
         <button className={button + " text-muted-foreground"} onClick={async () => {
           if (await confirm({ title: "개인 링크를 다시 발급할까요?", description: "해당 크리에이터에게 새 링크를 전달해야 해요.", tone: "danger" })) {
             await save({ action: "rotateAccess", id: person.id });
@@ -52,6 +53,7 @@ function Person({ person, program, origin, application, labels, save, copy }: {
       try {
         await save({ action: "participant", id: person.id, patch: {
           name: value("name"), owner: value("owner"), contact: value("contact"),
+          accessEmail: value("accessEmail").trim() || null, driveFolder: value("driveFolder").trim() || null,
           feeStatus: value("fee") as "unpaid" | "scheduled" | "paid", paidOn: value("paidOn") || null,
           award: value("award"), awardOrder: Number(value("awardOrder")), channels, profile,
         } });
@@ -67,6 +69,12 @@ function Person({ person, program, origin, application, labels, save, copy }: {
           try { await save({ action: "participant", id: person.id, patch: { confirmed } }); }
           finally { setConfirmationPending(false); }
         }} />참여 확정</label>
+        <Field label="활동 확인 이메일"><Text name="accessEmail" type="email" maxLength={254} defaultValue={person.accessEmail ?? ""} placeholder={application?.emailNormalized ?? "name@gmail.com"} />
+          <span className="text-xs text-muted-foreground">비워 두면 신청서 이메일을 사용해요.</span>
+        </Field>
+        <Field label="개인 Google Drive 업로드 폴더"><Text name="driveFolder" type="url" maxLength={2048} defaultValue={person.driveFolder ?? ""} placeholder="https://drive.google.com/drive/folders/…" />
+          <span className="text-xs text-muted-foreground">Drive에서 이 이메일에 편집자 권한을 주세요.</span>
+        </Field>
         <Field label="활동비 상태"><select className={input} name="fee" defaultValue={person.feeStatus}>{Object.entries(feeNames).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></Field>
         <Field label="지급일 또는 예정일"><Text name="paidOn" type="date" defaultValue={person.paidOn ?? ""} /></Field>
         <Field label="우수자 상명"><Text name="award" maxLength={160} defaultValue={person.award} placeholder="예. 최우수상" /></Field>

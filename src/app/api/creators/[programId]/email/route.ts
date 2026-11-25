@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/activity";
 import { emailConfigured, sendEmailBatch } from "@/lib/email";
 import { rateLimitAsync } from "@/lib/ratelimit";
+import { creatorEntryPath } from "@/lib/creator/entry";
 import { getPublicAppOrigin } from "@/lib/app-url";
 import { CreatorError, errorResponse, getCreatorProgram } from "@/lib/creator/server";
 import { creatorEmailHtml, recipientEmail } from "@/lib/creator/mail";
@@ -42,7 +43,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         ...(audience === "confirmed" ? { confirmed: true } : audience === "unconfirmed" ? { confirmed: false } : {}),
         ...(audience === "selected" ? { id: { in: participantIds ?? [] } } : {}),
       },
-      select: { id: true, name: true, token: true, contact: true, application: { select: { emailNormalized: true } } },
+      select: { id: true, name: true, contact: true, application: { select: { emailNormalized: true } } },
       orderBy: { name: "asc" },
     });
 
@@ -51,7 +52,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       id: person.id,
       name: person.name,
       email: recipientEmail(person.contact, person.application?.emailNormalized ?? null),
-      portalUrl: includePortalLink && origin ? origin + "/creator-portal/" + person.token : "",
+      portalUrl: includePortalLink && origin ? origin + creatorEntryPath(program.id) : "",
     }));
     const sendable = targets.filter((target) => target.email);
     const missing = targets.filter((target) => !target.email).map((target) => target.name);
