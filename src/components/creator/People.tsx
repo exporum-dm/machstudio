@@ -115,8 +115,8 @@ function Person({ person, program, origin, application, labels, save, copy }: {
   </article>;
 }
 
-export function People({ program, applications, labels, origin, projectId, save, copy }: {
-  program: CreatorProgramView; applications: CreatorView["applications"]; labels: Record<string, string>; origin: string; projectId: string; save: Save; copy: Copy;
+export function People({ program, applications, labels, origin, programId, save, copy }: {
+  program: CreatorProgramView; applications: CreatorView["applications"]; labels: Record<string, string>; origin: string; programId: string; save: Save; copy: Copy;
 }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
@@ -132,7 +132,7 @@ export function People({ program, applications, labels, origin, projectId, save,
         </select>
       </div>
     </div>
-    <div className={panel}><AnnounceMail program={program} projectId={projectId} /></div>
+    <div className={panel}><AnnounceMail program={program} programId={programId} /></div>
     {people.map((person) => <Person key={person.id} person={person} program={program} application={person.applicationId ? records.get(person.applicationId) : undefined} labels={labels} origin={origin} save={save} copy={copy} />)}
     {!people.length && <Empty>{program.participants.length ? "검색 결과가 없어요." : "신청서 탭에서 크리에이터를 선발하면 여기에 표시돼요."}</Empty>}
   </section>;

@@ -38,7 +38,11 @@ describe("메뉴 경로 계층", () => {
     ).toEqual([]);
   });
 
-  it("동적 구간이 하나도 없는 트리에서도 조용히 통과한다", () => {
-    expect(dynamicSegments(join(APP_DIR, "creators"))).toEqual([]);
+  it("메뉴가 만든 자원의 동적 구간은 막지 않는다", () => {
+    // 크리에이터 관리의 `[id]` 는 **회차**다 — 전시는 매년 열리니 메뉴 안에 자원이 쌓인다.
+    // 막아야 하는 건 프로젝트를 고르게 하는 구간뿐이고, 자원 구간은 등록(`collect/[id]`)과 같다.
+    const segments = dynamicSegments(join(APP_DIR, "creators"));
+    expect(segments).toEqual(["[id]"]);
+    expect(segments.filter((route) => /^\[\.{0,3}project/i.test(route))).toEqual([]);
   });
 });

@@ -43,14 +43,64 @@ export async function getCreatorProject(projectId: string) {
   return { userId: user.id, project: rest, role: workspace.members[0]?.role ?? "MEMBER" };
 }
 
-export async function loadCreator(projectId: string) {
+/**
+ * 회차 하나를 열 권한 확인. 프로그램 → 프로젝트 → 워크스페이스 멤버십까지 **서버에서** 거슬러 본다.
+ * 화면이 보낸 projectId 를 믿지 않고 URL 의 회차가 실제로 어느 전시 소속인지로 판단한다.
+ */
+export async function getCreatorProgram(programId: string) {
+  const auth = await createClient();
+  const { data: { user } } = await auth.auth.getUser();
+  if (!user) throw new CreatorError("로그인이 필요해요.", 401);
+  const program = await prisma.creatorProgram.findFirst({
+    where: {
+      id: programId, deletedAt: null,
+      project: {
+        deletedAt: null,
+        workspace: { deletedAt: null, members: { some: { userId: user.id, role: { in: ["OWNER", "ADMIN", "MEMBER"] } } } },
+      },
+    },
+    select: {
+      id: true, name: true, version: true,
+      project: {
+        select: {
+          id: true, name: true, workspaceId: true,
+          workspace: { select: { members: { where: { userId: user.id }, select: { role: true }, take: 1 } } },
+        },
+      },
+    },
+  });
+  if (!program) throw missing();
+  const { workspace, ...project } = program.project;
+  return { userId: user.id, project, role: workspace.members[0]?.role ?? "MEMBER", programId: program.id };
+}
+
+/** 한 전시의 회차 목록 — 등록 메뉴가 폼 목록을 보여 주는 자리와 같다. */
+export async function listCreatorPrograms(projectId: string) {
+  const programs = await prisma.creatorProgram.findMany({
+    where: { projectId, deletedAt: null },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true, name: true, createdAt: true, applicationSourceId: true, registrationSourceId: true,
+      _count: { select: { candidates: true, missions: true } },
+    },
+  });
+  const counts = await prisma.creatorParticipant.groupBy({
+    by: ["programId"],
+    where: { programId: { in: programs.map(({ id }) => id) }, withdrawnAt: null },
+    _count: { _all: true },
+  });
+  const people = new Map(counts.map((row) => [row.programId, row._count._all]));
+  return programs.map((program) => ({ ...program, participants: people.get(program.id) ?? 0 }));
+}
+
+export async function loadCreator(projectId: string, programId: string) {
   const [sources, program] = await Promise.all([
     prisma.collectSource.findMany({
       where: { projectId, deletedAt: null, isActive: true },
       select: { id: true, name: true, mode: true, siteUrl: true, dedupKeyFields: true }, orderBy: { name: "asc" },
     }),
-    prisma.creatorProgram.findUnique({
-      where: { projectId },
+    prisma.creatorProgram.findFirst({
+      where: { id: programId, deletedAt: null },
       include: {
         applicationSource: { select: { formConfig: true } },
         _count: { select: { participants: true } },
@@ -106,17 +156,11 @@ async function ensureLinks(tx: Prisma.TransactionClient, participantId: string, 
   });
 }
 
-export async function applyCreatorAction(auth: Awaited<ReturnType<typeof getCreatorProject>>, action: CreatorAction) {
-  const { project, userId } = auth;
-  if (action.action === "create") {
-    await prisma.creatorProgram.upsert({
-      where: { projectId: project.id }, create: { projectId: project.id, name: project.name }, update: {},
-    });
-    return;
-  }
+export async function applyCreatorAction(auth: Awaited<ReturnType<typeof getCreatorProgram>>, action: CreatorAction) {
+  const { project, userId, programId: scoped } = auth;
 
   await prisma.$transaction(async (tx) => {
-    const program = await tx.creatorProgram.findUnique({ where: { projectId: project.id } });
+    const program = await tx.creatorProgram.findFirst({ where: { id: scoped, projectId: project.id, deletedAt: null } });
     if (!program) throw missing();
     const programId = program.id;
 
@@ -340,4 +384,59 @@ export async function applyCreatorAction(auth: Awaited<ReturnType<typeof getCrea
 
 export function isPreviewUrl(url: URL) {
   return url.searchParams.has("preview");
+}
+
+/**
+ * 새 회차를 연다. `copyFrom` 을 주면 **짜 둔 틀만** 가져온다 — 표 열 구성·UTM 규칙·미션·발표 색.
+ * 후보·선발자·제출 이력은 새 해의 것이므로 비운 채 시작한다.
+ *
+ * 모집 폼과 등록 폼 연결은 **일부러 가져오지 않는다.** 그대로 복사하면 올해 후보가 작년 폼으로
+ * 접수되고, 작년 등록 실적에 올해 클릭이 섞인다. 새 회차에서 폼을 새로 고르게 한다.
+ */
+export async function createCreatorProgram(
+  auth: Awaited<ReturnType<typeof getCreatorProject>>,
+  input: { name: string; copyFrom?: string | null },
+) {
+  const { project } = auth;
+  const source = input.copyFrom
+    ? await prisma.creatorProgram.findFirst({
+        where: { id: input.copyFrom, projectId: project.id, deletedAt: null },
+        include: { missions: { orderBy: { dueAt: "asc" } } },
+      })
+    : null;
+  if (input.copyFrom && !source) throw missing();
+
+  return prisma.$transaction(async (tx) => {
+    const created = await tx.creatorProgram.create({
+      data: {
+        projectId: project.id,
+        name: input.name,
+        columns: (source?.columns ?? []) as Prisma.InputJsonValue,
+        utm: (source?.utm ?? {}) as Prisma.InputJsonValue,
+        // 발표 화면은 색만 물려받는다 — 사람 목록은 새 회차에서 다시 쌓인다.
+        roster: Prisma.DbNull,
+        awards: Prisma.DbNull,
+      },
+      select: { id: true, name: true },
+    });
+    if (source?.missions.length) {
+      await tx.creatorMission.createMany({
+        data: source.missions.map((mission) => ({
+          programId: created.id, title: mission.title, guide: mission.guide,
+          startsAt: mission.startsAt, dueAt: mission.dueAt, platforms: mission.platforms,
+          linkCount: mission.linkCount, proof: mission.proof, draft: mission.draft,
+        })),
+      });
+    }
+    return { ...created, copiedMissions: source?.missions.length ?? 0 };
+  });
+}
+
+/** 회차를 목록에서 감춘다. 후보·선발자·제출 이력은 남긴다 — 지난 회차 실적을 지워 버리지 않기 위해서다. */
+export async function deleteCreatorProgram(auth: Awaited<ReturnType<typeof getCreatorProgram>>) {
+  const result = await prisma.creatorProgram.updateMany({
+    where: { id: auth.programId, projectId: auth.project.id, deletedAt: null },
+    data: { deletedAt: new Date() },
+  });
+  if (!result.count) throw missing();
 }

@@ -104,7 +104,6 @@ export const missionSchema = z.object({
   "마감은 시작 이후여야 하며 제출 링크나 필수 증빙이 있어야 합니다.");
 
 export const actionSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("create") }),
   z.object({ action: z.literal("createApplicationForm") }),
   z.object({ action: z.literal("settings"), name: label, applicationSourceId: id.nullable(), registrationSourceId: id.nullable(), utm: utmSchema }),
   z.object({ action: z.literal("columns"), columns: z.array(columnSchema).max(80) }),

@@ -73,7 +73,7 @@ function queueContactUrl(contact: string) {
   return "";
 }
 
-function QueueItem({ work, group, projectId, origin, save, copy }: { work: Work; group: Queue; projectId: string; origin: string; save: Save; copy: Copy }) {
+function QueueItem({ work, group, programId, origin, save, copy }: { work: Work; group: Queue; programId: string; origin: string; save: Save; copy: Copy }) {
   const { person, assignment, mission, contact } = work;
   const [feedback, setFeedback] = useState("");
   const [method, setMethod] = useState("DM");
@@ -97,7 +97,7 @@ function QueueItem({ work, group, projectId, origin, save, copy }: { work: Work;
       <span className="text-xs text-muted-foreground">{last ? "최근 연락 " + dateTime(last.at) + " · " + last.channel : "연락 기록 없음"}</span>
     </div>
     {group === "review" ? <>
-      <History history={assignment.history} proofBase={"/api/creators/" + projectId + "/proof/"} uploads={assignment.uploads} />
+      <History history={assignment.history} proofBase={"/api/creators/" + programId + "/proof/"} uploads={assignment.uploads} />
       <Field label="검수 피드백"><textarea className={input} rows={2} value={feedback} onChange={(event) => setFeedback(event.target.value)} placeholder="수정 요청할 때는 변경 내용을 입력해 주세요." /></Field>
       <div className="flex flex-wrap gap-2">
         <button className={primary} disabled={busy} onClick={() => void submit({ action: "review", id: assignment.id, version: assignment.version, approved: true, feedback })}>{assignment.stage === "draft" ? "초안 승인" : "완료 승인"}</button>
@@ -158,8 +158,8 @@ function ConversionMetrics({ program, registrations }: { program: CreatorProgram
   </section>;
 }
 
-export function Dashboard({ data, program, projectId, origin, save, copy }: {
-  data: CreatorView; program: CreatorProgramView; projectId: string; origin: string; save: Save; copy: Copy;
+export function Dashboard({ data, program, programId, origin, save, copy }: {
+  data: CreatorView; program: CreatorProgramView; programId: string; origin: string; save: Save; copy: Copy;
 }) {
   const [group, setGroup] = useState<Queue>("soon");
   const [now] = useState(() => Date.now());
@@ -183,7 +183,7 @@ export function Dashboard({ data, program, projectId, origin, save, copy }: {
         ))}
       </div>
       {!queues[group].length ? <Empty>해당하는 미션이 없어요.</Empty> : queues[group].map((work) => (
-        <QueueItem key={work.assignment.id} work={work} group={group} projectId={projectId} origin={origin} save={save} copy={copy} />
+        <QueueItem key={work.assignment.id} work={work} group={group} programId={programId} origin={origin} save={save} copy={copy} />
       ))}
     </section>
     <section className={panel + " grid gap-4"}>

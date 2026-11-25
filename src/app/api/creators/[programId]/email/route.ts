@@ -5,7 +5,7 @@ import { logActivity } from "@/lib/activity";
 import { emailConfigured, sendEmailBatch } from "@/lib/email";
 import { rateLimitAsync } from "@/lib/ratelimit";
 import { getPublicAppOrigin } from "@/lib/app-url";
-import { CreatorError, errorResponse, getCreatorProject } from "@/lib/creator/server";
+import { CreatorError, errorResponse, getCreatorProgram } from "@/lib/creator/server";
 import { creatorEmailHtml, recipientEmail } from "@/lib/creator/mail";
 
 const bodySchema = z.object({
@@ -19,20 +19,21 @@ const bodySchema = z.object({
 });
 
 // 선발 크리에이터 안내 메일 — 밖으로 나가는 대량 발송이라 명단 내보내기와 같은 등급으로 관리자 이상만.
-export async function POST(request: Request, { params }: { params: Promise<{ projectId: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ programId: string }> }) {
   try {
-    const auth = await getCreatorProject((await params).projectId);
+    const auth = await getCreatorProgram((await params).programId);
     if (auth.role === "MEMBER") throw new CreatorError("안내 메일 발송 권한이 없어요. 관리자에게 문의하세요.", 403);
 
     const input = bodySchema.safeParse(await request.json());
     if (!input.success) throw new CreatorError(input.error.issues[0]?.message ?? "입력값을 확인해 주세요.");
     const { subject, message, audience, participantIds, includePortalLink, buttonLabel, preview } = input.data;
 
-    const program = await prisma.creatorProgram.findUnique({
-      where: { projectId: auth.project.id },
+    // 이 회차의 선발자에게만 — 같은 전시의 다른 해 명단이 섞이지 않게 programId 로 묶는다.
+    const program = await prisma.creatorProgram.findFirst({
+      where: { id: auth.programId, projectId: auth.project.id, deletedAt: null },
       select: { id: true, name: true },
     });
-    if (!program) throw new CreatorError("크리에이터 프로그램이 없어요.", 404);
+    if (!program) throw new CreatorError("크리에이터 회차를 찾을 수 없어요.", 404);
 
     const people = await prisma.creatorParticipant.findMany({
       where: {
