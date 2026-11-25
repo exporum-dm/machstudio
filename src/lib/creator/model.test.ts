@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { creatorAccessEmail, creatorDriveFile, creatorDriveFolder, baseColumns, buildPublication, CONTACT_LINK_SENT, CONTACT_TALKING, creatorColumns, defaultUtm, missionSchema, normalizeCell, removePublishedCreator, reviewState, trackingUrl, workQueue } from "./model";
+import { creatorAccessEmail, creatorDriveFile, creatorDriveFolder, baseColumns, buildPublication, CONTACT_LINK_SENT, CONTACT_TALKING, creatorColumns, defaultUtm, missionSchema, missionSubmissionFields, normalizeCell, removePublishedCreator, reviewState, trackingUrl, validateMissionSubmission, workQueue } from "./model";
 import { candidateCsv, pasteCandidates } from "./sheet";
 
 describe("creator operations", () => {
@@ -112,13 +112,29 @@ describe("creator operations", () => {
     expect(creatorDriveFile.safeParse("https://drive.google.com.bad.test/file/d/abc-123/view").success).toBe(false);
 
     const draft = { title: "원본 제출", guide: "", startsAt: null, dueAt: null, published: false, platforms: ["instagram"],
-      linkCount: 0, proof: "off", driveProof: "required", draft: true };
+      linkCount: 1, proof: "off", driveProof: "required", draft: true };
     expect(missionSchema.safeParse(draft).success).toBe(true);
-    expect(missionSchema.safeParse({ ...draft, driveProof: "optional" }).success).toBe(false);
+    expect(missionSchema.safeParse({ ...draft, linkCount: 0 }).success).toBe(false);
+  });
+
+  it("requires the Drive file and caption before approval, then only takes a post link", () => {
+    const mission = { draft: true, linkCount: 1, proof: "required", driveProof: "required" };
+    const draft = missionSubmissionFields("draft", mission);
+    const draftWork = { platform: "instagram", links: [], files: [], note: "새 캡션", driveUrl: "https://drive.google.com/file/d/video/view" };
+    const post = { platform: "instagram", links: ["https://www.instagram.com/reel/example/"], files: [], note: "" };
+    expect(validateMissionSubmission(draft, { ...post, note: " " })).toHaveProperty("drive");
+    expect(validateMissionSubmission(draft, { ...draftWork, note: " " })).toHaveProperty("note");
+    expect(validateMissionSubmission(draft, draftWork)).toEqual({});
+    expect(reviewState({ stage: "draft", status: "review" }, false)).toEqual({ stage: "draft", status: "revision" });
+    expect(reviewState({ stage: "draft", status: "review" }, true)).toEqual({ stage: "final", status: "todo" });
+    const final = missionSubmissionFields("final", { ...mission, draft: false }, [{ kind: "approved", stage: "draft" }]);
+    expect(validateMissionSubmission(final, draftWork)).toHaveProperty("drive");
+    expect(validateMissionSubmission(final, { ...post, links: ["https://instagram.com.example.test/reel/example/"] })).toHaveProperty("links");
+    expect(validateMissionSubmission(final, post)).toEqual({});
   });
 
   it("validates posting windows and supports evidence-only missions", () => {
-    const mission = { title: "스토리", guide: "", startsAt: "2026-11-24T00:00:00.000Z", dueAt: "2026-11-25T00:00:00.000Z", platforms: ["instagram"], draft: true, linkCount: 0, proof: "required" };
+    const mission = { title: "스토리", guide: "", startsAt: "2026-11-24T00:00:00.000Z", dueAt: "2026-11-25T00:00:00.000Z", platforms: ["instagram"], draft: false, linkCount: 0, proof: "required" };
     expect(missionSchema.safeParse(mission).success).toBe(true);
     expect(missionSchema.safeParse({ ...mission, proof: "off" }).success).toBe(false);
     expect(missionSchema.safeParse({ ...mission, dueAt: mission.startsAt }).success).toBe(false);

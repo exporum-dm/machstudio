@@ -1,6 +1,6 @@
-﻿import { buildStkCss } from "@/lib/stk-css";
+import { buildStkCss } from "@/lib/stk-css";
 import { contrastRatio } from "@/lib/color";
-import type { Publication } from "@/lib/creator/model";
+import { webUrl, type Publication } from "@/lib/creator/model";
 import { parseAccount } from "@/lib/creator/social";
 
 const publicationCss = `
@@ -97,6 +97,7 @@ export function CreatorPublication({ publication, kicker, awards = false }: { pu
                 ["활동 지역", entry.region], ["언어", entry.languages],
                 ["공개 연락처", entry.publicContact],
               ].filter(([, value]) => value?.trim());
+              const answers = entry.answers ?? [];
               const account = entry.social ? parseAccount(entry.social) : null;
               return (
                 <article key={entry.participantId ?? index} className="mcp-card">
@@ -110,9 +111,12 @@ export function CreatorPublication({ publication, kicker, awards = false }: { pu
                     {account?.platform && account.handle && <p className="mcp-handle">@{account.handle}</p>}
                     {entry.bio?.trim() && <p className="mcp-bio">{entry.bio}</p>}
                     {!awards && tags.length > 0 && <div className="mcp-tags">{tags.map((tag, i) => <span key={i} className="mcp-tag">{tag}</span>)}</div>}
-                    {(details.length > 0 || entry.social) && <div className="mcp-footer">
-                      {details.length > 0 && <dl className="mcp-details">
+                    {(details.length > 0 || answers.length > 0 || entry.social) && <div className="mcp-footer">
+                      {(details.length > 0 || answers.length > 0) && <dl className="mcp-details">
                         {details.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+                        {answers.map(({ label, value }, index) => <div key={index}><dt>{label}</dt><dd>
+                          {webUrl.safeParse(value).success ? <a href={value} target="_blank" rel="noopener noreferrer">링크 열기</a> : value}
+                        </dd></div>)}
                       </dl>}
                       {entry.social && <a className="mcp-link" href={entry.social} target="_blank" rel="noopener noreferrer">SNS 보기</a>}
                     </div>}

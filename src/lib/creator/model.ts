@@ -110,8 +110,13 @@ export const profileSchema = z.object({
   publicContact: z.string().max(240).optional(), social: urlOrEmpty.optional(),
 });
 export const themeSchema = z.object({ title: label, background: hex, accent: hex });
+const publicationFields = z.array(z.string().min(1).max(200)).max(100);
+const publicAnswer = z.object({ label: z.string().max(500), value: details });
 export const publicationSchema = themeSchema.extend({
-  entries: z.array(profileSchema.extend({ name: label, award: z.string().max(160).optional(), participantId: id.optional() })),
+  applicationFields: publicationFields.optional(),
+  entries: z.array(profileSchema.extend({
+    name: label, award: z.string().max(160).optional(), participantId: id.optional(), answers: z.array(publicAnswer).optional(),
+  })),
 });
 export type Publication = z.infer<typeof publicationSchema>;
 export const creatorAccessEmail = z.string().trim().toLowerCase().pipe(z.email().max(254));
@@ -132,8 +137,10 @@ export const missionSchema = z.object({
   proof: z.enum(["off", "optional", "required"]), draft: z.boolean(),
 }).refine((mission) => !mission.startsAt || !mission.dueAt || mission.startsAt < mission.dueAt,
   { path: ["dueAt"], message: "마감은 게시 시작 이후로 설정해 주세요." })
-  .refine((mission) => mission.linkCount > 0 || mission.proof === "required" || mission.driveProof === "required",
-    { path: ["linkCount"], message: "게시 링크, 원본 링크, 증빙 파일 중 필수 항목을 하나 이상 설정해 주세요." });
+  .refine((mission) => mission.draft || mission.linkCount > 0 || mission.proof === "required" || mission.driveProof === "required",
+    { path: ["linkCount"], message: "게시 링크, 원본 링크, 증빙 파일 중 필수 항목을 하나 이상 설정해 주세요." })
+  .refine((mission) => !mission.draft || mission.linkCount > 0,
+    { path: ["linkCount"], message: "초안 검수를 사용하는 미션은 최종 게시 링크를 하나 이상 받아야 해요." });
 
 export const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("createApplicationForm") }),
@@ -157,13 +164,41 @@ export const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("archiveMission"), id, archived: z.boolean() }),
   z.object({ action: z.literal("review"), id, version: z.number().int(), approved: z.boolean(), feedback: details }),
   z.object({ action: z.literal("contact"), id, channel: z.string().trim().min(1).max(50) }),
-  z.object({ action: z.literal("publish"), kind: z.enum(["roster", "awards"]), theme: themeSchema.nullable() }),
+  z.object({ action: z.literal("publish"), kind: z.enum(["roster", "awards"]), theme: themeSchema.nullable(), applicationFields: publicationFields.optional() }),
 ]);
 export type CreatorAction = z.infer<typeof actionSchema>;
 
 export const submissionSchema = z.object({
   version: z.number().int(), platform, links: z.array(webUrl).max(10), driveUrl: creatorDriveFile.optional(), files: z.array(id).max(5), note: details,
 });
+
+export function missionSubmissionFields(stage: string, mission: {
+  draft: boolean; linkCount: number; proof: string; driveProof: string;
+}, history?: unknown) {
+  if (stage === "draft") return { linkCount: 0, drive: "required", proof: "off", note: "caption" };
+  const approvedDraft = Array.isArray(history) && (history as HistoryEntry[])
+    .some(({ kind, stage }) => kind === "approved" && stage === "draft");
+  if (mission.draft || approvedDraft) return { linkCount: Math.max(1, mission.linkCount), drive: "off", proof: "off", note: "off" };
+  return { linkCount: mission.linkCount, drive: mission.driveProof, proof: mission.proof, note: "optional" };
+}
+
+export function validateMissionSubmission(fields: ReturnType<typeof missionSubmissionFields>, submission: {
+  platform: string; links: string[]; driveUrl?: string; files: unknown[]; note: string;
+}) {
+  const wrongInstagramLink = fields.note === "off" && submission.platform === "instagram" &&
+    submission.links.some((link) => !webUrl.safeParse(link).success || !/(^|\.)instagram\.com$/i.test(new URL(link).hostname));
+  return {
+    ...(new Set(submission.links).size < fields.linkCount ? { links: "서로 다른 게시 링크 " + fields.linkCount + "개를 입력해 주세요." } :
+      fields.linkCount === 0 && submission.links.length ? { links: "이 단계는 게시 링크를 받지 않아요." } :
+      wrongInstagramLink ? { links: "인스타그램에서 복사한 게시 링크를 입력해 주세요." } : {}),
+    ...(fields.drive === "required" && !submission.driveUrl ? { drive: "Drive 원본 영상 링크를 입력해 주세요." } :
+      fields.drive === "off" && submission.driveUrl ? { drive: "이 단계는 Drive 원본 영상 링크를 받지 않아요." } : {}),
+    ...(fields.proof === "required" && !submission.files.length ? { files: "증빙 파일을 첨부해 주세요." } :
+      fields.proof === "off" && submission.files.length ? { files: "이 단계는 증빙 파일 첨부를 받지 않아요." } : {}),
+    ...(fields.note === "caption" && !submission.note.trim() ? { note: "게시물에 사용할 캡션을 입력해 주세요." } :
+      fields.note === "off" && submission.note.trim() ? { note: "이 단계는 게시 링크만 받아요." } : {}),
+  };
+}
 
 export type HistoryEntry =
   | { kind: "submission"; stage: string; at: string; platform: string; links: string[]; driveUrl?: string; files: string[]; note: string }
@@ -186,15 +221,28 @@ export function workQueue(assignment: { status: string; mission: { dueAt: string
 
 export function buildPublication(kind: "roster" | "awards", theme: z.infer<typeof themeSchema>, people: {
   id?: string; name: string; award: string; awardOrder: number; profile: unknown;
-}[]): Publication {
+  applicationId?: string | null; applicationData?: unknown;
+}[], selected: string[] = [], labels: Record<string, string> = {}): Publication {
+  const applicationFields = [...new Set(selected)].filter((key) => !key.startsWith("__") && Object.hasOwn(labels, key));
   const entries = people.filter((person) => kind === "roster" || person.award)
     .sort((a, b) => (kind === "awards" ? a.awardOrder - b.awardOrder : 0) || a.name.localeCompare(b.name, "ko"))
-    .map((person) => ({
-      ...profileSchema.parse(person.profile), name: person.name,
-      ...(kind === "awards" ? { award: person.award } : {}),
-      ...(person.id ? { participantId: person.id } : {}),
-    }));
-  return { ...theme, entries };
+    .map((person) => {
+      const data = person.applicationData as Record<string, unknown> | undefined;
+      const answers = applicationFields.flatMap((key) => {
+        if (!data || !Object.hasOwn(data, key)) return [];
+        const raw = data[key];
+        const parts = Array.isArray(raw) ? raw : [raw];
+        const value = parts.filter((item) => ["string", "number", "boolean"].includes(typeof item)).join(", ").trim();
+        return value ? [{ label: labels[key].slice(0, 500), value: value.slice(0, 10000) }] : [];
+      });
+      return {
+        ...(person.applicationId ? { answers } : profileSchema.parse(person.profile)),
+        name: person.name,
+        ...(kind === "awards" ? { award: person.award } : {}),
+        ...(person.id ? { participantId: person.id } : {}),
+      };
+    });
+  return { ...theme, applicationFields, entries };
 }
 
 export function removePublishedCreator(raw: unknown, person: { id: string; name: string; profile: unknown; award: string }): Publication | undefined {
