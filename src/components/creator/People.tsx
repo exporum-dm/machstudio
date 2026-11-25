@@ -1,175 +1,25 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { creatorEntryPath } from "@/lib/creator/entry";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { buildPublication, creatorDriveFolder, isCreatorAwarded, platforms, publicationSchema, type CreatorAction } from "@/lib/creator/model";
-import type { CreatorPerson, CreatorProgramView, CreatorView } from "@/lib/creator/types";
+import { buildPublication, publicationSchema, type CreatorAction } from "@/lib/creator/model";
+import type { CreatorProgramView, CreatorView } from "@/lib/creator/types";
 import { CreatorPublication } from "./Publication";
-import { applicationText } from "./Recruitment";
+import { PeopleTable } from "./PeopleTable";
 import { AnnounceMail } from "./AnnounceMail";
-import { button, primary, panel, input, dateTime, Empty, Field, Text, feeNames, statusNames } from "./ui";
+import { button, primary, panel, input, Empty, Field, Text } from "./ui";
 
 type Save = (action: CreatorAction) => Promise<boolean>;
 type Copy = (value: string) => void;
 
-function Person({ person, program, origin, application, labels, save, copy }: {
-  person: CreatorPerson; program: CreatorProgramView; origin: string; application?: CreatorView["applications"][number]; labels: Record<string, string>; save: Save; copy: Copy;
-}) {
-  const confirm = useConfirm();
-  const [folderError, setFolderError] = useState("");
-  const [channels, setChannels] = useState(person.channels as Partial<Record<typeof platforms[number], string>>);
-  const [busy, setBusy] = useState(false);
-  const [statusPending, setStatusPending] = useState(false);
-  const [withdrawing, setWithdrawing] = useState(false);
-  const portal = origin + "/creator-portal/" + person.token;
-  const answers = Object.entries((application?.data ?? {}) as Record<string, unknown>).filter(([key]) => !key.startsWith("__"));
-  const done = person.assignments.filter(({ status }) => status === "done").length;
-  const publishedFolder = person.driveFolder;
-
-  return <article className={panel + " grid gap-4"}>
-    <div className="flex flex-wrap items-start justify-between gap-2">
-      <div><h3 className="break-words text-lg font-semibold">{person.name}</h3>
-        <p className="text-sm text-muted-foreground">{person.confirmed ? "참여 확정" : "선발 · 참여 확인 전"} · 미션 {done}/{person.assignments.length}
-          {person.lastEmailedAt ? ` · 안내 메일 ${dateTime(person.lastEmailedAt)}` : ""}</p></div>
-      <div className="flex flex-wrap gap-2">
-        <a href={portal + "?preview=1"} className={button} target="_blank" rel="noopener noreferrer">이 선발자의 활동 화면</a>
-        {origin && <button className={button} onClick={() => copy(origin + creatorEntryPath(program.id))}>공통 활동 링크 복사</button>}
-        <button className={button + " text-muted-foreground"} onClick={async () => {
-          if (await confirm({ title: "개인 링크를 다시 발급할까요?", description: "해당 크리에이터에게 새 링크를 전달해야 해요.", tone: "danger" })) {
-            await save({ action: "rotateAccess", id: person.id });
-          }
-        }}>링크 재발급</button>
-      </div>
-    </div>
-    <fieldset className="flex flex-wrap gap-x-6 gap-y-2 rounded-xl bg-muted/35 p-3" disabled={statusPending || withdrawing}>
-      <legend className="px-1 text-sm font-medium">활동 상태</legend>
-      {([
-        { field: "confirmed", label: "참여 확정", checked: person.confirmed },
-        { field: "completed", label: "수료", checked: person.completed },
-        { field: "awardSelected", label: "우수자 선정", checked: isCreatorAwarded(person) },
-      ] as const).map(({ field, label, checked }) => (
-        <label key={field} className="flex min-h-8 items-center gap-2 text-sm">
-          <input type="checkbox" checked={checked} onChange={async (event) => {
-            const value = event.target.checked;
-            setStatusPending(true);
-            try { await save({ action: "participant", id: person.id, patch: { [field]: value } }); }
-            finally { setStatusPending(false); }
-          }} />
-          {label}
-        </label>
-      ))}
-    </fieldset>
-    <form className="grid gap-4" onSubmit={async (event) => {
-      event.preventDefault();
-      const form = new FormData(event.currentTarget);
-      const value = (key: string) => String(form.get(key) ?? "");
-      const driveFolder = value("driveFolder").trim();
-      if (driveFolder && !creatorDriveFolder.safeParse(driveFolder).success) {
-        setFolderError("Google Drive 폴더 주소를 입력해 주세요.");
-        event.currentTarget.querySelector<HTMLInputElement>('[name="driveFolder"]')?.focus();
-        return;
-      }
-      setFolderError("");
-      setBusy(true);
-      try {
-        await save({ action: "participant", id: person.id, patch: {
-          name: value("name"), owner: value("owner"), contact: value("contact"),
-          accessEmail: value("accessEmail").trim() || null, driveFolder: driveFolder || null,
-          feeStatus: value("fee") as "unpaid" | "scheduled" | "paid", paidOn: value("paidOn") || null,
-          award: value("award"), awardOrder: Number(value("awardOrder")), channels,
-        } });
-      } finally { setBusy(false); }
-    }}>
-      <div className="grid gap-2 rounded-xl bg-muted/35 p-3">
-        <Field label="원본 영상용 개인 Google Drive 폴더"><Text name="driveFolder" type="url" maxLength={2048}
-          defaultValue={publishedFolder ?? ""} placeholder="https://drive.google.com/drive/folders/…"
-          aria-invalid={Boolean(folderError)} onChange={() => setFolderError("")} />
-          {folderError && <span role="alert" className="text-xs text-destructive">{folderError}</span>}
-        </Field>
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-          <span>저장하면 활동 화면에 표시돼요. Drive에서 선발자 이메일에 편집자 권한을 주세요.</span>
-          {publishedFolder && <a href={publishedFolder} target="_blank" rel="noopener noreferrer" className="font-medium underline underline-offset-2">저장된 폴더 열기</a>}
-        </div>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Field label="이름"><Text name="name" required maxLength={160} defaultValue={person.name} /></Field>
-        <Field label="담당자"><Text name="owner" maxLength={160} defaultValue={person.owner} /></Field>
-        <Field label="운영 연락처 또는 DM URL"><Text name="contact" maxLength={400} defaultValue={person.contact} placeholder={application?.emailNormalized ?? "이메일 또는 URL"} /></Field>
-        <Field label="활동 확인 이메일"><Text name="accessEmail" type="email" maxLength={254} defaultValue={person.accessEmail ?? ""} placeholder={application?.emailNormalized ?? "name@gmail.com"} />
-          <span className="text-xs text-muted-foreground">비워 두면 신청서 이메일을 사용해요.</span>
-        </Field>
-        <Field label="활동비 상태"><select className={input} name="fee" defaultValue={person.feeStatus}>{Object.entries(feeNames).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></Field>
-        <Field label="지급일 또는 예정일"><Text name="paidOn" type="date" defaultValue={person.paidOn ?? ""} /></Field>
-        <Field label="우수자 상명"><Text name="award" maxLength={160} defaultValue={person.award} placeholder="예. 최우수상" /></Field>
-        <Field label="우수자 발표 순서"><Text name="awardOrder" type="number" min={0} max={10000} defaultValue={person.awardOrder} /></Field>
-      </div>
-      <fieldset className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4"><legend className="mb-2 font-medium">홍보 계정</legend>
-        {platforms.map((platform) => <Field key={platform} label={platform}>
-          <Text value={channels[platform] ?? ""} maxLength={160} placeholder="@계정" onChange={(event) => setChannels({ ...channels, [platform]: event.target.value })} />
-        </Field>)}
-      </fieldset>
-      <button className={primary + " justify-self-start"} disabled={busy}>{busy ? "저장 중…" : "크리에이터 저장"}</button>
-    </form>
-    {program.registrationSourceId && person.links.some(({ platform }) => Boolean((person.channels as Record<string, string>)[platform])) && (
-      <ul className="flex flex-wrap gap-2" aria-label="등록 홍보 링크">{person.links.filter(({ platform }) => Boolean((person.channels as Record<string, string>)[platform])).map((link) =>
-        <li key={link.code}><button className={button} disabled={!origin} onClick={() => copy(origin + "/creator-go/" + link.code)}>{link.platform} 홍보 링크 복사</button></li>,
-      )}</ul>
-    )}
-    {(answers.length > 0 || person.assignments.length > 0) && <details className="text-sm">
-      <summary className="cursor-pointer font-medium">신청서와 미션 진행 내역</summary>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        {answers.length > 0 && <dl className="grid gap-2">{answers.map(([key, value]) => <div key={key} className="min-w-0">
-          <dt className="text-xs text-muted-foreground">{labels[key] ?? key}</dt><dd className="whitespace-pre-wrap break-words">{applicationText(value)}</dd>
-        </div>)}</dl>}
-        {!!person.assignments.length && <ul className="grid content-start gap-2">{person.assignments.map((assignment) => <li className="rounded-lg bg-muted/35 px-3 py-2" key={assignment.id}>
-          {program.missions.find(({ id }) => id === assignment.missionId)?.title} · {statusNames[assignment.status]}
-        </li>)}</ul>}
-      </div>
-    </details>}
-    {application && <button type="button" className={button + " justify-self-start text-destructive"} disabled={withdrawing || busy || statusPending}
-      onClick={async () => {
-        if (!(await confirm({
-          title: person.name + "님의 선발을 취소할까요?",
-          description: "신청서 탭에서 다시 선발할 수 있어요. 지금 보낸 개인 링크는 만료되고, 기존 미션과 활동비 기록은 보관돼요.",
-          confirmLabel: "선발 취소", tone: "danger",
-        }))) return;
-        setWithdrawing(true);
-        try { await save({ action: "unselect", id: person.id, token: person.token }); }
-        finally { setWithdrawing(false); }
-      }}>{withdrawing ? "처리 중…" : "선발 취소"}</button>}
-  </article>;
-}
-
 export function People({ program, applications, labels, origin, programId, save, copy }: {
   program: CreatorProgramView; applications: CreatorView["applications"]; labels: Record<string, string>; origin: string; programId: string; save: Save; copy: Copy;
 }) {
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all");
-  const records = new Map(applications.map((record) => [record.id, record]));
-  const filters = {
-    all: () => true,
-    confirmed: (person: CreatorPerson) => person.confirmed,
-    unconfirmed: (person: CreatorPerson) => !person.confirmed,
-    completed: (person: CreatorPerson) => person.completed,
-    incomplete: (person: CreatorPerson) => !person.completed,
-    award: isCreatorAwarded,
-  };
-  const people = program.participants.filter((person) => filters[filter as keyof typeof filters](person)
-    && [person.name, person.owner, person.contact, person.award, JSON.stringify(person.channels)].some((value) => value.toLowerCase().includes(search.toLowerCase())));
   return <section className="grid gap-4">
-    <div className={panel + " flex flex-wrap items-center justify-between gap-3"}>
-      <div><h2 className="text-xl font-semibold">선발 크리에이터</h2><p className="mt-1 text-sm text-muted-foreground">{program.participants.length}명 선발 · {program.participants.filter(({ confirmed }) => confirmed).length}명 참여 확정 · {program.participants.filter(({ completed }) => completed).length}명 수료 · {program.participants.filter(isCreatorAwarded).length}명 우수자</p></div>
-      <div className="flex flex-wrap gap-2"><Text aria-label="크리에이터 검색" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="이름, 담당자, 계정 검색" />
-        <select className={input} aria-label="크리에이터 상태" value={filter} onChange={(event) => setFilter(event.target.value)}>
-          <option value="all">전체</option><option value="confirmed">참여 확정</option><option value="unconfirmed">참여 확인 전</option><option value="award">우수자</option>
-          <option value="completed">수료</option><option value="incomplete">미수료</option>
-        </select>
-      </div>
-    </div>
     <div className={panel}><AnnounceMail program={program} programId={programId} /></div>
-    {people.map((person) => <Person key={person.id} person={person} program={program} application={person.applicationId ? records.get(person.applicationId) : undefined} labels={labels} origin={origin} save={save} copy={copy} />)}
-    {!people.length && <Empty>{program.participants.length ? "검색 결과가 없어요." : "신청서 탭에서 크리에이터를 선발하면 여기에 표시돼요."}</Empty>}
+    <div className={panel}>
+      <PeopleTable program={program} applications={applications} labels={labels} origin={origin} save={save} copy={copy} />
+    </div>
   </section>;
 }
 

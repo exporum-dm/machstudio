@@ -259,6 +259,17 @@ export async function applyCreatorAction(auth: Awaited<ReturnType<typeof getCrea
         if (!result.count) throw missing();
         break;
       }
+      case "gridLayout": {
+        if (new Set(action.layout.map(({ key }) => key)).size !== action.layout.length) throw new CreatorError("같은 열이 두 번 들어 있어요.");
+        // 화면마다 따로 저장한다. 다른 화면 배치를 덮어쓰지 않도록 기존 값 위에 얹는다.
+        const stored = program.tableLayout && typeof program.tableLayout === "object" && !Array.isArray(program.tableLayout)
+          ? program.tableLayout as Record<string, unknown> : {};
+        await tx.creatorProgram.update({
+          where: { id: programId },
+          data: { tableLayout: { ...stored, [action.table]: action.layout } as Prisma.InputJsonValue },
+        });
+        break;
+      }
       case "candidateReorder": {
         // 화면이 보낸 순서대로 자리를 매긴다. 이 회차의 행만 — 남의 회차 id 가 섞여 와도 건너뛴다.
         const mine = await tx.creatorCandidate.findMany({ where: { programId, id: { in: action.ids } }, select: { id: true } });

@@ -8,7 +8,8 @@ import { getPublicAppOrigin } from "@/lib/app-url";
 import type { CreatorView } from "@/lib/creator/types";
 import type { CreatorAction } from "@/lib/creator/model";
 import { CandidateGrid } from "./CandidateGrid";
-import { Applicants, CreatorSettings } from "./Recruitment";
+import { CreatorSettings } from "./Recruitment";
+import { ApplicantsTable } from "./ApplicantsTable";
 import { Announcements, People } from "./People";
 import { Dashboard, Missions } from "./Operations";
 import { button, Empty } from "./ui";
@@ -96,7 +97,7 @@ export function CreatorAdmin({ programId, projectName }: { programId: string; pr
       <PageTabs label="크리에이터 관리 메뉴" value={tab} onChange={setTab} options={tabs} />
       {tab === "dashboard" && <Dashboard data={data} program={program} programId={programId} origin={origin} save={save} copy={copy} />}
       {tab === "candidates" && <CandidateGrid program={program} applications={data.applications} origin={origin} save={save} copy={copy} />}
-      {tab === "applications" && <Applicants program={program} applications={data.applications} labels={data.applicationLabels} save={save} />}
+      {tab === "applications" && <ApplicantsTable program={program} applications={data.applications} labels={data.applicationLabels} save={save} />}
       {tab === "people" && <People program={program} applications={data.applications} labels={data.applicationLabels} origin={origin} programId={programId} save={save} copy={copy} />}
       {tab === "missions" && <Missions program={program} save={save} origin={origin} copy={copy} />}
       {tab === "announcements" && <Announcements key={program.applicationSourceId ?? "unlinked"} program={program} projectName={projectName}
