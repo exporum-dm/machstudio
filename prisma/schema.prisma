@@ -2133,6 +2133,8 @@ model CreatorProgram {
   roster               Json?
   awards               Json?
   version              Int @default(0)
+  /// 선발자·신청서 표의 열 배치(순서·숨김·너비). { "people": [...], "applicants": [...] }
+  tableLayout          Json @default("{}")
   createdAt            DateTime @default(now())
   /// 지운 회차. 후보·선발자·제출 이력이 함께 사라지지 않도록 행은 남기고 목록에서만 감춘다.
   deletedAt            DateTime?

@@ -22,6 +22,43 @@ export type Column = z.infer<typeof columnSchema>;
 export type Cells = z.infer<typeof cells>;
 
 /**
+ * 선발자·신청서 표의 **열 배치**. 발굴 후보 표와 달리 열 자체는 코드가 정한 고정 항목이라
+ * (이름·연락처·참여 확정 …) 사용자가 정하는 건 순서·숨김·너비뿐이다.
+ */
+export const gridLayoutSchema = z.array(z.object({
+  key: z.string().min(1).max(64),
+  hidden: z.boolean().optional(),
+  width: z.number().int().min(MIN_COLUMN_WIDTH).max(MAX_COLUMN_WIDTH).optional(),
+})).max(80);
+export type GridLayout = z.infer<typeof gridLayoutSchema>;
+export const gridTables = ["people", "applicants"] as const;
+export type GridTable = (typeof gridTables)[number];
+
+/**
+ * 코드가 정의한 열에 저장된 배치를 입힌다. 저장에 없는 열은 **뒤에 붙여** 새로 생긴 항목이
+ * 조용히 사라지지 않게 하고, 저장에만 있는(코드에서 없어진) 열은 버린다.
+ */
+export function applyGridLayout<T extends { key: string; hidden?: boolean; width?: number }>(
+  defined: readonly T[], raw: unknown,
+): T[] {
+  const parsed = gridLayoutSchema.safeParse(raw);
+  if (!parsed.success || !parsed.data.length) return [...defined];
+  const byKey = new Map(defined.map((column) => [column.key, column]));
+  const ordered: T[] = [];
+  for (const saved of parsed.data) {
+    const column = byKey.get(saved.key);
+    if (!column) continue;
+    byKey.delete(saved.key);
+    ordered.push({ ...column, hidden: saved.hidden ?? false, width: saved.width });
+  }
+  return [...ordered, ...byKey.values()];
+}
+
+export function creatorGridLayout(raw: unknown, table: GridTable): unknown {
+  return raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>)[table] : undefined;
+}
+
+/**
  * 연락 상태 기본 보기 — 한 사람이 거쳐 가는 단계 순서대로.
  *
  * 예전 보기(미연락·DM 발송·답변 대기·참여 의향 있음·참여 의향 없음)는 "무엇을 했나"와
@@ -150,6 +187,7 @@ export const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("candidateEdit"), id, key: z.string(), value: cell }),
   z.object({ action: z.literal("candidateDelete"), id }),
   z.object({ action: z.literal("candidateReorder"), ids: z.array(id).min(1).max(2000) }),
+  z.object({ action: z.literal("gridLayout"), table: z.enum(gridTables), layout: gridLayoutSchema }),
   z.object({ action: z.literal("select"), applicationId: id, name: label, channels: z.partialRecord(platform, z.string().trim().max(160)) }),
   z.object({ action: z.literal("participant"), id, patch: z.object({
     name: label.optional(), confirmed: z.boolean().optional(), channels: z.partialRecord(platform, z.string().trim().max(160)).optional(),

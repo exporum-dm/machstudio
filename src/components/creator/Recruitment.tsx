@@ -5,7 +5,7 @@ import Link from "next/link";
 import { creatorUtm, platforms, type CreatorAction, type Utm } from "@/lib/creator/model";
 import { detectSocialAccounts, parseAccount } from "@/lib/creator/social";
 import type { CreatorView, CreatorProgramView } from "@/lib/creator/types";
-import { button, primary, input, panel, Empty, Field, Text, dateTime } from "./ui";
+import { button, primary, input, panel, Field, Text } from "./ui";
 
 type Save = (action: CreatorAction) => Promise<boolean>;
 type Copy = (value: string) => void;
@@ -102,27 +102,30 @@ function initialAccounts(raw: Record<string, unknown>, candidateCells: Record<st
   return accounts.length ? accounts : [{ platform: "instagram", handle: candidateHandle }];
 }
 
-function JoinApplicant({ record, candidate, selected, save, labels }: { record: App; candidate?: CreatorProgramView["candidates"][number]; selected: boolean; save: Save; labels: Record<string, string> }) {
+export function applicantName(record: App, candidateCells: Record<string, unknown> = {}) {
+  const raw = (record.data ?? {}) as Record<string, unknown>;
+  return applicationText(raw.name || raw.fullName || raw.full_name || raw["이름"] || candidateCells.name || "");
+}
+
+/** 펼친 신청서 — 답변 전체와 선발 폼. 선발된 사람은 답변만 보여 준다. */
+export function ApplicantDetail({ record, candidate, selected, save, labels }: { record: App; candidate?: CreatorProgramView["candidates"][number]; selected: boolean; save: Save; labels: Record<string, string> }) {
   const raw = (record.data ?? {}) as Record<string, unknown>;
   const candidateCells = (candidate?.cells ?? {}) as Record<string, unknown>;
-  const [name, setName] = useState(applicationText(raw.name || raw.fullName || raw.full_name || raw["이름"] || candidateCells.name || ""));
+  const [name, setName] = useState(() => applicantName(record, candidateCells));
   const [accounts, setAccounts] = useState<Account[]>(() => initialAccounts(raw, candidateCells, labels));
   const [busy, setBusy] = useState(false);
   const filled = accounts.filter(({ handle }) => handle.trim());
+  const answers = Object.entries(raw).filter(([key]) => !key.startsWith("__"));
 
-  return <article className="grid gap-3 rounded-xl bg-muted/25 p-3 sm:p-4">
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <div><h3 className="break-words font-semibold">{name || record.emailNormalized || record.phoneE164 || "모집 신청서"}</h3>
-        <p className="text-xs text-muted-foreground">{dateTime(record.createdAt)} · {candidate ? "발굴 후보" : "공개 모집"}</p></div>
-      {selected && <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold">선발됨</span>}
-    </div>
-    <details className="text-sm"><summary className="cursor-pointer font-medium">신청서 답변 보기</summary>
-      <dl className="mt-2 grid gap-x-4 gap-y-2 sm:grid-cols-2">
-        {Object.entries(raw).filter(([key]) => !key.startsWith("__")).map(([key, value]) => <div key={key} className="min-w-0">
+  return <div className="grid gap-4 bg-muted/25 p-4">
+    {answers.length > 0 && <div>
+      <h4 className="mb-2 text-sm font-medium">신청서 답변</h4>
+      <dl className="grid gap-x-4 gap-y-2 text-sm sm:grid-cols-2">
+        {answers.map(([key, value]) => <div key={key} className="min-w-0">
           <dt className="text-xs text-muted-foreground">{labels[key] ?? key}</dt><dd className="whitespace-pre-wrap break-words">{applicationText(value)}</dd>
         </div>)}
       </dl>
-    </details>
+    </div>}
     {!selected && <form className="grid gap-3" onSubmit={async (event) => {
       event.preventDefault();
       setBusy(true);
@@ -150,26 +153,5 @@ function JoinApplicant({ record, candidate, selected, save, labels }: { record: 
       {!filled.length && <p className="text-xs text-muted-foreground">계정을 비워 두면 홍보 링크가 발급되지 않아요. 선발 후 선발자 탭에서 채워도 그때 만들어져요.</p>}
       <button className={primary + " justify-self-start"} disabled={busy}>{busy ? "저장 중…" : filled.length > 1 ? `선발 · 링크 ${filled.length}개 발급` : "선발"}</button>
     </form>}
-  </article>;
-}
-
-export function Applicants({ program, applications, save, labels }: { program: CreatorProgramView; applications: App[]; save: Save; labels: Record<string, string> }) {
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all");
-  const selected = new Set(program.participants.map(({ applicationId }) => applicationId));
-  const candidates = new Map(program.candidates.map((row) => [row.invite, row]));
-  const filtered = applications.filter((record) => (filter === "all" || selected.has(record.id) === (filter === "selected")) &&
-    [record.emailNormalized, record.phoneE164, JSON.stringify(record.data)].some((value) => value?.toLowerCase().includes(search.toLowerCase())));
-  return <section className={panel + " grid gap-4"}>
-    <div><h2 className="text-xl font-semibold">모집 신청서</h2><p className="mt-1 text-sm text-muted-foreground">모집 폼으로 신청서를 제출한 사람을 선발하세요.</p></div>
-    <div className="flex flex-wrap items-center gap-2">
-      <Text value={search} aria-label="신청서 검색" onChange={(event) => setSearch(event.target.value)} placeholder="신청서 검색" />
-      <select className={input} aria-label="선발 상태" value={filter} onChange={(event) => setFilter(event.target.value)}>
-        <option value="all">전체</option><option value="unselected">미선발</option><option value="selected">선발</option>
-      </select>
-      <span className="text-sm text-muted-foreground">{filtered.length}/{applications.length}건</span>
-    </div>
-    {filtered.map((record) => <JoinApplicant key={record.id} record={record} candidate={record.utmId ? candidates.get(record.utmId) : undefined} selected={selected.has(record.id)} save={save} labels={labels} />)}
-    {!filtered.length && <Empty>{program.applicationSourceId ? "조건에 맞는 신청서가 없어요." : "설정에서 모집 폼을 연결하면 여기에 신청서가 표시돼요."}</Empty>}
-  </section>;
+  </div>;
 }
